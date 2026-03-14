@@ -30,9 +30,10 @@ import {
 
 export default function CreateScreen() {
   const router = useRouter();
-  const restaurantRef = useRef<TextInput>(null);
+  const maxPeopleRef = useRef<TextInput>(null);
   const totalPriceRef = useRef<TextInput>(null);
   const sharingPriceRef = useRef<TextInput>(null);
+  const restaurantRef = useRef<TextInput>(null);
   const restaurantLocationRef = useRef<TextInput>(null);
 
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
@@ -53,9 +54,10 @@ export default function CreateScreen() {
   const [campus, setCampus] = useState<string | null>(null);
 
   const inputRefs = [
-    restaurantRef,
+    maxPeopleRef,
     totalPriceRef,
     sharingPriceRef,
+    restaurantRef,
     restaurantLocationRef,
   ];
 
@@ -237,28 +239,45 @@ export default function CreateScreen() {
       />
     ) : null;
 
+  const formLabel = {
+    fontSize: 16,
+    fontWeight: '600' as const,
+    color: '#374151',
+    marginBottom: 8,
+  };
+  const formInput = {
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 16,
+    color: '#111827',
+    fontSize: 16,
+  };
+  const formHelper = { fontSize: 13, color: '#6B7280', marginBottom: 16 };
+
   const content = (
-    <View style={{ flex: 1, justifyContent: 'center', padding: 24 }}>
-      <Text style={{ fontSize: 22, fontWeight: '600', marginBottom: 16 }}>
+    <View style={{ flex: 1, justifyContent: 'center', padding: 24, backgroundColor: '#FFFFFF' }}>
+      <Text style={{ fontSize: 22, fontWeight: '600', marginBottom: 16, color: '#111827' }}>
         Create Order
       </Text>
 
+      <Text style={formLabel}>Max people</Text>
       <TextInput
-        placeholder="Max people (e.g. 3)"
+        ref={maxPeopleRef}
+        placeholder="e.g. 3"
         value={maxPeople}
         onChangeText={setMaxPeople}
         keyboardType="numeric"
-        style={{
-          borderWidth: 1,
-          borderColor: '#ccc',
-          borderRadius: 10,
-          padding: 12,
-          marginBottom: 16,
-          color: '#fff',
-        }}
-        placeholderTextColor="#aaa"
+        inputAccessoryViewID={
+          Platform.OS === 'ios' ? KEYBOARD_TOOLBAR_NATIVE_ID : undefined
+        }
+        onFocus={() => setFocusedIndex(0)}
+        style={formInput}
+        placeholderTextColor="#9CA3AF"
       />
 
+      <Text style={formLabel}>Total price</Text>
       <TextInput
         ref={totalPriceRef}
         placeholder="Total price ($)"
@@ -269,17 +288,11 @@ export default function CreateScreen() {
           Platform.OS === 'ios' ? KEYBOARD_TOOLBAR_NATIVE_ID : undefined
         }
         onFocus={() => setFocusedIndex(1)}
-        style={{
-          borderWidth: 1,
-          borderColor: '#ccc',
-          borderRadius: 10,
-          padding: 12,
-          marginBottom: 16,
-          color: '#fff',
-        }}
-        placeholderTextColor="#aaa"
+        style={formInput}
+        placeholderTextColor="#9CA3AF"
       />
 
+      <Text style={formLabel}>Sharing price</Text>
       <TextInput
         ref={sharingPriceRef}
         placeholder="Sharing price ($)"
@@ -290,26 +303,17 @@ export default function CreateScreen() {
           Platform.OS === 'ios' ? KEYBOARD_TOOLBAR_NATIVE_ID : undefined
         }
         onFocus={() => setFocusedIndex(2)}
-        style={{
-          borderWidth: 1,
-          borderColor: '#ccc',
-          borderRadius: 10,
-          padding: 12,
-          marginBottom: 16,
-          color: '#fff',
-        }}
-        placeholderTextColor="#aaa"
+        style={formInput}
+        placeholderTextColor="#9CA3AF"
       />
 
       {pricePerPerson > 0 && splitCount > 0 ? (
-        <Text style={{ fontSize: 14, color: '#22c55e', marginBottom: 16 }}>
+        <Text style={formHelper}>
           ${pricePerPerson.toFixed(2)} per person ({splitCount} people)
         </Text>
       ) : null}
 
-      <Text style={{ fontSize: 16, fontWeight: '500', marginBottom: 8 }}>
-        Food Type
-      </Text>
+      <Text style={formLabel}>Food Type</Text>
       <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
         <TouchableOpacity
           onPress={() => setFoodType('pizza')}
@@ -349,49 +353,35 @@ export default function CreateScreen() {
         </TouchableOpacity>
       </View>
 
+      <Text style={formLabel}>Restaurant name</Text>
       <TextInput
         ref={restaurantRef}
-        placeholder="Restaurant name"
+        placeholder="Enter the restaurant you are ordering from"
         value={restaurantName}
         onChangeText={setRestaurantName}
         inputAccessoryViewID={
           Platform.OS === 'ios' ? KEYBOARD_TOOLBAR_NATIVE_ID : undefined
         }
-        onFocus={() => setFocusedIndex(0)}
-        style={{
-          borderWidth: 1,
-          borderColor: '#ccc',
-          borderRadius: 10,
-          padding: 12,
-          marginBottom: 16,
-          color: '#fff',
-        }}
-        placeholderTextColor="#aaa"
+        onFocus={() => setFocusedIndex(3)}
+        style={formInput}
+        placeholderTextColor="#9CA3AF"
       />
 
+      <Text style={formLabel}>Restaurant location</Text>
       <TextInput
         ref={restaurantLocationRef}
-        placeholder="Restaurant location"
+        placeholder="Address or area"
         value={restaurantLocation}
         onChangeText={setRestaurantLocation}
         inputAccessoryViewID={
           Platform.OS === 'ios' ? KEYBOARD_TOOLBAR_NATIVE_ID : undefined
         }
-        onFocus={() => setFocusedIndex(3)}
-        style={{
-          borderWidth: 1,
-          borderColor: '#ccc',
-          borderRadius: 10,
-          padding: 12,
-          marginBottom: 16,
-          color: '#fff',
-        }}
-        placeholderTextColor="#aaa"
+        onFocus={() => setFocusedIndex(4)}
+        style={formInput}
+        placeholderTextColor="#9CA3AF"
       />
 
-      <Text style={{ fontSize: 16, fontWeight: '500', marginBottom: 8 }}>
-        Order in
-      </Text>
+      <Text style={formLabel}>Order in</Text>
       <View
         style={{
           flexDirection: 'row',

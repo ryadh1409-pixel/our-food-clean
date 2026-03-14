@@ -18,6 +18,10 @@ type KeyboardToolbarProps = {
   totalInputs?: number;
 };
 
+/**
+ * iOS-style keyboard accessory toolbar (like Apple payment forms).
+ * Shows ⬆ Previous, ⬇ Next, ✔ Done. Renders only on iOS.
+ */
 export function KeyboardToolbar({
   onFocusPrevious,
   onFocusNext,
@@ -41,7 +45,7 @@ export function KeyboardToolbar({
           style={styles.button}
           disabled={!canGoPrev}
         >
-          <Text style={[styles.icon, !canGoPrev && styles.iconDisabled]}>
+          <Text style={[styles.label, !canGoPrev && styles.labelDisabled]}>
             ⬆ Previous
           </Text>
         </TouchableOpacity>
@@ -50,7 +54,7 @@ export function KeyboardToolbar({
           style={styles.button}
           disabled={!canGoNext}
         >
-          <Text style={[styles.icon, !canGoNext && styles.iconDisabled]}>
+          <Text style={[styles.label, !canGoNext && styles.labelDisabled]}>
             ⬇ Next
           </Text>
         </TouchableOpacity>
@@ -58,7 +62,7 @@ export function KeyboardToolbar({
           onPress={() => Keyboard.dismiss()}
           style={styles.button}
         >
-          <Text style={styles.icon}>✅ Done</Text>
+          <Text style={styles.done}>✔ Done</Text>
         </TouchableOpacity>
       </View>
     </InputAccessoryView>
@@ -70,23 +74,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    height: 44,
-    paddingHorizontal: 12,
-    backgroundColor: '#111',
-    borderTopWidth: 1,
-    borderTopColor: '#333',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: '#F2F2F7',
+    borderTopWidth: 0.5,
+    borderColor: '#ccc',
   },
   button: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
   },
-  icon: {
-    fontSize: 15,
-    color: '#FFF',
-    fontWeight: '600',
+  label: {
+    fontSize: 18,
+    color: '#007AFF',
   },
-  iconDisabled: {
+  labelDisabled: {
     opacity: 0.4,
-    color: '#999',
+    color: '#8E8E93',
+  },
+  done: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#007AFF',
   },
 });

@@ -362,51 +362,50 @@ export default function OrderRoomScreen() {
     };
   }, [orderId, canChat, participantIds.join(',')]);
 
-  // Real-time messages from top-level messages collection (chatId)
+  // Real-time messages from orders/{orderId}/messages (updates instantly across devices)
   useEffect(() => {
-    if (!chatId?.trim()) {
+    if (!orderId?.trim()) {
       setMessages([]);
       return undefined;
     }
-    let cancelled = false;
-    const messagesRef = collection(db, 'messages');
     const q = query(
-      messagesRef,
-      where('chatId', '==', chatId),
+      collection(db, 'orders', orderId, 'messages'),
       orderBy('createdAt', 'asc'),
     );
-
-    const unsub = onSnapshot(
+    const unsubscribe = onSnapshot(
       q,
-      (snap) => {
-        if (cancelled) return;
-        const list: Message[] = snap.docs.map((d) => {
-          const d2 = d.data();
-          const created = d2?.createdAt?.toMillis?.() ?? d2?.createdAt ?? 0;
+      (snapshot) => {
+        const msgs: Message[] = snapshot.docs.map((docSnap) => {
+          const d = docSnap.data();
+          const created = d?.createdAt?.toMillis?.() ?? d?.createdAt ?? 0;
           const userName =
-            typeof d2?.userName === 'string' ? d2.userName : undefined;
+            typeof d?.userName === 'string' ? d.userName : undefined;
+          const senderId =
+            typeof d?.senderId === 'string'
+              ? d.senderId
+              : typeof d?.userId === 'string'
+                ? d.userId
+                : '';
+          const msgType =
+            d?.type === 'system' ? ('system' as const) : ('user' as const);
           return {
-            id: d.id,
-            text: typeof d2?.text === 'string' ? d2.text : '',
-            senderId: typeof d2?.senderId === 'string' ? d2.senderId : '',
+            id: docSnap.id,
+            text: typeof d?.text === 'string' ? d.text : '',
+            senderId,
             userName,
             createdAt: Number(created),
             seenBy: [],
-            type: 'user',
+            type: msgType,
           };
         });
-        setMessages([...list]);
+        setMessages(msgs);
       },
       (err) => {
-        if (!cancelled) console.warn('Messages listener error:', err);
+        console.warn('Messages listener error:', err);
       },
     );
-
-    return () => {
-      cancelled = true;
-      unsub();
-    };
-  }, [chatId]);
+    return () => unsubscribe();
+  }, [orderId]);
 
   const prevMessagesLengthRef = useRef(0);
   useEffect(() => {
@@ -606,24 +605,18 @@ export default function OrderRoomScreen() {
       auth.currentUser?.email?.split('@')[0] ||
       'User';
 
-    if (!chatId) {
-      Alert.alert('Error', 'Chat not ready. Please try again.');
+    if (!orderId) {
+      Alert.alert('Error', 'Order not ready. Please try again.');
       return;
     }
     setSending(true);
     try {
-      const messagesRef = collection(db, 'messages');
+      const messagesRef = collection(db, 'orders', orderId, 'messages');
       await addDoc(messagesRef, {
-        chatId,
-        senderId: uid,
         text: trimmed,
-        userName,
+        senderId: uid,
+        userName: userName || undefined,
         createdAt: serverTimestamp(),
-      });
-      const chatRef = doc(db, 'chats', chatId);
-      await updateDoc(chatRef, {
-        lastMessage: trimmed.slice(0, 100),
-        updatedAt: serverTimestamp(),
       });
       lastMessageTimeRef.current = Date.now();
       setText('');
@@ -728,6 +721,31 @@ export default function OrderRoomScreen() {
     auth.currentUser?.uid ?? undefined,
   );
   const orderShareMessage = `🍔 Join my order on HalfOrder\n\nSplit the meal. Pay half.\n\nTap to join:\n${orderShareLink}`;
+
+  const handleInvite = async () => {
+    const link = `https://halforder.app/order/${orderId}`;
+    const message = `Join my HalfOrder and split this meal 🍕 ${link}`;
+    try {
+      if (Platform.OS === 'web') {
+        if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(message);
+          Alert.alert('Copied', 'Invite message copied to clipboard. Share it anywhere!');
+        } else {
+          Alert.alert('Share', message);
+        }
+        return;
+      }
+      await Share.share({
+        message,
+        title: 'Join my HalfOrder order',
+      });
+    } catch (error) {
+      console.log('Invite error:', error);
+      if ((error as { message?: string })?.message !== 'User did not share') {
+        Alert.alert('Share', 'Could not open share sheet.');
+      }
+    }
+  };
 
   const handleInviteViaWhatsApp = async () => {
     const orderLink = generateInviteLink(orderId, auth.currentUser?.uid);
@@ -1414,17 +1432,17 @@ export default function OrderRoomScreen() {
           </TouchableOpacity>
         </View>
         <TouchableOpacity
-          onPress={handleInviteViaWhatsApp}
+          onPress={handleInvite}
           style={{
             marginBottom: 12,
             paddingVertical: 10,
             borderRadius: 10,
-            backgroundColor: '#25D366',
+            backgroundColor: '#2563eb',
             alignItems: 'center',
           }}
         >
           <Text style={{ color: '#fff', fontWeight: '600' }}>
-            Invite a friend on WhatsApp
+            Invite someone to split the order 🍔
           </Text>
         </TouchableOpacity>
 
@@ -1490,11 +1508,15 @@ export default function OrderRoomScreen() {
       ) : null}
 
       {isWaiting ? (
-        <View style={styles.waitingBanner}>
+        <TouchableOpacity
+          style={styles.waitingBanner}
+          onPress={handleInvite}
+          activeOpacity={0.8}
+        >
           <Text style={styles.waitingBannerText}>
             Invite someone to split the order 🍔
           </Text>
-        </View>
+        </TouchableOpacity>
       ) : null}
       {isBlocked ? (
         <View style={{ padding: 12, backgroundColor: '#fef2f2' }}>
@@ -1638,26 +1660,6 @@ export default function OrderRoomScreen() {
             );
           }}
         />
-
-        {(() => {
-          const uid = auth.currentUser?.uid ?? '';
-          const otherTyping = Object.entries(typingUids).some(
-            ([u, v]) => u !== uid && v === true,
-          );
-          return otherTyping ? (
-            <View
-              style={{
-                paddingHorizontal: 16,
-                paddingVertical: 6,
-                backgroundColor: '#f8fafc',
-              }}
-            >
-              <Text style={{ fontSize: 13, color: '#64748b' }}>
-                Someone is typing...
-              </Text>
-            </View>
-          ) : null;
-        })()}
 
         <View
           style={{

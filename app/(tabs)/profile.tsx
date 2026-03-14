@@ -7,7 +7,7 @@ import { db, storage } from '@/services/firebase';
 import { doc, onSnapshot, setDoc, type DocumentData } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadString } from 'firebase/storage';
 import { useRouter } from 'expo-router';
-import * as FileSystem from 'expo-file-system';
+import { readAsStringAsync } from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import React, { useEffect, useRef, useState } from 'react';
@@ -154,8 +154,8 @@ export default function ProfileScreen() {
     setUploadingPhoto(true);
 
     try {
-      const base64 = await FileSystem.readAsStringAsync(imageUri, {
-        encoding: FileSystem.EncodingType.Base64,
+      const base64 = await readAsStringAsync(imageUri, {
+        encoding: 'base64',
       });
       if (!base64) {
         throw new Error('Could not read image');
@@ -408,7 +408,7 @@ export default function ProfileScreen() {
             value={displayNameInput}
             onChangeText={setDisplayNameInput}
             placeholder="Add your name"
-            placeholderTextColor={COLORS.textMuted}
+            placeholderTextColor="#9CA3AF"
             editable={!savingName}
             inputAccessoryViewID={
               Platform.OS === 'ios' ? KEYBOARD_TOOLBAR_NATIVE_ID : undefined
@@ -670,23 +670,23 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   sectionLabel: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '600',
-    color: COLORS.text,
+    color: '#374151',
     marginBottom: 8,
   },
   input: {
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: '#D1D5DB',
     borderRadius: 12,
     padding: 12,
     fontSize: 16,
-    color: COLORS.text,
+    color: '#111827',
     marginBottom: 12,
   },
   readOnlyValue: {
     fontSize: 16,
-    color: COLORS.textMuted,
+    color: '#6B7280',
     marginBottom: 16,
   },
   campusChipRow: {
@@ -721,8 +721,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   taxGiftsStat: {
-    fontSize: 16,
-    color: COLORS.text,
+    fontSize: 13,
+    color: '#6B7280',
     marginTop: 4,
   },
   primaryButton: {
@@ -741,8 +741,8 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   successMessage: {
-    fontSize: 14,
-    color: '#16a34a',
+    fontSize: 13,
+    color: '#6B7280',
     marginBottom: 12,
   },
   signOutButton: {

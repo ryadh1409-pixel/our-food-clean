@@ -17,11 +17,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 const BG = '#0D0D0D';
-const INPUT_BG = '#1A1A1A';
-const BORDER = '#2A2A2A';
-const PLACEHOLDER = '#6B7280';
-const LABEL = '#9CA3AF';
 const BRAND = '#2563EB';
+const FORM_LABEL = '#374151';
+const FORM_INPUT = '#111827';
+const FORM_PLACEHOLDER = '#9CA3AF';
+const FORM_HELPER = '#6B7280';
 
 const REGISTER_INPUTS = 3;
 
@@ -102,7 +102,7 @@ export default function RegisterScreen() {
               ref={emailRef}
               style={styles.input}
               placeholder="you@example.com"
-              placeholderTextColor={PLACEHOLDER}
+              placeholderTextColor={FORM_PLACEHOLDER}
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
@@ -119,7 +119,7 @@ export default function RegisterScreen() {
               ref={passwordRef}
               style={styles.input}
               placeholder="At least 6 characters"
-              placeholderTextColor={PLACEHOLDER}
+              placeholderTextColor={FORM_PLACEHOLDER}
               value={password}
               onChangeText={setPassword}
               secureTextEntry
@@ -134,7 +134,7 @@ export default function RegisterScreen() {
               ref={confirmPasswordRef}
               style={styles.input}
               placeholder="••••••••"
-              placeholderTextColor={PLACEHOLDER}
+              placeholderTextColor={FORM_PLACEHOLDER}
               value={confirmPassword}
               onChangeText={setConfirmPassword}
               secureTextEntry
@@ -186,22 +186,22 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: 16,
-    color: LABEL,
+    color: FORM_HELPER,
     textAlign: 'center',
     marginTop: 8,
     marginBottom: 40,
   },
-  form: { gap: 16 },
-  label: { fontSize: 14, fontWeight: '600', color: LABEL },
+  form: { gap: 16, backgroundColor: '#FFFFFF', padding: 24, borderRadius: 16 },
+  label: { fontSize: 16, fontWeight: '600', color: FORM_LABEL, marginBottom: 4 },
   input: {
-    backgroundColor: INPUT_BG,
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: BORDER,
+    borderColor: '#D1D5DB',
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: 16,
-    color: '#fff',
+    color: FORM_INPUT,
   },
   primaryBtn: {
     backgroundColor: BRAND,
@@ -218,6 +218,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 32,
   },
-  footerText: { color: LABEL, fontSize: 15 },
+  footerText: { color: FORM_HELPER, fontSize: 15 },
   link: { color: BRAND, fontSize: 15, fontWeight: '600' },
 });

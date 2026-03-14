@@ -109,9 +109,9 @@ export default function LoginScreen() {
             <Text style={styles.label}>Email</Text>
             <TextInput
               ref={emailRef}
-              style={[styles.input, { color: '#000', fontSize: 16 }]}
+              style={styles.input}
               placeholder="you@example.com"
-              placeholderTextColor="#666"
+              placeholderTextColor="#9CA3AF"
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
@@ -126,9 +126,9 @@ export default function LoginScreen() {
             <Text style={styles.label}>Password</Text>
             <TextInput
               ref={passwordRef}
-              style={[styles.input, { color: '#000', fontSize: 16 }]}
+              style={styles.input}
               placeholder="••••••••"
-              placeholderTextColor="#666"
+              placeholderTextColor="#9CA3AF"
               value={password}
               onChangeText={setPassword}
               secureTextEntry
@@ -190,24 +190,25 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 32,
     fontWeight: '800',
-    color: '#000',
+    color: '#111827',
     textAlign: 'center',
   },
   subtitle: {
     fontSize: 16,
-    color: '#000',
+    color: '#6B7280',
     textAlign: 'center',
     marginTop: 8,
     marginBottom: 40,
   },
   form: { gap: 16, width: '100%', maxWidth: 400 },
-  label: { fontSize: 14, fontWeight: '600', color: '#000' },
+  label: { fontSize: 16, fontWeight: '600', color: '#374151', marginBottom: 4 },
   input: {
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: '#D1D5DB',
     padding: 12,
     borderRadius: 8,
-    color: '#000',
+    fontSize: 16,
+    color: '#111827',
     backgroundColor: '#fff',
   },
   forgotRow: {
@@ -239,6 +240,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 40,
   },
-  footerText: { color: '#000', fontSize: 15 },
+  footerText: { color: '#6B7280', fontSize: 15 },
   link: { color: theme.colors.primary, fontSize: 15, fontWeight: '600' },
 });
