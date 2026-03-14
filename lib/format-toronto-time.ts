@@ -6,7 +6,9 @@ function toDate(value: Timestamp | Date | number): Date {
   return (value as Timestamp).toDate();
 }
 
-export function formatTorontoTime(timestamp: Timestamp | Date | number | null | undefined): string {
+export function formatTorontoTime(
+  timestamp: Timestamp | Date | number | null | undefined,
+): string {
   if (timestamp == null) return '—';
   const d = toDate(timestamp);
   return d.toLocaleString('en-CA', {
@@ -17,7 +19,9 @@ export function formatTorontoTime(timestamp: Timestamp | Date | number | null | 
   });
 }
 
-export function formatTorontoOrderTime(timestamp: Timestamp | Date | number | null | undefined): string {
+export function formatTorontoOrderTime(
+  timestamp: Timestamp | Date | number | null | undefined,
+): string {
   if (timestamp == null) return '—';
   const d = toDate(timestamp);
   const today = new Date();
@@ -35,4 +39,32 @@ export function formatTorontoOrderTime(timestamp: Timestamp | Date | number | nu
   });
   const timeStr = formatTorontoTime(timestamp);
   return dateStr === todayStr ? `Today ${timeStr}` : `${dateStr} ${timeStr}`;
+}
+
+/** Format as MMM DD, YYYY in America/Toronto */
+export function formatTorontoDate(
+  timestamp: Timestamp | Date | number | null | undefined,
+): string {
+  if (timestamp == null) return '—';
+  const d = toDate(timestamp);
+  return d.toLocaleDateString('en-CA', {
+    timeZone: 'America/Toronto',
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+/** Format as HH:mm (24h) in America/Toronto */
+export function formatTorontoTimeHHMM(
+  timestamp: Timestamp | Date | number | null | undefined,
+): string {
+  if (timestamp == null) return '—';
+  const d = toDate(timestamp);
+  return d.toLocaleTimeString('en-CA', {
+    timeZone: 'America/Toronto',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
 }

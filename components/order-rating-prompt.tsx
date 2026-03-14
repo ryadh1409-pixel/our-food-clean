@@ -67,20 +67,44 @@ export function OrderRatingPrompt({ orderId, visible, onDismiss }: Props) {
             maxWidth: 320,
           }}
         >
-          <Text style={{ fontSize: 18, fontWeight: '600', color: '#334155', marginBottom: 8, textAlign: 'center' }}>
+          <Text
+            style={{
+              fontSize: 18,
+              fontWeight: '600',
+              color: '#334155',
+              marginBottom: 8,
+              textAlign: 'center',
+            }}
+          >
             Rate this order
           </Text>
-          <Text style={{ fontSize: 14, color: '#64748b', marginBottom: 20, textAlign: 'center' }}>
+          <Text
+            style={{
+              fontSize: 14,
+              color: '#64748b',
+              marginBottom: 20,
+              textAlign: 'center',
+            }}
+          >
             How was your experience?
           </Text>
-          <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 8, marginBottom: 24 }}>
+          <View
+            style={{
+              flexDirection: 'row',
+              justifyContent: 'center',
+              gap: 8,
+              marginBottom: 24,
+            }}
+          >
             {[1, 2, 3, 4, 5].map((star) => (
               <TouchableOpacity
                 key={star}
                 onPress={() => setSelected(star)}
                 style={{ padding: 4 }}
               >
-                <Text style={{ fontSize: 36 }}>{star <= selected ? '★' : '☆'}</Text>
+                <Text style={{ fontSize: 36 }}>
+                  {star <= selected ? '★' : '☆'}
+                </Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -88,7 +112,8 @@ export function OrderRatingPrompt({ orderId, visible, onDismiss }: Props) {
             onPress={handleSubmit}
             disabled={selected < 1 || loading}
             style={{
-              backgroundColor: selected >= 1 && !loading ? '#2563eb' : '#cbd5e1',
+              backgroundColor:
+                selected >= 1 && !loading ? '#2563eb' : '#cbd5e1',
               paddingVertical: 12,
               borderRadius: 10,
               alignItems: 'center',

@@ -16,12 +16,12 @@ export function useHasJoinedOrders(): boolean {
     }
 
     const ordersRef = collection(db, 'orders');
-    const q = query(ordersRef, where('participantUids', 'array-contains', uid));
+    const q = query(ordersRef, where('participantIds', 'array-contains', uid));
 
     const unsub = onSnapshot(
       q,
       (snap) => setHasJoined(!snap.empty),
-      () => setHasJoined(false)
+      () => setHasJoined(false),
     );
 
     return () => unsub();

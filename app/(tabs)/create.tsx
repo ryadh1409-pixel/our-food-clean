@@ -1,8 +1,22 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { addDoc, collection, serverTimestamp, Timestamp } from "firebase/firestore";
-import { useState } from "react";
+import { trackOrderCreated } from '@/services/analytics';
+import { auth, db } from '@/services/firebase';
+import { getUserLocation } from '@/services/location';
+import { useRouter } from 'expo-router';
+import {
+  addDoc,
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  serverTimestamp,
+  Timestamp,
+  where,
+} from 'firebase/firestore';
+import { useEffect, useRef, useState } from 'react';
 import {
   Alert,
+  InputAccessoryView,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -11,252 +25,457 @@ import {
   TouchableOpacity,
   TouchableWithoutFeedback,
   View,
-} from "react-native";
-import { auth, db } from "../../services/firebase";
+} from 'react-native';
 
-const ANON_ID_KEY = "@join_anon_id";
-
-async function getOrCreateAnonId(): Promise<string> {
-  let id = await AsyncStorage.getItem(ANON_ID_KEY);
-  if (!id) {
-    id = "anon_" + Date.now() + "_" + Math.random().toString(36).slice(2);
-    await AsyncStorage.setItem(ANON_ID_KEY, id);
-  }
-  return id;
-}
+const INPUT_ACCESSORY_ID = 'createOrderAccessory';
 
 export default function CreateScreen() {
-  const [maxPeople, setMaxPeople] = useState("");
-  const [totalPrice, setTotalPrice] = useState("");
-  const [sharingPrice, setSharingPrice] = useState("");
+  const router = useRouter();
+  const restaurantRef = useRef<TextInput>(null);
+  const totalPriceRef = useRef<TextInput>(null);
+  const sharingPriceRef = useRef<TextInput>(null);
+  const restaurantLocationRef = useRef<TextInput>(null);
+
+  const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
+  const [maxPeople, setMaxPeople] = useState('');
+  const [totalPrice, setTotalPrice] = useState('');
+  const [sharingPrice, setSharingPrice] = useState('');
   const [loading, setLoading] = useState(false);
 
   const total = Number(totalPrice) || 0;
   const share = Number(sharingPrice) || 0;
-  const participantsCount = share > 0 && total >= share ? Math.floor(total / share) : 0;
+  const splitCount =
+    share > 0 && total >= share ? Math.floor(total / share) : 0;
   const pricePerPerson = share > 0 ? share : 0;
-  const [foodType, setFoodType] = useState("pizza");
-  const [restaurantName, setRestaurantName] = useState("");
-  const [restaurantLocation, setRestaurantLocation] = useState("");
-  const [orderTime, setOrderTime] = useState("Now");
+  const [foodType, setFoodType] = useState('pizza');
+  const [restaurantName, setRestaurantName] = useState('');
+  const [restaurantLocation, setRestaurantLocation] = useState('');
+  const [orderTime, setOrderTime] = useState('Now');
+  const [campus, setCampus] = useState<string | null>(null);
+
+  const inputRefs = [
+    restaurantRef,
+    totalPriceRef,
+    sharingPriceRef,
+    restaurantLocationRef,
+  ];
+
+  const handleAccessoryDone = () => {
+    Keyboard.dismiss();
+    setFocusedIndex(null);
+  };
+
+  const handleAccessoryNext = () => {
+    if (focusedIndex !== null && focusedIndex < inputRefs.length - 1) {
+      const nextRef = inputRefs[focusedIndex + 1];
+      nextRef.current?.focus();
+    }
+  };
+
+  const handleAccessoryPrev = () => {
+    if (focusedIndex !== null && focusedIndex > 0) {
+      const prevRef = inputRefs[focusedIndex - 1];
+      prevRef.current?.focus();
+    }
+  };
+
+  useEffect(() => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) {
+      setCampus(null);
+      return;
+    }
+    const userRef = doc(db, 'users', uid);
+    getDoc(userRef)
+      .then((snap) => {
+        const data = snap.data();
+        setCampus(typeof data?.campus === 'string' ? data.campus : null);
+      })
+      .catch(() => setCampus(null));
+  }, []);
 
   const handleCreate = async () => {
     const num = Number(maxPeople);
     if (Number.isNaN(num) || num < 1) {
-      Alert.alert("Error", "Enter a valid max people");
+      Alert.alert('Error', 'Enter a valid max people');
       return;
     }
     const price = Number(totalPrice);
     const share = Number(sharingPrice);
     if (Number.isNaN(price) || price < 0 || Number.isNaN(share) || share <= 0) {
-      Alert.alert("Error", "Enter valid total price and sharing price");
+      Alert.alert('Error', 'Enter valid total price and sharing price');
       return;
     }
     if (price < share) {
-      Alert.alert("Error", "Total price must be at least the sharing price");
+      Alert.alert('Error', 'Total price must be at least the sharing price');
       return;
     }
-    const partCount = Math.floor(price / share);
-
+    const uid = auth.currentUser?.uid;
+    if (!uid) {
+      Alert.alert('Error', 'You must be signed in to create an order.');
+      return;
+    }
     try {
       setLoading(true);
-      const uid = auth.currentUser?.uid ?? "";
-      const anonId = await getOrCreateAnonId();
+      const ordersRef = collection(db, 'orders');
+
+      const activeQ = query(
+        ordersRef,
+        where('hostId', '==', uid),
+        where('status', '==', 'open'),
+      );
+      const activeSnap = await getDocs(activeQ);
+      if (!activeSnap.empty) {
+        setLoading(false);
+        Alert.alert('You already have an active order.');
+        return;
+      }
+
+      const existingQ = query(
+        ordersRef,
+        where('hostId', '==', uid),
+        where('status', '==', 'waiting'),
+      );
+      const existingSnap = await getDocs(existingQ);
+      if (!existingSnap.empty) {
+        const existingId = existingSnap.docs[0].id;
+        Keyboard.dismiss();
+        router.push(`/order/${existingId}` as const);
+        return;
+      }
+
       const now = new Date();
-      const offsetMinutes: Record<string, number> = { "Now": 0, "15 min": 15, "30 min": 30, "1 hour": 60 };
+      const offsetMinutes: Record<string, number> = {
+        Now: 0,
+        '15 min': 15,
+        '30 min': 30,
+        '1 hour': 60,
+      };
       const mins = offsetMinutes[orderTime] ?? 0;
       const orderAt = new Date(now.getTime() + mins * 60 * 1000);
 
-      await addDoc(collection(db, "orders"), {
+      let location: { latitude: number; longitude: number } | null = null;
+      try {
+        location = await getUserLocation();
+      } catch {
+        // Map/location optional: create order without coordinates; it won't appear in nearby list
+      }
+
+      const nowMs = Date.now();
+      const expiresAt = nowMs + 30 * 60 * 1000;
+
+      const orderData = {
+        hostId: uid,
+        createdBy: uid,
+        participantIds: [uid],
+        status: 'waiting',
+        createdAt: serverTimestamp(),
+        expiresAt,
         maxPeople: num,
         totalPrice: price,
         sharingPrice: Math.round(share * 100) / 100,
-        participantsCount: partCount,
         pricePerPerson: Math.round(share * 100) / 100,
         foodType,
-        restaurantName: restaurantName.trim() || "Not specified",
-        restaurantLocation: restaurantLocation.trim() || "",
+        restaurantName: restaurantName.trim() || 'Not specified',
+        restaurantLocation: restaurantLocation.trim() || '',
         orderTime,
         orderAt: Timestamp.fromDate(orderAt),
-        joinedCount: uid ? 1 : 0,
-        participants: uid ? [anonId] : [],
-        participantUids: uid ? [uid] : [],
-        status: "open",
-        createdAt: serverTimestamp(),
-      });
+        campus: campus ?? null,
+        ...(location && {
+          location: {
+            latitude: location.latitude,
+            longitude: location.longitude,
+          },
+          latitude: location.latitude,
+          longitude: location.longitude,
+        }),
+      };
+      const ref = await addDoc(ordersRef, orderData);
+      const { createAlert } = await import('@/services/alerts');
+      await createAlert('new_order', 'New order created');
+      const { incrementGrowthOrders } =
+        await import('@/services/growthMetrics');
+      await incrementGrowthOrders();
+      const tenMinAgo = Timestamp.fromMillis(Date.now() - 10 * 60 * 1000);
+      const recentQ = query(
+        collection(db, 'orders'),
+        where('createdAt', '>=', tenMinAgo),
+      );
+      const recentSnap = await getDocs(recentQ);
+      if (recentSnap.size >= 10) {
+        await createAlert('high_activity', 'High activity detected');
+      }
+
+      const orderSnap = await getDoc(doc(db, 'orders', ref.id));
+      const fromFirestore = orderSnap.exists() ? orderSnap.data() : null;
+      console.log('ORDER FROM FIRESTORE:', fromFirestore);
+
+      // Analytics: track order creation event for this user
+      await trackOrderCreated(uid, ref.id);
+
       Keyboard.dismiss();
-      Alert.alert("Order created", "Order created");
-      setMaxPeople("");
-      setTotalPrice("");
-      setSharingPrice("");
+      router.push(`/order/${ref.id}` as const);
     } catch (error) {
-      Alert.alert("Error", error instanceof Error ? error.message : "Failed to create order");
+      Alert.alert(
+        'Error',
+        error instanceof Error ? error.message : 'Failed to create order',
+      );
     } finally {
       setLoading(false);
     }
   };
 
-  const isNative = Platform.OS === "ios" || Platform.OS === "android";
+  const isNative = Platform.OS === 'ios' || Platform.OS === 'android';
 
-  const content = (
-    <View style={{ flex: 1, justifyContent: "center", padding: 24 }}>
-          <Text style={{ fontSize: 22, fontWeight: "600", marginBottom: 16 }}>
-            Create Order
-          </Text>
-
-          <TextInput
-            placeholder="Max people (e.g. 3)"
-            value={maxPeople}
-            onChangeText={setMaxPeople}
-            keyboardType="numeric"
-            style={{
-              borderWidth: 1,
-              borderColor: "#ccc",
-              borderRadius: 10,
-              padding: 12,
-              marginBottom: 16,
-              color: "#fff",
-            }}
-            placeholderTextColor="#aaa"
-          />
-
-          <TextInput
-            placeholder="Total price ($)"
-            value={totalPrice}
-            onChangeText={setTotalPrice}
-            keyboardType="numeric"
-            style={{
-              borderWidth: 1,
-              borderColor: "#ccc",
-              borderRadius: 10,
-              padding: 12,
-              marginBottom: 16,
-              color: "#fff",
-            }}
-            placeholderTextColor="#aaa"
-          />
-
-          <TextInput
-            placeholder="Sharing price ($)"
-            value={sharingPrice}
-            onChangeText={setSharingPrice}
-            keyboardType="numeric"
-            style={{
-              borderWidth: 1,
-              borderColor: "#ccc",
-              borderRadius: 10,
-              padding: 12,
-              marginBottom: 16,
-              color: "#fff",
-            }}
-            placeholderTextColor="#aaa"
-          />
-
-          {pricePerPerson > 0 && participantsCount > 0 ? (
-            <Text style={{ fontSize: 14, color: "#22c55e", marginBottom: 16 }}>
-              ${pricePerPerson.toFixed(2)} per person ({participantsCount} people)
-            </Text>
-          ) : null}
-
-          <Text style={{ fontSize: 16, fontWeight: "500", marginBottom: 8 }}>
-            Food Type
-          </Text>
-          <View style={{ flexDirection: "row", gap: 10, marginBottom: 16 }}>
-            <TouchableOpacity
-              onPress={() => setFoodType("pizza")}
-              style={{
-                backgroundColor: foodType === "pizza" ? "#2563eb" : "#e2e8f0",
-                paddingVertical: 10,
-                paddingHorizontal: 14,
-                borderRadius: 8,
-              }}
-            >
-              <Text style={{ color: foodType === "pizza" ? "white" : "#1f2937", fontWeight: "600" }}>
-                pizza
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => setFoodType("noodles")}
-              style={{
-                backgroundColor: foodType === "noodles" ? "#2563eb" : "#e2e8f0",
-                paddingVertical: 10,
-                paddingHorizontal: 14,
-                borderRadius: 8,
-              }}
-            >
-              <Text style={{ color: foodType === "noodles" ? "white" : "#1f2937", fontWeight: "600" }}>
-                noodles
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          <TextInput
-            placeholder="Restaurant name"
-            value={restaurantName}
-            onChangeText={setRestaurantName}
-            style={{
-              borderWidth: 1,
-              borderColor: "#ccc",
-              borderRadius: 10,
-              padding: 12,
-              marginBottom: 16,
-              color: "#fff",
-            }}
-            placeholderTextColor="#aaa"
-          />
-
-          <TextInput
-            placeholder="Restaurant location"
-            value={restaurantLocation}
-            onChangeText={setRestaurantLocation}
-            style={{
-              borderWidth: 1,
-              borderColor: "#ccc",
-              borderRadius: 10,
-              padding: 12,
-              marginBottom: 16,
-              color: "#fff",
-            }}
-            placeholderTextColor="#aaa"
-          />
-
-          <Text style={{ fontSize: 16, fontWeight: "500", marginBottom: 8 }}>
-            Order in
-          </Text>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
-            {["Now", "15 min", "30 min", "1 hour"].map((opt) => (
-              <TouchableOpacity
-                key={opt}
-                onPress={() => setOrderTime(opt)}
-                style={{
-                  backgroundColor: orderTime === opt ? "#2563eb" : "#e2e8f0",
-                  paddingVertical: 8,
-                  paddingHorizontal: 12,
-                  borderRadius: 8,
-                }}
-              >
-                <Text style={{ color: orderTime === opt ? "white" : "#1f2937", fontWeight: "600", fontSize: 14 }}>
-                  {opt}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
+  const keyboardToolbar =
+    Platform.OS === 'ios' ? (
+      <InputAccessoryView nativeID={INPUT_ACCESSORY_ID}>
+        <View style={accessoryStyles.toolbar}>
           <TouchableOpacity
-            onPress={handleCreate}
-            style={{
-              backgroundColor: "#2563eb",
-              padding: 14,
-              borderRadius: 10,
-              alignItems: "center",
-              opacity: loading ? 0.7 : 1,
-            }}
-            disabled={loading}
+            onPress={handleAccessoryPrev}
+            style={accessoryStyles.button}
+            disabled={focusedIndex === null || focusedIndex === 0}
           >
-            <Text style={{ color: "white", fontWeight: "600" }}>
-              {loading ? "Creating..." : "Create Order"}
+            <Text
+              style={[
+                accessoryStyles.icon,
+                (focusedIndex === null || focusedIndex === 0) &&
+                  accessoryStyles.iconDisabled,
+              ]}
+            >
+              ↑
             </Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            onPress={handleAccessoryNext}
+            style={accessoryStyles.button}
+            disabled={
+              focusedIndex === null || focusedIndex === inputRefs.length - 1
+            }
+          >
+            <Text
+              style={[
+                accessoryStyles.icon,
+                (focusedIndex === null ||
+                  focusedIndex === inputRefs.length - 1) &&
+                  accessoryStyles.iconDisabled,
+              ]}
+            >
+              ↓
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={handleAccessoryDone}
+            style={accessoryStyles.button}
+          >
+            <Text style={accessoryStyles.icon}>✓</Text>
+          </TouchableOpacity>
+        </View>
+      </InputAccessoryView>
+    ) : null;
+
+  const content = (
+    <View style={{ flex: 1, justifyContent: 'center', padding: 24 }}>
+      <Text style={{ fontSize: 22, fontWeight: '600', marginBottom: 16 }}>
+        Create Order
+      </Text>
+
+      <TextInput
+        placeholder="Max people (e.g. 3)"
+        value={maxPeople}
+        onChangeText={setMaxPeople}
+        keyboardType="numeric"
+        style={{
+          borderWidth: 1,
+          borderColor: '#ccc',
+          borderRadius: 10,
+          padding: 12,
+          marginBottom: 16,
+          color: '#fff',
+        }}
+        placeholderTextColor="#aaa"
+      />
+
+      <TextInput
+        ref={totalPriceRef}
+        placeholder="Total price ($)"
+        value={totalPrice}
+        onChangeText={setTotalPrice}
+        keyboardType="numeric"
+        inputAccessoryViewID={
+          Platform.OS === 'ios' ? INPUT_ACCESSORY_ID : undefined
+        }
+        onFocus={() => setFocusedIndex(1)}
+        style={{
+          borderWidth: 1,
+          borderColor: '#ccc',
+          borderRadius: 10,
+          padding: 12,
+          marginBottom: 16,
+          color: '#fff',
+        }}
+        placeholderTextColor="#aaa"
+      />
+
+      <TextInput
+        ref={sharingPriceRef}
+        placeholder="Sharing price ($)"
+        value={sharingPrice}
+        onChangeText={setSharingPrice}
+        keyboardType="numeric"
+        inputAccessoryViewID={
+          Platform.OS === 'ios' ? INPUT_ACCESSORY_ID : undefined
+        }
+        onFocus={() => setFocusedIndex(2)}
+        style={{
+          borderWidth: 1,
+          borderColor: '#ccc',
+          borderRadius: 10,
+          padding: 12,
+          marginBottom: 16,
+          color: '#fff',
+        }}
+        placeholderTextColor="#aaa"
+      />
+
+      {pricePerPerson > 0 && splitCount > 0 ? (
+        <Text style={{ fontSize: 14, color: '#22c55e', marginBottom: 16 }}>
+          ${pricePerPerson.toFixed(2)} per person ({splitCount} people)
+        </Text>
+      ) : null}
+
+      <Text style={{ fontSize: 16, fontWeight: '500', marginBottom: 8 }}>
+        Food Type
+      </Text>
+      <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
+        <TouchableOpacity
+          onPress={() => setFoodType('pizza')}
+          style={{
+            backgroundColor: foodType === 'pizza' ? '#2563eb' : '#e2e8f0',
+            paddingVertical: 10,
+            paddingHorizontal: 14,
+            borderRadius: 8,
+          }}
+        >
+          <Text
+            style={{
+              color: foodType === 'pizza' ? 'white' : '#1f2937',
+              fontWeight: '600',
+            }}
+          >
+            pizza
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => setFoodType('noodles')}
+          style={{
+            backgroundColor: foodType === 'noodles' ? '#2563eb' : '#e2e8f0',
+            paddingVertical: 10,
+            paddingHorizontal: 14,
+            borderRadius: 8,
+          }}
+        >
+          <Text
+            style={{
+              color: foodType === 'noodles' ? 'white' : '#1f2937',
+              fontWeight: '600',
+            }}
+          >
+            noodles
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      <TextInput
+        ref={restaurantRef}
+        placeholder="Restaurant name"
+        value={restaurantName}
+        onChangeText={setRestaurantName}
+        inputAccessoryViewID={
+          Platform.OS === 'ios' ? INPUT_ACCESSORY_ID : undefined
+        }
+        onFocus={() => setFocusedIndex(0)}
+        style={{
+          borderWidth: 1,
+          borderColor: '#ccc',
+          borderRadius: 10,
+          padding: 12,
+          marginBottom: 16,
+          color: '#fff',
+        }}
+        placeholderTextColor="#aaa"
+      />
+
+      <TextInput
+        ref={restaurantLocationRef}
+        placeholder="Restaurant location"
+        value={restaurantLocation}
+        onChangeText={setRestaurantLocation}
+        inputAccessoryViewID={
+          Platform.OS === 'ios' ? INPUT_ACCESSORY_ID : undefined
+        }
+        onFocus={() => setFocusedIndex(3)}
+        style={{
+          borderWidth: 1,
+          borderColor: '#ccc',
+          borderRadius: 10,
+          padding: 12,
+          marginBottom: 16,
+          color: '#fff',
+        }}
+        placeholderTextColor="#aaa"
+      />
+
+      <Text style={{ fontSize: 16, fontWeight: '500', marginBottom: 8 }}>
+        Order in
+      </Text>
+      <View
+        style={{
+          flexDirection: 'row',
+          flexWrap: 'wrap',
+          gap: 8,
+          marginBottom: 16,
+        }}
+      >
+        {['Now', '15 min', '30 min', '1 hour'].map((opt) => (
+          <TouchableOpacity
+            key={opt}
+            onPress={() => setOrderTime(opt)}
+            style={{
+              backgroundColor: orderTime === opt ? '#2563eb' : '#e2e8f0',
+              paddingVertical: 8,
+              paddingHorizontal: 12,
+              borderRadius: 8,
+            }}
+          >
+            <Text
+              style={{
+                color: orderTime === opt ? 'white' : '#1f2937',
+                fontWeight: '600',
+                fontSize: 14,
+              }}
+            >
+              {opt}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      <TouchableOpacity
+        onPress={handleCreate}
+        style={{
+          backgroundColor: '#2563eb',
+          padding: 14,
+          borderRadius: 10,
+          alignItems: 'center',
+          opacity: loading ? 0.7 : 1,
+        }}
+        disabled={loading}
+      >
+        <Text style={{ color: 'white', fontWeight: '600' }}>
+          {loading ? 'Creating...' : 'Create Order'}
+        </Text>
+      </TouchableOpacity>
     </View>
   );
 
@@ -268,15 +487,46 @@ export default function CreateScreen() {
     content
   );
 
-  return isNative ? (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      keyboardVerticalOffset={0}
-    >
-      {inner}
-    </KeyboardAvoidingView>
-  ) : (
-    <View style={{ flex: 1 }}>{inner}</View>
+  return (
+    <>
+      {keyboardToolbar}
+      {isNative ? (
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={0}
+        >
+          {inner}
+        </KeyboardAvoidingView>
+      ) : (
+        <View style={{ flex: 1 }}>{inner}</View>
+      )}
+    </>
   );
 }
+
+const accessoryStyles = {
+  toolbar: {
+    height: 44,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'flex-end' as const,
+    paddingHorizontal: 12,
+    backgroundColor: '#d1d5db',
+    borderTopWidth: 1,
+    borderTopColor: '#9ca3af',
+  },
+  button: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    marginLeft: 8,
+  },
+  icon: {
+    fontSize: 18,
+    color: '#000',
+    fontWeight: '600' as const,
+  },
+  iconDisabled: {
+    opacity: 0.4,
+  },
+};

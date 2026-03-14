@@ -54,7 +54,12 @@ export default function AdminSupportScreen() {
 
   useEffect(() => {
     if (!selectedUserId || !isAdmin) return;
-    const messagesPath = collection(db, 'support_chats', selectedUserId, 'messages');
+    const messagesPath = collection(
+      db,
+      'support_chats',
+      selectedUserId,
+      'messages',
+    );
     const q = query(messagesPath, orderBy('createdAt', 'asc'));
 
     const unsub = onSnapshot(q, (snap) => {
@@ -87,7 +92,12 @@ export default function AdminSupportScreen() {
 
     setSending(true);
     try {
-      const messagesPath = collection(db, 'support_chats', selectedUserId, 'messages');
+      const messagesPath = collection(
+        db,
+        'support_chats',
+        selectedUserId,
+        'messages',
+      );
       await addDoc(messagesPath, {
         text: trimmed,
         sender: 'support',
@@ -102,15 +112,32 @@ export default function AdminSupportScreen() {
 
   if (!isAdmin) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
-        <Text style={{ color: '#64748b', textAlign: 'center' }}>Access denied</Text>
+      <SafeAreaView
+        style={{
+          flex: 1,
+          backgroundColor: '#fff',
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: 24,
+        }}
+      >
+        <Text style={{ color: '#64748b', textAlign: 'center' }}>
+          Access denied
+        </Text>
       </SafeAreaView>
     );
   }
 
   if (loading) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center' }}>
+      <SafeAreaView
+        style={{
+          flex: 1,
+          backgroundColor: '#fff',
+          justifyContent: 'center',
+          alignItems: 'center',
+        }}
+      >
         <Text style={{ color: '#64748b' }}>Loading...</Text>
       </SafeAreaView>
     );
@@ -119,7 +146,9 @@ export default function AdminSupportScreen() {
   if (!selectedUserId) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: '#fff', padding: 16 }}>
-        <Text style={{ fontSize: 18, fontWeight: '600', marginBottom: 16 }}>Support chats</Text>
+        <Text style={{ fontSize: 18, fontWeight: '600', marginBottom: 16 }}>
+          Support chats
+        </Text>
         {userIds.length === 0 ? (
           <Text style={{ color: '#94a3b8' }}>No support chats yet</Text>
         ) : (
@@ -127,7 +156,11 @@ export default function AdminSupportScreen() {
             <TouchableOpacity
               key={id}
               onPress={() => setSelectedUserId(id)}
-              style={{ padding: 12, borderBottomWidth: 1, borderBottomColor: '#e2e8f0' }}
+              style={{
+                padding: 12,
+                borderBottomWidth: 1,
+                borderBottomColor: '#e2e8f0',
+              }}
             >
               <Text style={{ color: '#334155' }}>{id}</Text>
             </TouchableOpacity>
@@ -138,12 +171,25 @@ export default function AdminSupportScreen() {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }} edges={['bottom']}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', padding: 12, borderBottomWidth: 1, borderBottomColor: '#e2e8f0' }}>
+    <SafeAreaView
+      style={{ flex: 1, backgroundColor: '#fff' }}
+      edges={['bottom']}
+    >
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          padding: 12,
+          borderBottomWidth: 1,
+          borderBottomColor: '#e2e8f0',
+        }}
+      >
         <TouchableOpacity onPress={() => setSelectedUserId(null)}>
           <Text style={{ color: '#2563eb', marginRight: 16 }}>← Back</Text>
         </TouchableOpacity>
-        <Text style={{ fontSize: 14, color: '#64748b' }} numberOfLines={1}>{selectedUserId}</Text>
+        <Text style={{ fontSize: 14, color: '#64748b' }} numberOfLines={1}>
+          {selectedUserId}
+        </Text>
       </View>
       <FlatList
         ref={flatListRef}
@@ -152,7 +198,11 @@ export default function AdminSupportScreen() {
         contentContainerStyle={{ padding: 16, paddingBottom: 8 }}
         ListEmptyComponent={
           <View style={{ padding: 24, alignItems: 'center' }}>
-            <Text style={{ color: '#94a3b8', fontSize: 14, textAlign: 'center' }}>No messages</Text>
+            <Text
+              style={{ color: '#94a3b8', fontSize: 14, textAlign: 'center' }}
+            >
+              No messages
+            </Text>
           </View>
         }
         renderItem={({ item }) => {
@@ -169,8 +219,18 @@ export default function AdminSupportScreen() {
                 marginBottom: 8,
               }}
             >
-              <Text style={{ color: isUser ? '#fff' : '#334155', fontSize: 14 }}>{item.text}</Text>
-              <Text style={{ color: isUser ? 'rgba(255,255,255,0.8)' : '#94a3b8', fontSize: 11, marginTop: 2 }}>
+              <Text
+                style={{ color: isUser ? '#fff' : '#334155', fontSize: 14 }}
+              >
+                {item.text}
+              </Text>
+              <Text
+                style={{
+                  color: isUser ? 'rgba(255,255,255,0.8)' : '#94a3b8',
+                  fontSize: 11,
+                  marginTop: 2,
+                }}
+              >
                 {formatTorontoTime(item.createdAt)}
               </Text>
             </View>

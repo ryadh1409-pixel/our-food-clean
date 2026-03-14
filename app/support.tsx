@@ -66,7 +66,7 @@ export default function SupportChatScreen() {
       () => {
         setMessages([]);
         setLoading(false);
-      }
+      },
     );
 
     return () => unsub();
@@ -99,14 +99,27 @@ export default function SupportChatScreen() {
 
   if (!uid) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
-        <Text style={{ color: '#64748b', textAlign: 'center' }}>Please sign in to contact support.</Text>
+      <SafeAreaView
+        style={{
+          flex: 1,
+          backgroundColor: '#fff',
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: 24,
+        }}
+      >
+        <Text style={{ color: '#64748b', textAlign: 'center' }}>
+          Please sign in to contact support.
+        </Text>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }} edges={['bottom']}>
+    <SafeAreaView
+      style={{ flex: 1, backgroundColor: '#fff' }}
+      edges={['bottom']}
+    >
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -119,7 +132,9 @@ export default function SupportChatScreen() {
           contentContainerStyle={{ padding: 16, paddingBottom: 8 }}
           ListEmptyComponent={
             <View style={{ padding: 24, alignItems: 'center' }}>
-              <Text style={{ color: '#94a3b8', fontSize: 14, textAlign: 'center' }}>
+              <Text
+                style={{ color: '#94a3b8', fontSize: 14, textAlign: 'center' }}
+              >
                 No messages yet. Send a message to get help.
               </Text>
             </View>
@@ -138,10 +153,18 @@ export default function SupportChatScreen() {
                   marginBottom: 8,
                 }}
               >
-                <Text style={{ color: isUser ? '#fff' : '#334155', fontSize: 14 }}>
+                <Text
+                  style={{ color: isUser ? '#fff' : '#334155', fontSize: 14 }}
+                >
                   {item.text}
                 </Text>
-                <Text style={{ color: isUser ? 'rgba(255,255,255,0.8)' : '#94a3b8', fontSize: 11, marginTop: 2 }}>
+                <Text
+                  style={{
+                    color: isUser ? 'rgba(255,255,255,0.8)' : '#94a3b8',
+                    fontSize: 11,
+                    marginTop: 2,
+                  }}
+                >
                   {formatTorontoTime(item.createdAt)}
                 </Text>
               </View>

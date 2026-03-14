@@ -5,13 +5,57 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "ourfoodclean",
+    "scheme": "halforder",
+    "deepLinks": true,
+    "splash": {
+      "image": "./assets/images/halforder-logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.anonymous.ourfoodclean",
+      "associatedDomains": [
+        "applinks:halforder.app",
+        "applinks:www.halforder.app"
+      ],
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLSchemes": ["halforder"],
+            "CFBundleURLName": "HalfOrder Deep Link"
+          },
+          {
+            "CFBundleURLSchemes": [
+              "com.googleusercontent.apps.1087129301998-fpbmk5onqteqmgjsf91hq7cl7knobukf"
+            ]
+          }
+        ]
+      }
     },
     "android": {
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "halforder.app",
+              "pathPrefix": "/order"
+            },
+            {
+              "scheme": "https",
+              "host": "www.halforder.app",
+              "pathPrefix": "/order"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -19,7 +63,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.anonymous.ourfoodclean"
     },
     "web": {
       "output": "static",
@@ -28,9 +73,15 @@
     "plugins": [
       "expo-router",
       [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "HalfOrder needs your location to create and show orders on the map."
+        }
+      ],
+      [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
+          "image": "./assets/images/halforder-logo.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff",
@@ -38,11 +89,18 @@
             "backgroundColor": "#000000"
           }
         }
-      ]
+      ],
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "9b7ffbaf-659d-493c-a1bd-a695e2c2982c"
+      }
     }
   }
 }

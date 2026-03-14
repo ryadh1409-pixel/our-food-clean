@@ -13,7 +13,7 @@ import { db } from './firebase';
 export async function reportAndBlock(
   reporterUid: string,
   reportedUid: string,
-  orderId: string
+  orderId: string,
 ): Promise<void> {
   await addDoc(collection(db, 'reports'), {
     reporterId: reporterUid,
@@ -31,12 +31,12 @@ export async function reportAndBlock(
 
 export async function isBlockedByAny(
   blockedUid: string,
-  blockerUids: string[]
+  blockerUids: string[],
 ): Promise<boolean> {
   if (blockerUids.length === 0) return false;
   const q = query(
     collection(db, 'blocks'),
-    where('blockedId', '==', blockedUid)
+    where('blockedId', '==', blockedUid),
   );
   const snap = await getDocs(q);
   return snap.docs.some((d) => {
@@ -47,18 +47,21 @@ export async function isBlockedByAny(
 
 export async function hasBlockConflict(
   joinerUid: string,
-  participantUids: string[]
+  participantIds: string[],
 ): Promise<boolean> {
   const blockedByMe = query(
     collection(db, 'blocks'),
-    where('blockerId', '==', joinerUid)
+    where('blockerId', '==', joinerUid),
   );
   const blockedMe = query(
     collection(db, 'blocks'),
-    where('blockedId', '==', joinerUid)
+    where('blockedId', '==', joinerUid),
   );
-  const [snap1, snap2] = await Promise.all([getDocs(blockedByMe), getDocs(blockedMe)]);
-  const participantSet = new Set(participantUids);
+  const [snap1, snap2] = await Promise.all([
+    getDocs(blockedByMe),
+    getDocs(blockedMe),
+  ]);
+  const participantSet = new Set(participantIds);
   for (const d of snap1.docs) {
     if (participantSet.has(d.data()?.blockedId ?? '')) return true;
   }
