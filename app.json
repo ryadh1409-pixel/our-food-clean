@@ -1,14 +1,13 @@
 {
   "expo": {
-    "name": "ourfood-clean",
+    "name": "HalfOrder",
     "slug": "ourfood-clean",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "halforder",
-    "deepLinks": true,
     "splash": {
-      "image": "./assets/images/halforder-logo.png",
+      "image": "./assets/images/splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
@@ -16,7 +15,8 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.ourfoodclean",
+      "bundleIdentifier": "com.halforder.app",
+      "buildNumber": "2",
       "associatedDomains": [
         "applinks:halforder.app",
         "applinks:www.halforder.app"
@@ -81,7 +81,7 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/halforder-logo.png",
+          "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff",

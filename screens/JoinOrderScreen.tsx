@@ -15,6 +15,7 @@ type JoinOrderScreenProps = {
   restaurantName: string;
   onJoin: () => void | Promise<void>;
   joining?: boolean;
+  expired?: boolean;
 };
 
 /**
@@ -26,6 +27,7 @@ export default function JoinOrderScreen({
   restaurantName,
   onJoin,
   joining = false,
+  expired = false,
 }: JoinOrderScreenProps) {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
@@ -34,18 +36,22 @@ export default function JoinOrderScreen({
         <Text style={styles.title}>{'You\'re invited'}</Text>
         <Text style={styles.restaurant}>{restaurantName || 'This order'}</Text>
         <Text style={styles.subtitle}>Want to split the order?</Text>
-        <TouchableOpacity
-          style={[styles.joinButton, joining && styles.joinButtonDisabled]}
-          onPress={() => onJoin()}
-          disabled={joining}
-          activeOpacity={0.85}
-        >
-          {joining ? (
-            <ActivityIndicator size="small" color="#000" />
-          ) : (
-            <Text style={styles.joinButtonText}>Join Order</Text>
-          )}
-        </TouchableOpacity>
+        {expired ? (
+          <Text style={styles.expiredMessage}>This order has expired.</Text>
+        ) : (
+          <TouchableOpacity
+            style={[styles.joinButton, joining && styles.joinButtonDisabled]}
+            onPress={() => onJoin()}
+            disabled={joining}
+            activeOpacity={0.85}
+          >
+            {joining ? (
+              <ActivityIndicator size="small" color="#000" />
+            ) : (
+              <Text style={styles.joinButtonText}>Join Order</Text>
+            )}
+          </TouchableOpacity>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -98,5 +104,12 @@ const styles = StyleSheet.create({
     color: theme.colors.textOnPrimary ?? '#000',
     fontWeight: '700',
     fontSize: 16,
+  },
+  expiredMessage: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#DC2626',
+    textAlign: 'center',
+    marginTop: 8,
   },
 });

@@ -40,7 +40,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import AppLogo from '../../components/AppLogo';
 import SafeMap, { Marker } from '@/components/SafeMap';
-import ShareOrderButton from '@/components/ShareOrderButton';
 import { TrustScoreLabel } from '@/components/TrustScoreLabel';
 import JoinOrderScreen from '@/screens/JoinOrderScreen';
 import { useTrustScore } from '@/hooks/useTrustScore';
@@ -748,11 +747,12 @@ export default function OrderRoomScreen() {
   };
 
   const handleInviteViaWhatsApp = async () => {
-    const orderLink = generateInviteLink(orderId, auth.currentUser?.uid);
+    const orderLink = `https://halforder.app/join/${orderId}`;
+    const restaurantName = order?.restaurantName ?? 'This order';
     const mealType = order?.mealType ?? 'Not specified';
     const sharePrice =
       order?.sharePrice != null ? order.sharePrice.toFixed(2) : '—';
-    const message = `Hey! I'm using HalfOrder to share meals and save money.\nJoin my order here: ${orderLink}\n\nMeal: ${mealType}\nShare price: $${sharePrice}\n\nDownload HalfOrder and join!`;
+    const message = `Hey! I'm using HalfOrder to share meals and save money.\n\nJoin my order here:\n${orderLink}\n\nRestaurant: ${restaurantName}\nMeal: ${mealType}\nShare price: $${sharePrice}\n\nDownload HalfOrder and join!`;
     const encodedMessage = encodeURIComponent(message);
     const waUrl = `https://wa.me/?text=${encodedMessage}`;
 
@@ -1105,13 +1105,27 @@ export default function OrderRoomScreen() {
       (remainingMs ?? order.expiresAtMs - Date.now()) <= 0);
 
   let expiryLabel: string | null = null;
+  let orderExpiresInLabel: string | null = null; // "29:45" for display under card
   if (order.expiresAtMs && !isExpired) {
     const ms = remainingMs ?? order.expiresAtMs - Date.now();
     const totalSeconds = Math.max(0, Math.floor(ms / 1000));
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;
-    expiryLabel = `Expires in ${minutes}:${seconds.toString().padStart(2, '0')}`;
+    const mmss = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    expiryLabel = `Expires in ${mmss}`;
+    orderExpiresInLabel = mmss;
   }
+  const isExpiryUrgent =
+    order.expiresAtMs &&
+    !isExpired &&
+    (remainingMs ?? order.expiresAtMs - Date.now()) < 5 * 60 * 1000;
+  const timerMessageUnderCard = isReady
+    ? null
+    : isExpired
+      ? 'This order has expired.'
+      : orderExpiresInLabel != null
+        ? `Order expires in: ${orderExpiresInLabel}`
+        : null;
 
   const handleJoinFromLink = async () => {
     const uid = auth.currentUser?.uid;
@@ -1193,277 +1207,278 @@ export default function OrderRoomScreen() {
         restaurantName={order?.restaurantName ?? 'This order'}
         onJoin={handleJoinFromLink}
         joining={joiningAsGuest}
+        expired={isExpired}
       />
     );
   }
 
+  const orderTitle = hostLabel || order.restaurantName || 'Order';
+
   return (
     <SafeAreaView
-      style={{ flex: 1, backgroundColor: '#fff' }}
+      style={[styles.safeArea, Platform.OS === 'web' && styles.safeAreaWeb]}
       edges={['bottom']}
     >
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{
-          paddingHorizontal: 16,
-          paddingTop: 16,
-          paddingBottom: 120,
-        }}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={{ paddingBottom: 12, alignItems: 'center' }}>
-          <AppLogo />
-        </View>
-        <Text
-          style={{
-            fontSize: 22,
-            fontWeight: '700',
-            color: '#000000',
-            marginBottom: 8,
+      <View style={Platform.OS === 'web' ? styles.cardWrapperWeb : styles.cardWrapperNative}>
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{
+            paddingHorizontal: 16,
+            paddingTop: 16,
+            paddingBottom: 120,
           }}
+          showsVerticalScrollIndicator={false}
         >
-          {order.restaurantName}
-        </Text>
-        {order.mealType ? (
-          <Text style={{ fontSize: 14, color: '#666666', marginBottom: 4 }}>
-            Meal Type: {order.mealType}
-          </Text>
-        ) : null}
-        {order.restaurantLocation ? (
-          <Text style={{ fontSize: 14, color: '#666666', marginBottom: 8 }}>
-            {order.restaurantLocation}
-          </Text>
-        ) : null}
-        {hasLocationCoords && orderLat != null && orderLng != null ? (
-          Platform.OS === 'web' ? (
-            <iframe
-              width="100%"
-              height="300"
-              style={{ border: 0 }}
-              loading="lazy"
-              src={`https://www.google.com/maps?q=${orderLat},${orderLng}&z=15&output=embed`}
-            />
-          ) : (
-            <SafeMap
-              style={{ height: 200, borderRadius: 12 }}
-              initialRegion={{
-                latitude: orderLat,
-                longitude: orderLng,
-                latitudeDelta: 0.01,
-                longitudeDelta: 0.01,
-              }}
-            >
-              <Marker coordinate={{ latitude: orderLat, longitude: orderLng }} />
-            </SafeMap>
-          )
-        ) : null}
-
-        <View style={styles.orderMetaCard}>
-          <View
+          {/* Top section: logo, order title, meal type, map */}
+          <View style={{ paddingBottom: 16, alignItems: 'center' }}>
+            <AppLogo />
+          </View>
+          <Text
             style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              flexWrap: 'wrap',
-              gap: 8,
+              fontSize: 22,
+              fontWeight: '700',
+              color: '#000000',
+              marginBottom: 8,
+              textAlign: 'center',
             }}
           >
+            {orderTitle}
+          </Text>
+          <Text
+            style={{
+              fontSize: 16,
+              color: '#374151',
+              marginBottom: 12,
+              textAlign: 'center',
+            }}
+          >
+            Meal Type: {order.mealType ?? '—'}
+          </Text>
+          {hasLocationCoords && orderLat != null && orderLng != null ? (
+            Platform.OS === 'web' ? (
+              <iframe
+                width="100%"
+                height="200"
+                style={{ border: 0, borderRadius: 12 }}
+                loading="lazy"
+                src={`https://www.google.com/maps?q=${orderLat},${orderLng}&z=15&output=embed`}
+              />
+            ) : (
+              <SafeMap
+                style={{ height: 200, borderRadius: 12, marginBottom: 16 }}
+                initialRegion={{
+                  latitude: orderLat,
+                  longitude: orderLng,
+                  latitudeDelta: 0.01,
+                  longitudeDelta: 0.01,
+                }}
+              >
+                <Marker
+                  coordinate={{ latitude: orderLat, longitude: orderLng }}
+                />
+              </SafeMap>
+            )
+          ) : null}
+
+          {/* Order details card */}
+          <View style={styles.orderMetaCard}>
             <Text style={styles.orderMetaText}>Host: {hostLabel}</Text>
             {otherTrustScore && otherTrustScore.count > 0 ? (
-              <TrustScoreLabel
-                average={otherTrustScore.average}
-                count={otherTrustScore.count}
-                showTrusted
-                compact
-              />
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                <TrustScoreLabel
+                  average={otherTrustScore.average}
+                  count={otherTrustScore.count}
+                  showTrusted
+                  compact
+                />
+              </View>
             ) : null}
-          </View>
-          {order.mealType ? (
             <Text style={styles.orderMetaSubtext}>
-              Meal Type: {order.mealType}
+              Meal Type: {order.mealType ?? '—'}
             </Text>
-          ) : null}
-          {isExpired ? (
-            <Text style={styles.expiryText}>This order expired</Text>
-          ) : expiryLabel ? (
-            <Text style={styles.expiryText}>⏱ {expiryLabel}</Text>
-          ) : null}
-          <Text style={styles.orderMetaSubtext}>Total: {totalLabel}</Text>
-          {order.sharePrice != null ? (
+            <Text style={styles.orderMetaSubtext}>Total: {totalLabel}</Text>
             <Text style={styles.orderMetaSubtext}>
               Share Price: {sharePriceLabel}
             </Text>
-          ) : null}
-          <Text style={styles.orderMetaSubtext}>
-            Food share: ${foodShare.toFixed(2)}
-          </Text>
-          <Text style={styles.orderMetaSubtext}>
-            Service fee: ${serviceFeeAmount.toFixed(2)}
-          </Text>
-          <Text style={[styles.orderMetaSubtext, styles.totalToPay]}>
-            Total to pay: {youPayLabel}
-          </Text>
-          {creditApplied > 0 ? (
-            <Text style={styles.creditAppliedText}>
-              Credit applied: -${creditApplied.toFixed(2)}
+            <Text style={styles.orderMetaSubtext}>
+              Food share: ${foodShare.toFixed(2)}
             </Text>
-          ) : null}
-          {firstOrderCompleted === false &&
-          (order.subtotal != null || order.tax != null) ? (
-            <Text style={styles.taxBenefitText}>
-              HalfOrder pays the tax on your first order.
+            <Text style={styles.orderMetaSubtext}>
+              Service fee: ${serviceFeeAmount.toFixed(2)}
             </Text>
-          ) : null}
-          {order.status === 'matched' && qualifiesForTaxGift ? (
-            <View style={styles.taxGiftBanner}>
-              <Text style={styles.taxGiftBannerTitle}>🎉 Congratulations</Text>
-              <Text style={styles.taxGiftBannerText}>
-                HalfOrder paid your tax on this order.
+            <Text style={[styles.orderMetaSubtext, styles.totalToPay]}>
+              Total to pay: {youPayLabel}
+            </Text>
+            {creditApplied > 0 ? (
+              <Text style={styles.creditAppliedText}>
+                Credit applied: -${creditApplied.toFixed(2)}
               </Text>
-            </View>
-          ) : null}
-          {order.status === 'matched' && !qualifiesForTaxGift ? (
-            <View style={styles.taxGiftProgressBox}>
-              <Text style={styles.taxGiftProgressText}>
-                {taxGiftRemaining === 1
-                  ? 'Only 1 more order to get your tax paid by HalfOrder 🎁'
-                  : `Only ${taxGiftRemaining} more orders to get your tax paid by HalfOrder 🎁`}
+            ) : null}
+            {firstOrderCompleted === false &&
+            (order.subtotal != null || order.tax != null) ? (
+              <Text style={styles.taxBenefitText}>
+                HalfOrder pays the tax on your first order.
               </Text>
-            </View>
-          ) : null}
-          {order.status === 'matched' && qualifiesForTaxGift ? (
-            <Text style={styles.taxGiftQualifiedText}>
-              This order qualifies for a tax gift 🎁
+            ) : null}
+            {order.status === 'matched' && qualifiesForTaxGift ? (
+              <View style={styles.taxGiftBanner}>
+                <Text style={styles.taxGiftBannerTitle}>🎉 Congratulations</Text>
+                <Text style={styles.taxGiftBannerText}>
+                  HalfOrder paid your tax on this order.
+                </Text>
+              </View>
+            ) : null}
+            {order.status === 'matched' && !qualifiesForTaxGift ? (
+              <View style={styles.taxGiftProgressBox}>
+                <Text style={styles.taxGiftProgressText}>
+                  {taxGiftRemaining === 1
+                    ? 'Only 1 more order to get your tax paid by HalfOrder 🎁'
+                    : `Only ${taxGiftRemaining} more orders to get your tax paid by HalfOrder 🎁`}
+                </Text>
+              </View>
+            ) : null}
+            {order.status === 'matched' && qualifiesForTaxGift ? (
+              <Text style={styles.taxGiftQualifiedText}>
+                This order qualifies for a tax gift 🎁
+              </Text>
+            ) : null}
+            <Text style={styles.orderMetaSubtext}>
+              Created: {createdAtDateLabel} {createdAtTimeLabel}
             </Text>
-          ) : null}
-          <Text style={styles.orderMetaSubtext}>
-            Created: {createdAtDateLabel} {createdAtTimeLabel}
-          </Text>
 
-          <View style={[styles.statusBadge, statusBadgeStyle]}>
-            <Text style={styles.statusText}>{statusBadgeText}</Text>
+            {/* Status indicator: green pill when ready with white text */}
+            <View style={[styles.statusBadge, statusBadgeStyle]}>
+              <Text
+                style={[
+                  styles.statusText,
+                  isReady && styles.statusTextReady,
+                ]}
+              >
+                {isReady ? 'Order is ready' : statusBadgeText}
+              </Text>
+            </View>
+
+            {/* Participants */}
+            <Text style={styles.participantsText}>
+              {participantsCount} / {maxPeople} people joined
+            </Text>
+            {participantsCount >= maxPeople ? (
+              <Text style={styles.readyMessage}>Order is ready 🎉</Text>
+            ) : null}
           </View>
 
-          <Text style={styles.participantsText}>
-            {participantsCount} / {maxPeople} people joined
-          </Text>
-          {participantsCount < maxPeople ? (
-            <Text style={styles.waitingMessage}>
-              Invite someone to split the order 🍔
-            </Text>
-          ) : (
-            <Text style={styles.readyMessage}>Order is ready 🎉</Text>
-          )}
-        </View>
+          {/* 30-minute expiration timer under the card (orange/red) */}
+          {timerMessageUnderCard != null ? (
+            <View style={styles.timerUnderCard}>
+              <Text
+                style={[
+                  styles.timerUnderCardText,
+                  isExpired && styles.timerUnderCardExpired,
+                  isExpiryUrgent && !isExpired && styles.timerUnderCardUrgent,
+                ]}
+              >
+                {timerMessageUnderCard}
+              </Text>
+            </View>
+          ) : null}
 
-        <View
-          style={{
-            flexDirection: 'row',
-            justifyContent: 'space-between',
-            marginBottom: 12,
-          }}
-        >
-          <TouchableOpacity
-            onPress={handlePressChat}
-            disabled={!canChat}
+          {/* Buttons: Chat (yellow), Call (gray), WhatsApp (green) */}
+          <View
             style={{
-              flex: 1,
-              marginRight: 6,
-              paddingVertical: 10,
-              borderRadius: 10,
-              backgroundColor: canChat ? '#FFD700' : '#E5E5E5',
-              alignItems: 'center',
-            }}
-          >
-            <Text
-              style={{ color: canChat ? '#000' : '#666', fontWeight: '600' }}
-            >
-              Chat
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={handlePressCall}
-            disabled={!canChat && !hostPhone}
-            style={{
-              flex: 1,
-              marginHorizontal: 6,
-              paddingVertical: 10,
-              borderRadius: 10,
-              backgroundColor: canChat || hostPhone ? '#16a34a' : '#E5E5E5',
-              alignItems: 'center',
               flexDirection: 'row',
-              justifyContent: 'center',
-              gap: 6,
+              justifyContent: 'space-between',
+              gap: 8,
+              marginBottom: 12,
             }}
           >
-            <MaterialIcons
-              name="call"
-              size={18}
-              color={canChat || hostPhone ? '#fff' : '#000'}
-            />
-            <Text
+            <TouchableOpacity
+              onPress={handlePressChat}
+              disabled={!canChat}
               style={{
-                color: canChat || hostPhone ? '#fff' : '#000',
-                fontWeight: '600',
+                flex: 1,
+                paddingVertical: 12,
+                borderRadius: 10,
+                backgroundColor: canChat ? '#FFD700' : '#E5E5E5',
+                alignItems: 'center',
               }}
             >
-              Call
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={handlePressWhatsApp}
-            disabled={!hasWhatsApp}
-            style={{
-              flex: 1,
-              marginLeft: 6,
-              paddingVertical: 10,
-              borderRadius: 10,
-              backgroundColor: hasWhatsApp ? '#25D366' : '#E5E5E5',
-              alignItems: 'center',
-            }}
-          >
-            <Text
+              <Text
+                style={{ color: canChat ? '#000' : '#666', fontWeight: '600' }}
+              >
+                Chat
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handlePressCall}
+              disabled={!canChat && !hostPhone}
               style={{
-                color: hasWhatsApp ? '#fff' : '#000',
-                fontWeight: '600',
+                flex: 1,
+                paddingVertical: 12,
+                borderRadius: 10,
+                backgroundColor:
+                  canChat || hostPhone ? '#6B7280' : '#E5E5E5',
+                alignItems: 'center',
+                flexDirection: 'row',
+                justifyContent: 'center',
+                gap: 6,
               }}
             >
-              WhatsApp
-            </Text>
-          </TouchableOpacity>
-        </View>
-        <TouchableOpacity
-          onPress={handleInvite}
-          style={{
-            marginBottom: 12,
-            paddingVertical: 10,
-            borderRadius: 10,
-            backgroundColor: '#2563eb',
-            alignItems: 'center',
-          }}
-        >
-          <Text style={{ color: '#fff', fontWeight: '600' }}>
-            Invite someone to split the order 🍔
-          </Text>
-        </TouchableOpacity>
+              <MaterialIcons
+                name="call"
+                size={18}
+                color={canChat || hostPhone ? '#fff' : '#000'}
+              />
+              <Text
+                style={{
+                  color: canChat || hostPhone ? '#fff' : '#000',
+                  fontWeight: '600',
+                }}
+              >
+                Call
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handlePressWhatsApp}
+              disabled={!hasWhatsApp}
+              style={{
+                flex: 1,
+                paddingVertical: 12,
+                borderRadius: 10,
+                backgroundColor: hasWhatsApp ? '#25D366' : '#E5E5E5',
+                alignItems: 'center',
+              }}
+            >
+              <Text
+                style={{
+                  color: hasWhatsApp ? '#fff' : '#000',
+                  fontWeight: '600',
+                }}
+              >
+                WhatsApp
+              </Text>
+            </TouchableOpacity>
+          </View>
 
-        <View
-          style={{
-            marginTop: 8,
-            paddingTop: 12,
-            borderTopWidth: 1,
-            borderTopColor: '#E5E5E5',
-          }}
-        >
-          <ShareOrderButton
-            orderId={orderId}
-            restaurantName={order.restaurantName ?? 'this order'}
-            variant="buttons"
-          />
-        </View>
-      </ScrollView>
+          {/* Large Invite via WhatsApp button (matches screenshot) */}
+          <TouchableOpacity
+            onPress={handleInviteViaWhatsApp}
+            style={{
+              marginBottom: 24,
+              paddingVertical: 14,
+              borderRadius: 10,
+              backgroundColor: '#25D366',
+              alignItems: 'center',
+              width: '100%',
+            }}
+          >
+            <Text style={{ color: '#fff', fontWeight: '600', fontSize: 16 }}>
+              Invite via WhatsApp
+            </Text>
+          </TouchableOpacity>
+        </ScrollView>
 
       {order.status === 'matched' ? (
-        <View style={styles.orderStatusSection}>
+        <View style={[styles.orderStatusSection, Platform.OS === 'web' && { marginHorizontal: 16 }]}>
           <Text style={styles.orderStatusTitle}>Order Status</Text>
           <View style={styles.orderStatusButtons}>
             <TouchableOpacity
@@ -1493,7 +1508,7 @@ export default function OrderRoomScreen() {
       {order?.status === 'completed' &&
       completedOrderAlreadyRated === false &&
       otherParticipantId ? (
-        <View style={styles.orderStatusSection}>
+        <View style={[styles.orderStatusSection, Platform.OS === 'web' && { marginHorizontal: 16 }]}>
           <Text style={styles.orderStatusTitle}>Rate your order partner</Text>
           <TouchableOpacity
             style={styles.ratePartnerButton}
@@ -1533,18 +1548,21 @@ export default function OrderRoomScreen() {
         </View>
       ) : null}
       <View
-        style={{
-          paddingHorizontal: 16,
-          paddingVertical: 8,
-          backgroundColor: '#f8fafc',
-        }}
+        style={[
+          {
+            paddingHorizontal: 16,
+            paddingVertical: 8,
+            backgroundColor: '#f8fafc',
+          },
+          Platform.OS === 'web' && { alignSelf: 'center', width: '100%', maxWidth: 420 },
+        ]}
       >
         <Text style={{ fontSize: 12, color: '#64748b', textAlign: 'center' }}>
           For your safety do not share personal information or external links.
         </Text>
       </View>
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
+        style={[{ flex: 1 }, Platform.OS === 'web' && { maxWidth: 420, alignSelf: 'center', width: '100%' }]}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
@@ -1713,6 +1731,7 @@ export default function OrderRoomScreen() {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+      </View>
 
       <Modal
         visible={!!incomingCall}
@@ -1788,14 +1807,37 @@ export default function OrderRoomScreen() {
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
+  safeAreaWeb: {
+    alignItems: 'center',
+  },
+  cardWrapperNative: {
+    flex: 1,
+    width: '100%',
+  },
+  cardWrapperWeb: {
+    flex: 1,
+    width: '100%',
+    maxWidth: 420,
+  },
   orderMetaCard: {
     marginVertical: 10,
-    padding: 12,
+    padding: 16,
     borderRadius: 12,
     marginBottom: 12,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#E5E5E5',
+    ...(Platform.OS === 'web' && {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.08,
+      shadowRadius: 8,
+      elevation: 3,
+    }),
   },
   orderMetaText: {
     fontSize: 14,
@@ -1901,23 +1943,28 @@ const styles = StyleSheet.create({
   statusBadge: {
     marginTop: 10,
     paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 12,
+    paddingHorizontal: 14,
+    borderRadius: 999,
     alignSelf: 'flex-start',
   },
   statusBadgeWaiting: {
-    backgroundColor: '#FEF3C7', // waiting / orange
+    backgroundColor: '#FEF3C7',
   },
   statusBadgeReady: {
-    backgroundColor: '#DCFCE7', // matched / green
+    backgroundColor: '#16a34a',
   },
   statusBadgeClosed: {
-    backgroundColor: '#E5E7EB', // neutral grey
+    backgroundColor: '#E5E7EB',
   },
   statusText: {
     fontWeight: '600',
     fontSize: 14,
     color: '#1e293b',
+  },
+  statusTextReady: {
+    fontWeight: '600',
+    fontSize: 14,
+    color: '#FFFFFF',
   },
   participantsText: {
     fontSize: 16,
@@ -2005,5 +2052,20 @@ const styles = StyleSheet.create({
     color: '#F59E0B',
     marginTop: 6,
     fontWeight: '600',
+  },
+  timerUnderCard: {
+    marginBottom: 16,
+    alignItems: 'center',
+  },
+  timerUnderCardText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#EA580C',
+  },
+  timerUnderCardUrgent: {
+    color: '#DC2626',
+  },
+  timerUnderCardExpired: {
+    color: '#DC2626',
   },
 });
