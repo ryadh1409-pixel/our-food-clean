@@ -405,37 +405,31 @@ export default function JoinScreen() {
       });
       return;
     }
-    Alert.alert(
-      'Report host',
-      'Send a report to HalfOrder for review? This does not automatically block the host.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Report',
-          onPress: () => {
-            void (async () => {
-              try {
-                await submitUserReport({
-                  reporterId: u,
-                  reportedUserId: hostId,
-                  orderId,
-                  reason: 'join_list_report_host',
-                });
-                Alert.alert(
-                  'Report received',
-                  'Thank you. We review reports as described in our Terms of Use.',
-                );
-              } catch (e) {
-                Alert.alert(
-                  'Error',
-                  e instanceof Error ? e.message : 'Could not submit report.',
-                );
-              }
-            })();
-          },
+    const reasons = ['Spam', 'Inappropriate behavior', 'Scam', 'Other'] as const;
+    Alert.alert('Report host', 'Select a reason', [
+      ...reasons.map((reason) => ({
+        text: reason,
+        onPress: () => {
+          void (async () => {
+            try {
+              await submitUserReport({
+                reporterId: u,
+                reportedUserId: hostId,
+                orderId,
+                reason,
+              });
+              Alert.alert('Report submitted');
+            } catch (e) {
+              Alert.alert(
+                'Error',
+                e instanceof Error ? e.message : 'Could not submit report.',
+              );
+            }
+          })();
         },
-      ],
-    );
+      })),
+      { text: 'Cancel', style: 'cancel' },
+    ]);
   };
 
   const handleBlockHost = (hostId: string) => {

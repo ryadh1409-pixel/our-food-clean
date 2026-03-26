@@ -1210,38 +1210,31 @@ export default function OrderRoomScreen() {
   const handleReportOtherUser = () => {
     const uid = auth.currentUser?.uid;
     if (!otherParticipantId || !uid || !orderId) return;
-    Alert.alert(
-      'Report user',
-      'Send a report to HalfOrder for review? This does not automatically block the user.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Report',
-          style: 'default',
-          onPress: () => {
-            void (async () => {
-              try {
-                await submitUserReport({
-                  reporterId: uid,
-                  reportedUserId: otherParticipantId,
-                  orderId,
-                  reason: 'order_in_app_report',
-                });
-                Alert.alert(
-                  'Report received',
-                  'Thank you. We review reports as described in our Terms of Use.',
-                );
-              } catch (e) {
-                Alert.alert(
-                  'Error',
-                  e instanceof Error ? e.message : 'Could not submit report.',
-                );
-              }
-            })();
-          },
+    const reasons = ['Spam', 'Inappropriate behavior', 'Scam', 'Other'] as const;
+    Alert.alert('Report user', 'Select a reason', [
+      ...reasons.map((reason) => ({
+        text: reason,
+        onPress: () => {
+          void (async () => {
+            try {
+              await submitUserReport({
+                reporterId: uid,
+                reportedUserId: otherParticipantId,
+                orderId,
+                reason,
+              });
+              Alert.alert('Report submitted');
+            } catch (e) {
+              Alert.alert(
+                'Error',
+                e instanceof Error ? e.message : 'Could not submit report.',
+              );
+            }
+          })();
         },
-      ],
-    );
+      })),
+      { text: 'Cancel', style: 'cancel' },
+    ]);
   };
 
   const handleBlockOtherUser = () => {

@@ -15,7 +15,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { shadows, theme } from '@/constants/theme';
+import { theme } from '@/constants/theme';
 
 const c = theme.colors;
 
@@ -28,6 +28,13 @@ type PreviousOrder = {
   /** Another participant on the order (for report/block). Null if only you or data missing. */
   otherUserId: string | null;
 };
+
+const REPORT_REASONS = [
+  'Spam',
+  'Inappropriate behavior',
+  'Scam',
+  'Other',
+] as const;
 
 export default function HelpScreen() {
   const router = useRouter();
@@ -118,37 +125,30 @@ export default function HelpScreen() {
   const handleReportUser = (order: PreviousOrder) => {
     const reportedId = order.otherUserId;
     if (!uid || !reportedId) return;
-    Alert.alert(
-      'Report user',
-      'Send a report to HalfOrder for review? This does not automatically block the user.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Report',
-          onPress: () => {
-            void (async () => {
-              try {
-                await submitUserReport({
-                  reporterId: uid,
-                  reportedUserId: reportedId,
-                  orderId: order.id,
-                  reason: 'help_past_order_report',
-                });
-                Alert.alert(
-                  'Report received',
-                  'Thank you. We review reports as described in our Terms of Use.',
-                );
-              } catch (e) {
-                Alert.alert(
-                  'Error',
-                  e instanceof Error ? e.message : 'Could not submit report.',
-                );
-              }
-            })();
-          },
+    Alert.alert('Report user', 'Select a reason', [
+      ...REPORT_REASONS.map((reason) => ({
+        text: reason,
+        onPress: () => {
+          void (async () => {
+            try {
+              await submitUserReport({
+                reporterId: uid,
+                reportedUserId: reportedId,
+                orderId: order.id,
+                reason,
+              });
+              Alert.alert('Report submitted');
+            } catch (e) {
+              Alert.alert(
+                'Error',
+                e instanceof Error ? e.message : 'Could not submit report.',
+              );
+            }
+          })();
         },
-      ],
-    );
+      })),
+      { text: 'Cancel', style: 'cancel' },
+    ]);
   };
 
   const handleBlockUser = (order: PreviousOrder) => {
