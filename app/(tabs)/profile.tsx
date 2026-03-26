@@ -9,11 +9,12 @@ import {
   deleteUserAccount,
   getDeleteAccountAuthErrorMessage,
 } from '@/services/deleteUserAccount';
-import { db } from '@/services/firebase';
+import { auth, db } from '@/services/firebase';
 import { doc, onSnapshot, setDoc, type DocumentData } from 'firebase/firestore';
 import { useRouter } from 'expo-router';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import React, { useEffect, useRef, useState } from 'react';
+import { updateProfile } from '@firebase/auth';
 import {
   ActivityIndicator,
   Alert,
@@ -44,6 +45,7 @@ export default function ProfileScreen() {
   const [profileLoading, setProfileLoading] = useState(true);
   const [nameSuccessMessage, setNameSuccessMessage] = useState('');
   const [nameErrorMessage, setNameErrorMessage] = useState('');
+  const [initialDisplayName, setInitialDisplayName] = useState('');
   const [ordersCount, setOrdersCount] = useState<number>(0);
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [focusedInputIndex, setFocusedInputIndex] = useState<number | null>(null);
@@ -64,13 +66,17 @@ export default function ProfileScreen() {
       (snap) => {
         if (!snap.exists()) {
           setDisplayNameInput('');
+          setInitialDisplayName('');
           setNotificationsEnabled(false);
           setOrdersCount(0);
         } else {
           const data = snap.data() as DocumentData;
+          const nextDisplayName =
+            typeof data.displayName === 'string' ? data.displayName : '';
           setDisplayNameInput(
-            typeof data.displayName === 'string' ? data.displayName : '',
+            nextDisplayName,
           );
+          setInitialDisplayName(nextDisplayName);
           setNotificationsEnabled(data.notificationsEnabled !== false);
           setOrdersCount(
             typeof data.ordersCount === 'number' ? data.ordersCount : 0,
@@ -80,6 +86,7 @@ export default function ProfileScreen() {
       },
       () => {
         setDisplayNameInput('');
+        setInitialDisplayName('');
         setNotificationsEnabled(false);
         setProfileLoading(false);
       },
@@ -99,6 +106,11 @@ export default function ProfileScreen() {
     if (savingName) return;
     const trimmed = displayNameInput.trim();
     if (!uid) return;
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      setNameErrorMessage('Something went wrong, try again');
+      return;
+    }
     if (!trimmed) {
       Alert.alert('Error', 'Display name cannot be empty.');
       return;
@@ -117,8 +129,10 @@ export default function ProfileScreen() {
     setNameErrorMessage('');
     try {
       const userRef = doc(db, 'users', uid);
+      await updateProfile(currentUser, { displayName: mod.text });
       await setDoc(userRef, { displayName: mod.text }, { merge: true });
       setDisplayNameInput(mod.text);
+      setInitialDisplayName(mod.text);
       setNameSuccessMessage('Name updated');
       nameFeedbackClearRef.current = setTimeout(() => {
         setNameSuccessMessage('');
@@ -273,6 +287,10 @@ export default function ProfileScreen() {
 
   const emailLabel = user?.email ?? 'Not set';
   const displayName = displayNameInput || 'User';
+  const canSaveName =
+    !savingName &&
+    displayNameInput.trim().length > 0 &&
+    displayNameInput.trim() !== initialDisplayName.trim();
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -338,8 +356,8 @@ export default function ProfileScreen() {
             onFocus={() => setFocusedInputIndex(0)}
           />
           <TouchableOpacity
-            style={[styles.primaryButton, savingName && styles.buttonDisabled]}
-            disabled={savingName}
+            style={[styles.primaryButton, !canSaveName && styles.buttonDisabled]}
+            disabled={!canSaveName}
             onPress={handleSaveDisplayName}
           >
             <Text style={styles.primaryButtonText}>
