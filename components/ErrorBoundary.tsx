@@ -1,6 +1,9 @@
+import { theme } from '@/constants/theme';
+import { logError } from '@/utils/errorLogger';
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { logError } from '@/utils/errorLogger';
+
+const c = theme.colors;
 
 interface Props {
   children: ReactNode;
@@ -61,22 +64,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
-    backgroundColor: '#fff',
+    backgroundColor: c.background,
   },
   title: {
     fontSize: 18,
     fontWeight: '600',
     marginBottom: 12,
-    color: '#111',
+    color: c.text,
   },
   message: {
     fontSize: 16,
-    color: '#666',
+    color: c.textMuted,
     textAlign: 'center',
   },
   debug: {
     marginTop: 16,
     fontSize: 12,
-    color: '#999',
+    color: c.textSecondary,
   },
 });

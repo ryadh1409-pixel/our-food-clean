@@ -9,6 +9,7 @@ import {
 } from 'firebase/firestore';
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  Alert,
   FlatList,
   Keyboard,
   KeyboardAvoidingView,
@@ -21,6 +22,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { formatTorontoTime } from '@/lib/format-toronto-time';
 import { auth, db } from '@/services/firebase';
+import { reportBlockedMessage } from '@/services/chatSecurity';
+import { moderateUserContent } from '@/utils/contentModeration';
+import { theme } from '@/constants/theme';
+
+const c = theme.colors;
 
 type SupportMessage = {
   id: string;
@@ -82,11 +88,18 @@ export default function SupportChatScreen() {
     const trimmed = text.trim();
     if (!trimmed || !uid || sending) return;
 
+    const mod = moderateUserContent(trimmed, { maxLength: 2000 });
+    if (!mod.ok) {
+      Alert.alert('Cannot send', mod.reason);
+      void reportBlockedMessage(db, uid, trimmed, mod.reason);
+      return;
+    }
+
     setSending(true);
     try {
       const messagesPath = collection(db, 'support_chats', uid, 'messages');
       await addDoc(messagesPath, {
-        text: trimmed,
+        text: mod.text,
         sender: 'user',
         createdAt: serverTimestamp(),
       });
@@ -102,13 +115,13 @@ export default function SupportChatScreen() {
       <SafeAreaView
         style={{
           flex: 1,
-          backgroundColor: '#fff',
+          backgroundColor: c.background,
           justifyContent: 'center',
           alignItems: 'center',
           padding: 24,
         }}
       >
-        <Text style={{ color: '#64748b', textAlign: 'center' }}>
+        <Text style={{ color: c.textMuted, textAlign: 'center' }}>
           Please sign in to contact support.
         </Text>
       </SafeAreaView>
@@ -117,7 +130,7 @@ export default function SupportChatScreen() {
 
   return (
     <SafeAreaView
-      style={{ flex: 1, backgroundColor: '#fff' }}
+      style={{ flex: 1, backgroundColor: c.background }}
       edges={['bottom']}
     >
       <KeyboardAvoidingView
@@ -133,7 +146,11 @@ export default function SupportChatScreen() {
           ListEmptyComponent={
             <View style={{ padding: 24, alignItems: 'center' }}>
               <Text
-                style={{ color: '#94a3b8', fontSize: 14, textAlign: 'center' }}
+                style={{
+                  color: c.iconInactive,
+                  fontSize: 14,
+                  textAlign: 'center',
+                }}
               >
                 No messages yet. Send a message to get help.
               </Text>
@@ -146,7 +163,7 @@ export default function SupportChatScreen() {
                 style={{
                   alignSelf: isUser ? 'flex-end' : 'flex-start',
                   maxWidth: '80%',
-                  backgroundColor: isUser ? '#2563eb' : '#f1f5f9',
+                  backgroundColor: isUser ? c.accentBlue : c.surfaceMuted,
                   paddingVertical: 8,
                   paddingHorizontal: 12,
                   borderRadius: 12,
@@ -154,15 +171,19 @@ export default function SupportChatScreen() {
                 }}
               >
                 <Text
-                  style={{ color: isUser ? '#fff' : '#334155', fontSize: 14 }}
+                  style={{
+                    color: isUser ? c.textOnPrimary : c.textSlateDark,
+                    fontSize: 14,
+                  }}
                 >
                   {item.text}
                 </Text>
                 <Text
                   style={{
-                    color: isUser ? 'rgba(255,255,255,0.8)' : '#94a3b8',
+                    color: isUser ? c.textOnPrimary : c.iconInactive,
                     fontSize: 11,
                     marginTop: 2,
+                    opacity: isUser ? 0.88 : 1,
                   }}
                 >
                   {formatTorontoTime(item.createdAt)}
@@ -179,24 +200,24 @@ export default function SupportChatScreen() {
             paddingHorizontal: 16,
             paddingVertical: 12,
             borderTopWidth: 1,
-            borderTopColor: '#e2e8f0',
-            backgroundColor: '#fff',
+            borderTopColor: c.border,
+            backgroundColor: c.background,
           }}
         >
           <TextInput
             value={text}
             onChangeText={setText}
             placeholder="Type your message..."
-            placeholderTextColor="#94a3b8"
+            placeholderTextColor={c.iconInactive}
             style={{
               flex: 1,
               borderWidth: 1,
-              borderColor: '#e2e8f0',
+              borderColor: c.border,
               borderRadius: 24,
               paddingVertical: 10,
               paddingHorizontal: 16,
               fontSize: 15,
-              color: '#334155',
+              color: c.textSlateDark,
             }}
             editable={!sending}
           />
@@ -205,13 +226,16 @@ export default function SupportChatScreen() {
             disabled={!text.trim() || sending}
             style={{
               marginLeft: 8,
-              backgroundColor: text.trim() && !sending ? '#2563eb' : '#cbd5e1',
+              backgroundColor:
+                text.trim() && !sending ? c.accentBlue : c.borderStrong,
               paddingVertical: 10,
               paddingHorizontal: 20,
               borderRadius: 24,
             }}
           >
-            <Text style={{ color: '#fff', fontWeight: '600' }}>Send</Text>
+            <Text style={{ color: c.textOnPrimary, fontWeight: '600' }}>
+              Send
+            </Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>

@@ -19,7 +19,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { theme } from '@/constants/theme';
+import { ScreenHeader } from '@/components/ScreenHeader';
+import { layoutStyles, theme, typography } from '@/constants/theme';
 
 type OrderItem = {
   id: string;
@@ -143,8 +144,8 @@ export default function OrdersScreen() {
 
   if (uid == null) {
     return (
-      <SafeAreaView style={styles.container} edges={['top']}>
-        <Text style={styles.title}>Orders</Text>
+      <SafeAreaView style={layoutStyles.container} edges={['top']}>
+        <ScreenHeader title="Orders" logo="inline" />
         <View style={styles.content}>
           <View style={styles.illustrationPlaceholder}>
             <Text style={styles.placeholderCaption}>
@@ -156,11 +157,11 @@ export default function OrdersScreen() {
             Sign in to see your previous and current orders
           </Text>
           <TouchableOpacity
-            style={styles.primaryButton}
+            style={layoutStyles.primaryButton}
             onPress={handleSignIn}
             activeOpacity={0.85}
           >
-            <Text style={styles.primaryButtonText}>Sign In</Text>
+            <Text style={layoutStyles.primaryButtonText}>Sign In</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -169,8 +170,8 @@ export default function OrdersScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container} edges={['top']}>
-        <Text style={styles.title}>Orders</Text>
+      <SafeAreaView style={layoutStyles.container} edges={['top']}>
+        <ScreenHeader title="Orders" logo="inline" />
         <View style={[styles.content, styles.centered]}>
           <ActivityIndicator size="large" color={theme.colors.primary} />
         </View>
@@ -180,19 +181,19 @@ export default function OrdersScreen() {
 
   if (orders.length === 0) {
     return (
-      <SafeAreaView style={styles.container} edges={['top']}>
-        <Text style={styles.title}>Orders</Text>
+      <SafeAreaView style={layoutStyles.container} edges={['top']}>
+        <ScreenHeader title="Orders" logo="inline" />
         <View style={styles.content}>
           <Text style={styles.mainText}>No orders yet</Text>
           <Text style={styles.subtext}>
             Create or join an order to see it here
           </Text>
           <TouchableOpacity
-            style={styles.primaryButton}
+            style={layoutStyles.primaryButton}
             onPress={() => router.push('/order/create')}
             activeOpacity={0.85}
           >
-            <Text style={styles.primaryButtonText}>Create Order</Text>
+            <Text style={layoutStyles.primaryButtonText}>Create Order</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -201,7 +202,7 @@ export default function OrdersScreen() {
 
   const renderItem = ({ item }: { item: OrderItem }) => (
     <TouchableOpacity
-      style={styles.card}
+      style={[layoutStyles.card, styles.cardPress]}
       onPress={() => handleOrderPress(item.id)}
       activeOpacity={0.85}
     >
@@ -218,8 +219,8 @@ export default function OrdersScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <Text style={styles.title}>Orders</Text>
+    <SafeAreaView style={layoutStyles.container} edges={['top']}>
+      <ScreenHeader title="Orders" logo="inline" />
       <FlatList
         data={orders}
         keyExtractor={(item) => item.id}
@@ -232,23 +233,11 @@ export default function OrdersScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: theme.colors.text,
-    paddingHorizontal: theme.spacing.screen,
-    paddingTop: 24,
-    paddingBottom: 16,
-  },
   content: {
     flex: 1,
     paddingHorizontal: theme.spacing.screen,
     alignItems: 'center',
-    paddingTop: 24,
+    paddingTop: theme.spacing.lg,
   },
   centered: { justifyContent: 'center' },
   illustrationPlaceholder: {
@@ -262,40 +251,22 @@ const styles = StyleSheet.create({
     color: theme.colors.textMuted,
   },
   mainText: {
+    ...typography.bodyMedium,
     fontSize: 17,
-    fontWeight: '600',
-    color: theme.colors.text,
     textAlign: 'center',
-    marginBottom: 8,
+    marginBottom: theme.spacing.sm,
   },
   subtext: {
-    fontSize: 15,
-    color: theme.colors.textMuted,
+    ...typography.bodyMuted,
     textAlign: 'center',
-    marginBottom: 28,
-  },
-  primaryButton: {
-    backgroundColor: theme.colors.primary,
-    paddingVertical: 14,
-    paddingHorizontal: 32,
-    borderRadius: theme.radius.button,
-  },
-  primaryButtonText: {
-    color: theme.colors.textOnPrimary,
-    fontSize: 16,
-    fontWeight: '600',
+    marginBottom: theme.spacing.xl + 4,
   },
   listContent: {
     paddingHorizontal: theme.spacing.screen,
     paddingBottom: 24,
   },
-  card: {
-    backgroundColor: theme.colors.surface,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: theme.radius.card,
-    padding: 16,
-    marginBottom: 12,
+  cardPress: {
+    marginBottom: theme.spacing.md - 4,
   },
   cardRestaurant: {
     fontSize: 18,

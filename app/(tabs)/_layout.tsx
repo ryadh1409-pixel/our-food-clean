@@ -1,14 +1,16 @@
 import { Tabs } from 'expo-router';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged } from '@firebase/auth';
 import React, { useEffect, useState } from 'react';
 
 import { HapticTab } from '@/components/haptic-tab';
+import { Colors, theme } from '@/constants/theme';
 import { auth } from '@/services/firebase';
 
 const TAB_ICON_SIZE = 24;
-const ACTIVE_COLOR = '#FFD54F';
-const INACTIVE_COLOR = '#9CA3AF';
+const ACTIVE_COLOR = Colors.light.tabIconSelected;
+const INACTIVE_COLOR = Colors.light.tabIconDefault;
+const { colors: tabColors } = theme;
 
 export default function TabLayout() {
   const [isAuthenticated, setIsAuthenticated] = useState(!!auth.currentUser);
@@ -25,7 +27,12 @@ export default function TabLayout() {
       screenOptions={{
         tabBarActiveTintColor: ACTIVE_COLOR,
         tabBarInactiveTintColor: INACTIVE_COLOR,
-        tabBarStyle: { backgroundColor: '#FFFFFF', borderTopColor: '#E5E7EB' },
+        tabBarStyle: {
+          backgroundColor: tabColors.background,
+          borderTopColor: tabColors.border,
+          paddingTop: 6,
+          height: 58,
+        },
         headerShown: false,
         tabBarButton: HapticTab,
       }}

@@ -1,5 +1,7 @@
+import AppLogo from '@/components/AppLogo';
+import { BrandBanner } from '@/components/BrandBanner';
 import { EATON_CENTRE } from '@/constants/deal-zones';
-import { theme } from '@/constants/theme';
+import { layoutStyles, theme, typography } from '@/constants/theme';
 import type { DealZoneOrder } from '@/hooks/useDealZoneOrders';
 import { useDealZoneOrders } from '@/hooks/useDealZoneOrders';
 import { isUserBanned } from '@/services/adminGuard';
@@ -98,19 +100,22 @@ export default function DealsScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.banner}>
-        <Text style={styles.bannerText}>Deals Zone</Text>
-      </View>
+      <BrandBanner>
+        <View style={styles.bannerRow}>
+          <AppLogo size={40} marginTop={0} style={styles.bannerLogo} />
+          <Text style={styles.bannerText}>Deals Zone</Text>
+        </View>
+      </BrandBanner>
 
       {error ? (
         <View style={styles.content}>
           <Text style={styles.errorText}>{error}</Text>
           <TouchableOpacity
-            style={styles.primaryButton}
+            style={layoutStyles.primaryButton}
             onPress={refetch}
             activeOpacity={0.85}
           >
-            <Text style={styles.primaryButtonText}>Retry</Text>
+            <Text style={layoutStyles.primaryButtonText}>Retry</Text>
           </TouchableOpacity>
         </View>
       ) : loading ? (
@@ -127,11 +132,11 @@ export default function DealsScreen() {
             Come to {EATON_CENTRE.name} for special split deals.
           </Text>
           <TouchableOpacity
-            style={styles.primaryButton}
+            style={layoutStyles.primaryButton}
             onPress={handleChooseLocation}
             activeOpacity={0.85}
           >
-            <Text style={styles.primaryButtonText}>Refresh location</Text>
+            <Text style={layoutStyles.primaryButtonText}>Refresh location</Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -162,7 +167,7 @@ export default function DealsScreen() {
               const isJoining = joiningId === order.id;
 
               return (
-                <View key={order.id} style={styles.card}>
+                <View key={order.id} style={[layoutStyles.card, styles.cardInner]}>
                   <Text style={styles.cardRestaurant}>
                     {order.restaurantName}
                   </Text>
@@ -170,6 +175,7 @@ export default function DealsScreen() {
                   <Text style={styles.cardRow}>{peopleLabel}</Text>
                   <TouchableOpacity
                     style={[
+                      layoutStyles.primaryButton,
                       styles.joinButton,
                       isJoining && styles.joinButtonDisabled,
                     ]}
@@ -182,7 +188,7 @@ export default function DealsScreen() {
                         color={theme.colors.textOnPrimary}
                       />
                     ) : (
-                      <Text style={styles.joinButtonText}>Join Order</Text>
+                      <Text style={layoutStyles.primaryButtonText}>Join Order</Text>
                     )}
                   </TouchableOpacity>
                 </View>
@@ -200,16 +206,20 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.background,
   },
-  banner: {
-    backgroundColor: theme.colors.primary,
-    paddingVertical: 16,
-    paddingHorizontal: theme.spacing.screen,
+  bannerRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bannerLogo: {
+    marginBottom: 2,
+    marginRight: 12,
   },
   bannerText: {
+    ...typography.title,
     fontSize: 20,
-    fontWeight: '700',
     color: theme.colors.textOnPrimary,
+    fontWeight: '700',
   },
   content: {
     flex: 1,
@@ -232,33 +242,19 @@ const styles = StyleSheet.create({
   },
   errorText: {
     fontSize: 14,
-    color: '#b91c1c',
+    color: theme.colors.dangerText,
     textAlign: 'center',
     marginBottom: 16,
-  },
-  primaryButton: {
-    backgroundColor: theme.colors.primary,
-    paddingVertical: 14,
-    paddingHorizontal: 28,
-    borderRadius: theme.radius.button,
-  },
-  primaryButtonText: {
-    color: theme.colors.textOnPrimary,
-    fontSize: 16,
-    fontWeight: '600',
   },
   scroll: { flex: 1 },
   scrollContent: { padding: theme.spacing.screen, paddingBottom: 32 },
   zoneTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: theme.colors.text,
-    marginBottom: 4,
+    ...typography.title,
+    marginBottom: theme.spacing.xs,
   },
   zoneSubtitle: {
-    fontSize: 14,
-    color: theme.colors.textMuted,
-    marginBottom: 20,
+    ...typography.bodyMuted,
+    marginBottom: theme.spacing.section,
   },
   emptyText: {
     fontSize: 15,
@@ -266,13 +262,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 12,
   },
-  card: {
-    backgroundColor: theme.colors.surface,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: theme.radius.card,
-    padding: 16,
-    marginBottom: 12,
+  cardInner: {
+    marginBottom: theme.spacing.md - 4,
   },
   cardRestaurant: {
     fontSize: 18,
@@ -286,16 +277,9 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   joinButton: {
-    backgroundColor: theme.colors.primary,
+    marginTop: theme.spacing.md - 4,
+    minHeight: 48,
     paddingVertical: 12,
-    borderRadius: theme.radius.button,
-    alignItems: 'center',
-    marginTop: 12,
   },
   joinButtonDisabled: { opacity: 0.7 },
-  joinButtonText: {
-    color: theme.colors.textOnPrimary,
-    fontWeight: '600',
-    fontSize: 16,
-  },
 });

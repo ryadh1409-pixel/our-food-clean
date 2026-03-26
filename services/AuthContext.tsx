@@ -7,7 +7,7 @@ import {
   signInWithPhoneNumber,
   signOut as firebaseSignOut,
   type User,
-} from 'firebase/auth';
+} from '@firebase/auth';
 import {
   addDoc,
   collection,
@@ -31,6 +31,7 @@ import React, {
   useState,
 } from 'react';
 import { ActivityIndicator, View } from 'react-native';
+import { theme } from '@/constants/theme';
 import { auth, db } from '@/services/firebase';
 
 const REFERRAL_CREDIT = 2;
@@ -324,10 +325,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             flex: 1,
             justifyContent: 'center',
             alignItems: 'center',
-            backgroundColor: '#0D0D0D',
+            backgroundColor: theme.colors.sheetDark,
           }}
         >
-          <ActivityIndicator size="large" color="#2563eb" />
+          <ActivityIndicator size="large" color={theme.colors.primary} />
         </View>
       ) : (
         children

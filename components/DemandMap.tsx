@@ -14,6 +14,9 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { theme } from '@/constants/theme';
+
+const c = theme.colors;
 
 const DEMAND_MAP_RADIUS_KM = 0.5;
 const CLUSTER_GRID_DEG = 0.003;
@@ -98,7 +101,7 @@ export default function DemandMap({ onJoinOrder, style }: DemandMapProps) {
   if (loading && !userLocation) {
     return (
       <View style={[styles.centered, style]}>
-        <ActivityIndicator size="large" color="#FFD700" />
+        <ActivityIndicator size="large" color={c.primary} />
         <Text style={styles.loadingText}>Getting location...</Text>
       </View>
     );
@@ -170,53 +173,57 @@ const styles = StyleSheet.create({
   map: { flex: 1, borderRadius: 12 },
   placeholder: {
     height: 200,
-    backgroundColor: '#1C1C1E',
+    backgroundColor: c.surfaceDark,
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  placeholderText: { color: '#8E8E93', fontSize: 14 },
+  placeholderText: { color: c.textSecondary, fontSize: 14 },
   centered: {
     height: 200,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  loadingText: { marginTop: 8, color: '#666', fontSize: 14 },
-  errorText: { color: '#c00', fontSize: 14, marginBottom: 8 },
+  loadingText: { marginTop: 8, color: c.textMuted, fontSize: 14 },
+  errorText: { color: c.danger, fontSize: 14, marginBottom: 8 },
   retryBtn: {
-    backgroundColor: '#FFD700',
+    backgroundColor: c.primary,
     paddingVertical: 8,
     paddingHorizontal: 16,
     borderRadius: 8,
   },
-  retryBtnText: { fontWeight: '600', color: '#000' },
+  retryBtnText: { fontWeight: '600', color: c.textOnPrimary },
   previewCard: {
     position: 'absolute',
     bottom: 12,
     left: 12,
     right: 12,
-    backgroundColor: '#FFF',
+    backgroundColor: c.white,
     borderRadius: 12,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#E5E5E5',
+    borderColor: c.border,
   },
   previewRestaurant: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#000',
+    color: c.text,
     marginBottom: 4,
   },
-  previewMeal: { fontSize: 14, color: '#666', marginBottom: 4 },
-  previewDistance: { fontSize: 13, color: '#888', marginBottom: 12 },
+  previewMeal: { fontSize: 14, color: c.textMuted, marginBottom: 4 },
+  previewDistance: {
+    fontSize: 13,
+    color: c.textMuted,
+    marginBottom: 12,
+  },
   joinBtn: {
-    backgroundColor: '#FFD700',
+    backgroundColor: c.primary,
     paddingVertical: 12,
     borderRadius: 10,
     alignItems: 'center',
     marginBottom: 8,
   },
-  joinBtnText: { fontWeight: '700', color: '#000', fontSize: 16 },
+  joinBtnText: { fontWeight: '700', color: c.textOnPrimary, fontSize: 16 },
   closeBtn: { alignItems: 'center' },
-  closeBtnText: { fontSize: 14, color: '#666' },
+  closeBtnText: { fontSize: 14, color: c.textMuted },
 });

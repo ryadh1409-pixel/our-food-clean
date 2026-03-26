@@ -1,8 +1,9 @@
+import { theme } from '@/constants/theme';
 import React from 'react';
 import { Text, View } from 'react-native';
 
-const STAR_COLOR = '#FFD700';
-const TEXT_COLOR = '#000000';
+const STAR_COLOR = theme.colors.warning;
+const TEXT_COLOR = theme.colors.text;
 
 type TrustScoreLabelProps = {
   average: number;

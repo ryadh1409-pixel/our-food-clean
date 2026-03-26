@@ -3,7 +3,10 @@ service cloud.firestore {
   match /databases/{database}/documents {
     match /reports/{reportId} {
       allow create: if request.auth != null;
-      allow read, update, delete: if false;
+      // Admin inbox (Guideline 1.2 — review user reports). Email must match ops account.
+      allow read: if request.auth != null
+        && request.auth.token.email == 'support@halforder.app';
+      allow update, delete: if false;
     }
     match /support_chats/{userId} {
       allow read: if request.auth != null
@@ -26,7 +29,7 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if request.auth != null;
       allow create, update: if request.auth != null && request.auth.uid == userId;
-      allow delete: if false;
+      allow delete: if request.auth != null && request.auth.uid == userId;
       match /messages/{messageId} {
         allow read, write: if request.auth != null && request.auth.uid == userId;
       }
@@ -80,19 +83,19 @@ service cloud.firestore {
       allow create, read: if request.auth != null;
       allow update, delete: if false;
     }
-    match /campuses/{campusId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null;
-      allow update, delete: if false;
-    }
     match /blocks/{blockId} {
       allow create: if request.auth != null && request.resource.data.blockerId == request.auth.uid;
       allow read: if request.auth != null && (resource.data.blockerId == request.auth.uid || resource.data.blockedId == request.auth.uid);
-      allow update, delete: if false;
+      allow update: if false;
+      allow delete: if request.auth != null
+        && (resource.data.blockerId == request.auth.uid || resource.data.blockedId == request.auth.uid);
     }
     match /orders/{orderId} {
       allow read, create, update: if request.auth != null;
-      allow delete: if false;
+      allow delete: if request.auth != null
+        && (resource.data.hostId == request.auth.uid
+            || resource.data.createdBy == request.auth.uid
+            || resource.data.userId == request.auth.uid);
 
       match /messages/{messageId} {
         allow read, write: if request.auth != null

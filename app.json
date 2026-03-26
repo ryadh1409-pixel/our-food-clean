@@ -7,13 +7,14 @@
     "icon": "./assets/images/icon.png",
     "scheme": "halforder",
     "splash": {
-      "image": "./assets/images/splash-icon.png",
+      "image": "./assets/images/logo.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
+      "icon": "./assets/images/icon.png",
       "supportsTablet": true,
       "bundleIdentifier": "com.halforder.app",
       "buildNumber": "2",
@@ -22,6 +23,9 @@
         "applinks:www.halforder.app"
       ],
       "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "HalfOrder needs access to your photo library so you can choose a profile image.",
+        "NSPhotoLibraryAddUsageDescription": "HalfOrder may save images you share only when you choose to save them.",
+        "NSCameraUsageDescription": "HalfOrder needs camera access if you take a new photo for your profile.",
         "ITSAppUsesNonExemptEncryption": false,
         "CFBundleURLTypes": [
           {
@@ -57,10 +61,8 @@
         }
       ],
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "backgroundColor": "#F5F5F5",
+        "foregroundImage": "./assets/images/app-icon-foreground.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
@@ -81,13 +83,20 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 200,
+          "image": "./assets/images/logo.png",
+          "imageWidth": 280,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff",
           "dark": {
             "backgroundColor": "#000000"
           }
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "HalfOrder needs access to your photo library so you can choose a profile image.",
+          "cameraPermission": "HalfOrder needs camera access if you take a new photo for your profile."
         }
       ],
       "expo-web-browser"
@@ -100,7 +109,8 @@
       "router": {},
       "eas": {
         "projectId": "9b7ffbaf-659d-493c-a1bd-a695e2c2982c"
-      }
+      },
+      "iosAppStoreId": ""
     }
   }
 }

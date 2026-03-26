@@ -46,6 +46,11 @@ import { useTrustScore } from '@/hooks/useTrustScore';
 import { RateOrderPartnerModal } from '@/components/RateOrderPartnerModal';
 import { hasRatedOrder } from '@/services/ratings';
 import {
+  isBlockedByAny,
+  reportAndBlock,
+} from '@/services/report-block';
+import { blockUser, submitUserReport } from '@/services/userSafety';
+import {
   formatTorontoDate,
   formatTorontoTime,
   formatTorontoTimeHHMM,
@@ -55,8 +60,10 @@ import { isMessageSafe, reportBlockedMessage } from '@/services/chatSecurity';
 import { checkTaxGift } from '@/services/taxGift';
 import { auth, db } from '@/services/firebase';
 import { trackOrderJoined } from '@/services/analytics';
-import { isBlockedByAny } from '@/services/report-block';
 import { getOrCreateChat } from '@/services/chat';
+import { shadows, theme } from '@/constants/theme';
+
+const c = theme.colors;
 
 type Message = {
   id: string;
@@ -1018,7 +1025,7 @@ export default function OrderRoomScreen() {
       <SafeAreaView
         style={{
           flex: 1,
-          backgroundColor: '#fff',
+          backgroundColor: c.background,
           justifyContent: 'center',
           alignItems: 'center',
         }}
@@ -1033,12 +1040,12 @@ export default function OrderRoomScreen() {
       <SafeAreaView
         style={{
           flex: 1,
-          backgroundColor: '#fff',
+          backgroundColor: c.background,
           justifyContent: 'center',
           alignItems: 'center',
         }}
       >
-        <Text style={{ color: '#64748b' }}>Order not found</Text>
+        <Text style={{ color: c.textMuted }}>Order not found</Text>
       </SafeAreaView>
     );
   }
@@ -1116,7 +1123,7 @@ export default function OrderRoomScreen() {
     orderExpiresInLabel = mmss;
   }
   const isExpiryUrgent =
-    order.expiresAtMs &&
+    order.expiresAtMs != null &&
     !isExpired &&
     (remainingMs ?? order.expiresAtMs - Date.now()) < 5 * 60 * 1000;
   const timerMessageUnderCard = isReady
@@ -1200,6 +1207,106 @@ export default function OrderRoomScreen() {
     }
   };
 
+  const handleReportOtherUser = () => {
+    const uid = auth.currentUser?.uid;
+    if (!otherParticipantId || !uid || !orderId) return;
+    Alert.alert(
+      'Report user',
+      'Send a report to HalfOrder for review? This does not automatically block the user.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Report',
+          style: 'default',
+          onPress: () => {
+            void (async () => {
+              try {
+                await submitUserReport({
+                  reporterId: uid,
+                  reportedUserId: otherParticipantId,
+                  orderId,
+                  reason: 'order_in_app_report',
+                });
+                Alert.alert(
+                  'Report received',
+                  'Thank you. We review reports as described in our Terms of Use.',
+                );
+              } catch (e) {
+                Alert.alert(
+                  'Error',
+                  e instanceof Error ? e.message : 'Could not submit report.',
+                );
+              }
+            })();
+          },
+        },
+      ],
+    );
+  };
+
+  const handleBlockOtherUser = () => {
+    const uid = auth.currentUser?.uid;
+    if (!otherParticipantId || !uid || !orderId) return;
+    Alert.alert(
+      'Block user',
+      'You will not see each other in join lists and messaging may be limited. You can also report severe issues to HalfOrder.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Block',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              try {
+                await blockUser(uid, otherParticipantId);
+                Alert.alert('Blocked', 'This user has been blocked.');
+                setIsBlocked(true);
+              } catch (e) {
+                Alert.alert(
+                  'Error',
+                  e instanceof Error ? e.message : 'Could not block user.',
+                );
+              }
+            })();
+          },
+        },
+      ],
+    );
+  };
+
+  const handleReportAndBlock = () => {
+    const uid = auth.currentUser?.uid;
+    if (!otherParticipantId || !uid || !orderId) return;
+    Alert.alert(
+      'Report and block',
+      'Submit a report and block this user. This action cannot be undone from the app.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Report and block',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              try {
+                await reportAndBlock(uid, otherParticipantId, orderId);
+                Alert.alert(
+                  'Done',
+                  'We received your report and blocked this user.',
+                );
+                setIsBlocked(true);
+              } catch (e) {
+                Alert.alert(
+                  'Error',
+                  e instanceof Error ? e.message : 'Something went wrong.',
+                );
+              }
+            })();
+          },
+        },
+      ],
+    );
+  };
+
   if (!allowed) {
     return (
       <JoinOrderScreen
@@ -1231,13 +1338,13 @@ export default function OrderRoomScreen() {
         >
           {/* Top section: logo, order title, meal type, map */}
           <View style={{ paddingBottom: 16, alignItems: 'center' }}>
-            <AppLogo />
+            <AppLogo size={72} marginTop={0} />
           </View>
           <Text
             style={{
               fontSize: 22,
               fontWeight: '700',
-              color: '#000000',
+              color: c.text,
               marginBottom: 8,
               textAlign: 'center',
             }}
@@ -1247,7 +1354,7 @@ export default function OrderRoomScreen() {
           <Text
             style={{
               fontSize: 16,
-              color: '#374151',
+              color: c.textSlateDark,
               marginBottom: 12,
               textAlign: 'center',
             }}
@@ -1365,6 +1472,33 @@ export default function OrderRoomScreen() {
             {participantsCount >= maxPeople ? (
               <Text style={styles.readyMessage}>Order is ready 🎉</Text>
             ) : null}
+            {otherParticipantId && auth.currentUser?.uid ? (
+              <View style={styles.safetyActions}>
+                <Text style={styles.safetyLabel}>Safety</Text>
+                <View style={styles.safetyRow}>
+                  <TouchableOpacity
+                    style={styles.safetyBtn}
+                    onPress={handleReportOtherUser}
+                  >
+                    <Text style={styles.safetyBtnText}>Report</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.safetyBtn}
+                    onPress={handleBlockOtherUser}
+                  >
+                    <Text style={styles.safetyBtnText}>Block</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.safetyBtn, styles.safetyBtnDanger]}
+                    onPress={handleReportAndBlock}
+                  >
+                    <Text style={styles.safetyBtnTextDanger}>
+                      Report & block
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : null}
           </View>
 
           {/* 30-minute expiration timer under the card (orange/red) */}
@@ -1398,12 +1532,15 @@ export default function OrderRoomScreen() {
                 flex: 1,
                 paddingVertical: 12,
                 borderRadius: 10,
-                backgroundColor: canChat ? '#FFD700' : '#E5E5E5',
+                backgroundColor: canChat ? c.primary : c.border,
                 alignItems: 'center',
               }}
             >
               <Text
-                style={{ color: canChat ? '#000' : '#666', fontWeight: '600' }}
+                style={{
+                  color: canChat ? c.textOnPrimary : c.textMuted,
+                  fontWeight: '600',
+                }}
               >
                 Chat
               </Text>
@@ -1416,7 +1553,7 @@ export default function OrderRoomScreen() {
                 paddingVertical: 12,
                 borderRadius: 10,
                 backgroundColor:
-                  canChat || hostPhone ? '#6B7280' : '#E5E5E5',
+                  canChat || hostPhone ? c.textMuted : c.border,
                 alignItems: 'center',
                 flexDirection: 'row',
                 justifyContent: 'center',
@@ -1426,11 +1563,14 @@ export default function OrderRoomScreen() {
               <MaterialIcons
                 name="call"
                 size={18}
-                color={canChat || hostPhone ? '#fff' : '#000'}
+                color={
+                  canChat || hostPhone ? c.textOnPrimary : c.text
+                }
               />
               <Text
                 style={{
-                  color: canChat || hostPhone ? '#fff' : '#000',
+                  color:
+                    canChat || hostPhone ? c.textOnPrimary : c.text,
                   fontWeight: '600',
                 }}
               >
@@ -1444,13 +1584,13 @@ export default function OrderRoomScreen() {
                 flex: 1,
                 paddingVertical: 12,
                 borderRadius: 10,
-                backgroundColor: hasWhatsApp ? '#25D366' : '#E5E5E5',
+                backgroundColor: hasWhatsApp ? c.whatsapp : c.border,
                 alignItems: 'center',
               }}
             >
               <Text
                 style={{
-                  color: hasWhatsApp ? '#fff' : '#000',
+                  color: hasWhatsApp ? c.textOnPrimary : c.text,
                   fontWeight: '600',
                 }}
               >
@@ -1466,12 +1606,18 @@ export default function OrderRoomScreen() {
               marginBottom: 24,
               paddingVertical: 14,
               borderRadius: 10,
-              backgroundColor: '#25D366',
+              backgroundColor: c.whatsapp,
               alignItems: 'center',
               width: '100%',
             }}
           >
-            <Text style={{ color: '#fff', fontWeight: '600', fontSize: 16 }}>
+            <Text
+              style={{
+                color: c.textOnPrimary,
+                fontWeight: '600',
+                fontSize: 16,
+              }}
+            >
               Invite via WhatsApp
             </Text>
           </TouchableOpacity>
@@ -1534,15 +1680,27 @@ export default function OrderRoomScreen() {
         </TouchableOpacity>
       ) : null}
       {isBlocked ? (
-        <View style={{ padding: 12, backgroundColor: '#fef2f2' }}>
-          <Text style={{ fontSize: 14, color: '#b91c1c', textAlign: 'center' }}>
+        <View style={{ padding: 12, backgroundColor: c.dangerBackground }}>
+          <Text
+            style={{
+              fontSize: 14,
+              color: c.dangerText,
+              textAlign: 'center',
+            }}
+          >
             You cannot send messages
           </Text>
         </View>
       ) : null}
       {isClosed ? (
-        <View style={{ padding: 12, backgroundColor: '#fef2f2' }}>
-          <Text style={{ fontSize: 14, color: '#b91c1c', textAlign: 'center' }}>
+        <View style={{ padding: 12, backgroundColor: c.dangerBackground }}>
+          <Text
+            style={{
+              fontSize: 14,
+              color: c.dangerText,
+              textAlign: 'center',
+            }}
+          >
             Chat closed
           </Text>
         </View>
@@ -1552,12 +1710,12 @@ export default function OrderRoomScreen() {
           {
             paddingHorizontal: 16,
             paddingVertical: 8,
-            backgroundColor: '#f8fafc',
+            backgroundColor: c.chromeWash,
           },
           Platform.OS === 'web' && { alignSelf: 'center', width: '100%', maxWidth: 420 },
         ]}
       >
-        <Text style={{ fontSize: 12, color: '#64748b', textAlign: 'center' }}>
+        <Text style={{ fontSize: 12, color: c.textMuted, textAlign: 'center' }}>
           For your safety do not share personal information or external links.
         </Text>
       </View>
@@ -1566,6 +1724,34 @@ export default function OrderRoomScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
+        {otherParticipantId && auth.currentUser?.uid && canChat ? (
+          <View
+            style={[
+              styles.chatSafetyBar,
+              Platform.OS === 'web' && { alignSelf: 'center', maxWidth: 420, width: '100%' },
+            ]}
+          >
+            <TouchableOpacity
+              style={styles.chatSafetyBtn}
+              onPress={handleReportOtherUser}
+              accessibilityRole="button"
+              accessibilityLabel="Report this user"
+            >
+              <MaterialIcons name="flag" size={18} color={c.textSlate} />
+              <Text style={styles.chatSafetyBtnText}>Report</Text>
+            </TouchableOpacity>
+            <View style={styles.chatSafetyDivider} />
+            <TouchableOpacity
+              style={styles.chatSafetyBtn}
+              onPress={handleBlockOtherUser}
+              accessibilityRole="button"
+              accessibilityLabel="Block this user"
+            >
+              <MaterialIcons name="block" size={18} color={c.dangerText} />
+              <Text style={styles.chatSafetyBtnTextDanger}>Block</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
         <FlatList
           ref={flatListRef}
           key={`chat-${chatId ?? orderId}`}
@@ -1576,7 +1762,7 @@ export default function OrderRoomScreen() {
           ListEmptyComponent={
             <Text
               style={{
-                color: '#94a3b8',
+                color: c.iconInactive,
                 fontSize: 14,
                 textAlign: 'center',
                 marginTop: 24,
@@ -1601,10 +1787,16 @@ export default function OrderRoomScreen() {
                       paddingHorizontal: 8,
                     }}
                   >
-                    <Text style={{ fontSize: 13, color: '#666' }}>
+                    <Text style={{ fontSize: 13, color: c.textMuted }}>
                       {item.text}
                     </Text>
-                    <Text style={{ fontSize: 11, color: '#999', marginTop: 2 }}>
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        color: c.textSecondary,
+                        marginTop: 2,
+                      }}
+                    >
                       {msgDate} {msgTime}
                     </Text>
                   </View>
@@ -1629,7 +1821,7 @@ export default function OrderRoomScreen() {
                       style={{
                         fontSize: 12,
                         fontWeight: '600',
-                        color: '#000',
+                        color: c.text,
                         marginBottom: 2,
                       }}
                     >
@@ -1638,22 +1830,20 @@ export default function OrderRoomScreen() {
                   ) : null}
                   <View
                     style={{
-                      backgroundColor: isMine ? '#FFD700' : '#F5F5F5',
+                      backgroundColor: isMine ? c.chatBubbleMine : c.surface,
                       paddingVertical: 8,
                       paddingHorizontal: 12,
                       borderRadius: 12,
                       borderWidth: 1,
-                      borderColor: '#E5E5E5',
+                      borderColor: c.border,
                     }}
                   >
-                    <Text
-                      style={{ color: isMine ? '#000' : '#000', fontSize: 14 }}
-                    >
+                    <Text style={{ color: c.text, fontSize: 14 }}>
                       {item.text}
                     </Text>
                     <Text
                       style={{
-                        color: isMine ? '#333' : '#666',
+                        color: isMine ? c.textSlateDark : c.textMuted,
                         fontSize: 11,
                         marginTop: 2,
                       }}
@@ -1663,7 +1853,7 @@ export default function OrderRoomScreen() {
                     {showSeen ? (
                       <Text
                         style={{
-                          color: isMine ? '#333' : '#666',
+                          color: isMine ? c.textSlateDark : c.textMuted,
                           fontSize: 11,
                           marginTop: 2,
                           opacity: 0.9,
@@ -1686,8 +1876,8 @@ export default function OrderRoomScreen() {
             paddingHorizontal: 16,
             paddingVertical: 12,
             borderTopWidth: 1,
-            borderTopColor: '#e2e8f0',
-            backgroundColor: '#fff',
+            borderTopColor: c.border,
+            backgroundColor: c.background,
           }}
         >
           <TextInput
@@ -1696,18 +1886,18 @@ export default function OrderRoomScreen() {
             onFocus={() => setTyping(true)}
             onBlur={() => setTyping(false)}
             placeholder="Type a message..."
-            placeholderTextColor="#94a3b8"
-            selectionColor="#2563eb"
+            placeholderTextColor={c.iconInactive}
+            selectionColor={c.accentBlue}
             maxLength={200}
             style={{
               flex: 1,
               borderWidth: 1,
-              borderColor: '#e2e8f0',
+              borderColor: c.border,
               borderRadius: 24,
               paddingVertical: 10,
               paddingHorizontal: 16,
               fontSize: 15,
-              color: '#1e293b',
+              color: c.textSlateDark,
             }}
             editable={!sending && !isClosed && !isBlocked && !isWaiting}
           />
@@ -1720,14 +1910,16 @@ export default function OrderRoomScreen() {
               marginLeft: 8,
               backgroundColor:
                 text.trim() && !sending && !isClosed && !isBlocked && !isWaiting
-                  ? '#2563eb'
-                  : '#cbd5e1',
+                  ? c.accentBlue
+                  : c.borderStrong,
               paddingVertical: 10,
               paddingHorizontal: 20,
               borderRadius: 24,
             }}
           >
-            <Text style={{ color: '#fff', fontWeight: '600' }}>Send</Text>
+            <Text style={{ color: c.textOnPrimary, fontWeight: '600' }}>
+              Send
+            </Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -1745,17 +1937,17 @@ export default function OrderRoomScreen() {
             <Text style={styles.incomingCallSub}>HalfOrder</Text>
             <View style={{ flexDirection: 'row', gap: 24, marginTop: 24 }}>
               <TouchableOpacity
-                style={[styles.incomingCallBtn, { backgroundColor: '#ef4444' }]}
+                style={[styles.incomingCallBtn, { backgroundColor: c.danger }]}
                 onPress={handleDeclineCall}
               >
-                <MaterialIcons name="call-end" size={28} color="#fff" />
+                <MaterialIcons name="call-end" size={28} color={c.textOnPrimary} />
                 <Text style={styles.incomingCallBtnText}>Decline</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.incomingCallBtn, { backgroundColor: '#22c55e' }]}
+                style={[styles.incomingCallBtn, { backgroundColor: c.success }]}
                 onPress={handleAcceptCall}
               >
-                <MaterialIcons name="call" size={28} color="#fff" />
+                <MaterialIcons name="call" size={28} color={c.textOnPrimary} />
                 <Text style={styles.incomingCallBtnText}>Accept</Text>
               </TouchableOpacity>
             </View>
@@ -1769,7 +1961,7 @@ export default function OrderRoomScreen() {
             <MaterialIcons
               name="call"
               size={48}
-              color="#22c55e"
+              color={c.success}
               style={{ marginBottom: 16 }}
             />
             <Text style={styles.incomingCallTitle}>Voice call in progress</Text>
@@ -1777,12 +1969,12 @@ export default function OrderRoomScreen() {
             <TouchableOpacity
               style={[
                 styles.incomingCallBtn,
-                { backgroundColor: '#ef4444', marginTop: 24 },
+                { backgroundColor: c.danger, marginTop: 24 },
               ]}
               onPress={handleEndCall}
               disabled={endingCall}
             >
-              <MaterialIcons name="call-end" size={28} color="#fff" />
+              <MaterialIcons name="call-end" size={28} color={c.textOnPrimary} />
               <Text style={styles.incomingCallBtnText}>
                 {endingCall ? 'Ending…' : 'End call'}
               </Text>
@@ -1809,7 +2001,7 @@ export default function OrderRoomScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: c.background,
   },
   safeAreaWeb: {
     alignItems: 'center',
@@ -1824,44 +2016,38 @@ const styles = StyleSheet.create({
     maxWidth: 420,
   },
   orderMetaCard: {
-    marginVertical: 10,
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 12,
-    backgroundColor: '#FFFFFF',
+    marginVertical: theme.spacing.sm,
+    padding: theme.spacing.md,
+    borderRadius: theme.radius.lg,
+    marginBottom: theme.spacing.sm,
+    backgroundColor: c.white,
     borderWidth: 1,
-    borderColor: '#E5E5E5',
-    ...(Platform.OS === 'web' && {
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.08,
-      shadowRadius: 8,
-      elevation: 3,
-    }),
+    borderColor: c.border,
+    ...shadows.card,
   },
   orderMetaText: {
     fontSize: 14,
-    color: '#000000',
+    color: c.text,
   },
   orderMetaSubtext: {
     fontSize: 13,
-    color: '#666666',
+    color: c.textMuted,
     marginTop: 4,
   },
   totalToPay: {
     fontWeight: '700',
-    color: '#000000',
+    color: c.text,
     marginTop: 6,
   },
   taxBenefitText: {
     fontSize: 12,
-    color: '#16a34a',
+    color: c.success,
     marginTop: 6,
     fontWeight: '600',
   },
   creditAppliedText: {
     fontSize: 12,
-    color: '#16a34a',
+    color: c.success,
     marginTop: 4,
     fontWeight: '600',
   },
@@ -1869,19 +2055,19 @@ const styles = StyleSheet.create({
     marginTop: 10,
     padding: 14,
     borderRadius: 12,
-    backgroundColor: '#D4EDDA',
+    backgroundColor: c.successBackground,
     borderWidth: 2,
-    borderColor: '#FFD700',
+    borderColor: c.primary,
   },
   taxGiftBannerTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#155724',
+    color: c.successTextDark,
     textAlign: 'center',
   },
   taxGiftBannerText: {
     fontSize: 14,
-    color: '#155724',
+    color: c.successTextDark,
     marginTop: 4,
     textAlign: 'center',
   },
@@ -1889,42 +2075,45 @@ const styles = StyleSheet.create({
     marginTop: 8,
     padding: 10,
     borderRadius: 8,
-    backgroundColor: '#FFF8E7',
+    backgroundColor: c.warningBackground,
   },
   taxGiftProgressText: {
     fontSize: 12,
-    color: '#856404',
+    color: c.warningTextDark,
     textAlign: 'center',
   },
   taxGiftQualifiedText: {
     fontSize: 12,
-    color: '#16a34a',
+    color: c.success,
     marginTop: 4,
     fontWeight: '600',
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    backgroundColor: c.overlayScrim,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
   },
   incomingCallBox: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 32,
+    backgroundColor: c.white,
+    borderRadius: theme.radius.xl,
+    padding: theme.spacing.xl,
     width: '100%',
     maxWidth: 320,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: c.border,
+    ...shadows.card,
   },
   incomingCallTitle: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#1a1a1a',
+    color: c.text,
   },
   incomingCallSub: {
     fontSize: 14,
-    color: '#64748b',
+    color: c.textMuted,
     marginTop: 8,
   },
   incomingCallBtn: {
@@ -1936,7 +2125,7 @@ const styles = StyleSheet.create({
   },
   incomingCallBtnText: {
     fontSize: 12,
-    color: '#fff',
+    color: c.textOnPrimary,
     marginTop: 4,
     fontWeight: '600',
   },
@@ -1948,38 +2137,38 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   statusBadgeWaiting: {
-    backgroundColor: '#FEF3C7',
+    backgroundColor: c.warningSoft,
   },
   statusBadgeReady: {
-    backgroundColor: '#16a34a',
+    backgroundColor: c.success,
   },
   statusBadgeClosed: {
-    backgroundColor: '#E5E7EB',
+    backgroundColor: c.dotInactive,
   },
   statusText: {
     fontWeight: '600',
     fontSize: 14,
-    color: '#1e293b',
+    color: c.textSlateDark,
   },
   statusTextReady: {
     fontWeight: '600',
     fontSize: 14,
-    color: '#FFFFFF',
+    color: c.textOnPrimary,
   },
   participantsText: {
     fontSize: 16,
     marginTop: 8,
-    color: '#0f172a',
+    color: c.text,
   },
   waitingMessage: {
     fontSize: 14,
     marginTop: 4,
-    color: '#64748b',
+    color: c.textMuted,
   },
   readyMessage: {
     fontSize: 14,
     marginTop: 4,
-    color: '#16a34a',
+    color: c.success,
     fontWeight: '600',
   },
   waitingBanner: {
@@ -1987,27 +2176,28 @@ const styles = StyleSheet.create({
     marginVertical: 10,
     marginHorizontal: 16,
     borderRadius: 12,
-    backgroundColor: '#fef3c7',
+    backgroundColor: c.warningSoft,
   },
   waitingBannerText: {
     fontSize: 15,
-    color: '#92400e',
+    color: c.warningTextDark,
     textAlign: 'center',
     fontWeight: '500',
   },
   orderStatusSection: {
-    marginHorizontal: 16,
-    marginBottom: 16,
-    padding: 16,
-    borderRadius: 12,
-    backgroundColor: '#FFFFFF',
+    marginHorizontal: theme.spacing.md,
+    marginBottom: theme.spacing.md,
+    padding: theme.spacing.md,
+    borderRadius: theme.radius.lg,
+    backgroundColor: c.white,
     borderWidth: 1,
-    borderColor: '#E5E5E5',
+    borderColor: c.border,
+    ...shadows.card,
   },
   orderStatusTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#000000',
+    color: c.text,
     marginBottom: 12,
   },
   orderStatusButtons: {
@@ -2016,31 +2206,37 @@ const styles = StyleSheet.create({
   },
   orderSharedButton: {
     flex: 1,
-    backgroundColor: '#22c55e',
-    paddingVertical: 12,
-    borderRadius: 12,
+    backgroundColor: c.success,
+    paddingVertical: 14,
+    borderRadius: theme.radius.button,
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: theme.spacing.touchMin,
   },
   notSharedButton: {
     flex: 1,
-    backgroundColor: '#ef4444',
-    paddingVertical: 12,
-    borderRadius: 12,
+    backgroundColor: c.danger,
+    paddingVertical: 14,
+    borderRadius: theme.radius.button,
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: theme.spacing.touchMin,
   },
   orderStatusButtonText: {
-    color: '#ffffff',
+    color: c.textOnPrimary,
     fontSize: 16,
     fontWeight: '600',
   },
   ratePartnerButton: {
-    backgroundColor: '#FFD700',
-    paddingVertical: 12,
-    borderRadius: 12,
+    backgroundColor: c.primary,
+    paddingVertical: 14,
+    borderRadius: theme.radius.button,
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: theme.spacing.touchMin,
   },
   ratePartnerButtonText: {
-    color: '#000000',
+    color: c.textOnPrimary,
     fontSize: 16,
     fontWeight: '600',
   },
@@ -2049,7 +2245,7 @@ const styles = StyleSheet.create({
   },
   expiryText: {
     fontSize: 13,
-    color: '#F59E0B',
+    color: c.warning,
     marginTop: 6,
     fontWeight: '600',
   },
@@ -2060,12 +2256,83 @@ const styles = StyleSheet.create({
   timerUnderCardText: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#EA580C',
+    color: c.timerAccent,
   },
   timerUnderCardUrgent: {
-    color: '#DC2626',
+    color: c.danger,
   },
   timerUnderCardExpired: {
-    color: '#DC2626',
+    color: c.danger,
+  },
+  safetyActions: {
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: c.dotInactive,
+  },
+  safetyLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: c.textMuted,
+    marginBottom: 8,
+  },
+  safetyRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  safetyBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: c.surfaceMuted,
+    borderWidth: 1,
+    borderColor: c.border,
+  },
+  safetyBtnDanger: {
+    backgroundColor: c.dangerBackground,
+    borderColor: c.dangerBorder,
+  },
+  safetyBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: c.textSlateDark,
+  },
+  safetyBtnTextDanger: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: c.dangerText,
+  },
+  chatSafetyBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: c.surfaceMuted,
+    borderBottomWidth: 1,
+    borderBottomColor: c.border,
+  },
+  chatSafetyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  chatSafetyBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: c.textSlate,
+  },
+  chatSafetyBtnTextDanger: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: c.dangerText,
+  },
+  chatSafetyDivider: {
+    width: 1,
+    height: 22,
+    backgroundColor: c.borderStrong,
   },
 });

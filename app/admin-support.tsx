@@ -19,6 +19,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { formatTorontoTime } from '@/lib/format-toronto-time';
 import { auth, db } from '@/services/firebase';
+import { theme } from '@/constants/theme';
+
+const c = theme.colors;
 
 const ADMIN_UID = 'REPLACE_WITH_ADMIN_UID';
 
@@ -115,13 +118,13 @@ export default function AdminSupportScreen() {
       <SafeAreaView
         style={{
           flex: 1,
-          backgroundColor: '#fff',
+          backgroundColor: c.background,
           justifyContent: 'center',
           alignItems: 'center',
           padding: 24,
         }}
       >
-        <Text style={{ color: '#64748b', textAlign: 'center' }}>
+        <Text style={{ color: c.textMuted, textAlign: 'center' }}>
           Access denied
         </Text>
       </SafeAreaView>
@@ -133,24 +136,24 @@ export default function AdminSupportScreen() {
       <SafeAreaView
         style={{
           flex: 1,
-          backgroundColor: '#fff',
+          backgroundColor: c.background,
           justifyContent: 'center',
           alignItems: 'center',
         }}
       >
-        <Text style={{ color: '#64748b' }}>Loading...</Text>
+        <Text style={{ color: c.textMuted }}>Loading...</Text>
       </SafeAreaView>
     );
   }
 
   if (!selectedUserId) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: '#fff', padding: 16 }}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: c.background, padding: 16 }}>
         <Text style={{ fontSize: 18, fontWeight: '600', marginBottom: 16 }}>
           Support chats
         </Text>
         {userIds.length === 0 ? (
-          <Text style={{ color: '#94a3b8' }}>No support chats yet</Text>
+          <Text style={{ color: c.iconInactive }}>No support chats yet</Text>
         ) : (
           userIds.map((id) => (
             <TouchableOpacity
@@ -159,10 +162,10 @@ export default function AdminSupportScreen() {
               style={{
                 padding: 12,
                 borderBottomWidth: 1,
-                borderBottomColor: '#e2e8f0',
+                borderBottomColor: c.border,
               }}
             >
-              <Text style={{ color: '#334155' }}>{id}</Text>
+              <Text style={{ color: c.textSlateDark }}>{id}</Text>
             </TouchableOpacity>
           ))
         )}
@@ -172,7 +175,7 @@ export default function AdminSupportScreen() {
 
   return (
     <SafeAreaView
-      style={{ flex: 1, backgroundColor: '#fff' }}
+      style={{ flex: 1, backgroundColor: c.background }}
       edges={['bottom']}
     >
       <View
@@ -181,13 +184,13 @@ export default function AdminSupportScreen() {
           alignItems: 'center',
           padding: 12,
           borderBottomWidth: 1,
-          borderBottomColor: '#e2e8f0',
+          borderBottomColor: c.border,
         }}
       >
         <TouchableOpacity onPress={() => setSelectedUserId(null)}>
-          <Text style={{ color: '#2563eb', marginRight: 16 }}>← Back</Text>
+          <Text style={{ color: c.accentBlue, marginRight: 16 }}>← Back</Text>
         </TouchableOpacity>
-        <Text style={{ fontSize: 14, color: '#64748b' }} numberOfLines={1}>
+        <Text style={{ fontSize: 14, color: c.textMuted }} numberOfLines={1}>
           {selectedUserId}
         </Text>
       </View>
@@ -199,7 +202,11 @@ export default function AdminSupportScreen() {
         ListEmptyComponent={
           <View style={{ padding: 24, alignItems: 'center' }}>
             <Text
-              style={{ color: '#94a3b8', fontSize: 14, textAlign: 'center' }}
+              style={{
+                color: c.iconInactive,
+                fontSize: 14,
+                textAlign: 'center',
+              }}
             >
               No messages
             </Text>
@@ -212,7 +219,7 @@ export default function AdminSupportScreen() {
               style={{
                 alignSelf: isUser ? 'flex-end' : 'flex-start',
                 maxWidth: '80%',
-                backgroundColor: isUser ? '#2563eb' : '#f1f5f9',
+                backgroundColor: isUser ? c.accentBlue : c.surfaceMuted,
                 paddingVertical: 8,
                 paddingHorizontal: 12,
                 borderRadius: 12,
@@ -220,15 +227,19 @@ export default function AdminSupportScreen() {
               }}
             >
               <Text
-                style={{ color: isUser ? '#fff' : '#334155', fontSize: 14 }}
+                style={{
+                  color: isUser ? c.textOnPrimary : c.textSlateDark,
+                  fontSize: 14,
+                }}
               >
                 {item.text}
               </Text>
               <Text
                 style={{
-                  color: isUser ? 'rgba(255,255,255,0.8)' : '#94a3b8',
+                  color: isUser ? c.textOnPrimary : c.iconInactive,
                   fontSize: 11,
                   marginTop: 2,
+                  opacity: isUser ? 0.88 : 1,
                 }}
               >
                 {formatTorontoTime(item.createdAt)}
@@ -244,24 +255,24 @@ export default function AdminSupportScreen() {
           paddingHorizontal: 16,
           paddingVertical: 12,
           borderTopWidth: 1,
-          borderTopColor: '#e2e8f0',
-          backgroundColor: '#fff',
+          borderTopColor: c.border,
+          backgroundColor: c.background,
         }}
       >
         <TextInput
           value={text}
           onChangeText={setText}
           placeholder="Reply..."
-          placeholderTextColor="#94a3b8"
+          placeholderTextColor={c.iconInactive}
           style={{
             flex: 1,
             borderWidth: 1,
-            borderColor: '#e2e8f0',
+            borderColor: c.border,
             borderRadius: 24,
             paddingVertical: 10,
             paddingHorizontal: 16,
             fontSize: 15,
-            color: '#334155',
+            color: c.textSlateDark,
           }}
           editable={!sending}
         />
@@ -270,13 +281,16 @@ export default function AdminSupportScreen() {
           disabled={!text.trim() || sending}
           style={{
             marginLeft: 8,
-            backgroundColor: text.trim() && !sending ? '#2563eb' : '#cbd5e1',
+            backgroundColor:
+              text.trim() && !sending ? c.accentBlue : c.borderStrong,
             paddingVertical: 10,
             paddingHorizontal: 20,
             borderRadius: 24,
           }}
         >
-          <Text style={{ color: '#fff', fontWeight: '600' }}>Send</Text>
+          <Text style={{ color: c.textOnPrimary, fontWeight: '600' }}>
+            Send
+          </Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>

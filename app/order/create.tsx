@@ -18,7 +18,7 @@ import {
 } from 'firebase/firestore';
 import { isUserBanned } from '@/services/adminGuard';
 import { createAlert } from '@/services/alerts';
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   Alert,
   Keyboard,
@@ -60,22 +60,6 @@ export default function CreateOrderScreen() {
     userName: string;
     location: { latitude: number; longitude: number } | null;
   } | null>(null);
-  const [campus, setCampus] = useState<string | null>(null);
-
-  useEffect(() => {
-    const uid = auth.currentUser?.uid;
-    if (!uid) {
-      setCampus(null);
-      return;
-    }
-    const userRef = doc(db, 'users', uid);
-    getDoc(userRef)
-      .then((snap) => {
-        const data = snap.data();
-        setCampus(typeof data?.campus === 'string' ? data.campus : null);
-      })
-      .catch(() => setCampus(null));
-  }, []);
 
   const handleTotalPriceChange = (text: string) => {
     setTotalPrice(text);
@@ -342,7 +326,6 @@ export default function CreateOrderScreen() {
       status: 'open',
       createdAt: serverTimestamp(),
       expiresAt,
-      campus: campus ?? null,
       timezone: 'America/Toronto',
       participantIds: [uid],
       maxParticipants: 2,
@@ -448,7 +431,7 @@ export default function CreateOrderScreen() {
           <TextInput
             style={styles.input}
             placeholder="Restaurant name"
-            placeholderTextColor="#666"
+            placeholderTextColor={theme.colors.textMuted}
             value={restaurantName}
             onChangeText={setRestaurantName}
             editable={!loading}
@@ -488,7 +471,7 @@ export default function CreateOrderScreen() {
           <TextInput
             style={styles.input}
             placeholder="0.00"
-            placeholderTextColor="#666"
+            placeholderTextColor={theme.colors.textMuted}
             value={totalPrice}
             onChangeText={handleTotalPriceChange}
             keyboardType="decimal-pad"
@@ -500,7 +483,7 @@ export default function CreateOrderScreen() {
           <TextInput
             style={styles.input}
             placeholder="0.00"
-            placeholderTextColor="#666"
+            placeholderTextColor={theme.colors.textMuted}
             value={sharePrice}
             onChangeText={setSharePrice}
             keyboardType="decimal-pad"
@@ -516,7 +499,7 @@ export default function CreateOrderScreen() {
           <TextInput
             style={styles.input}
             placeholder="e.g. 14165551234"
-            placeholderTextColor="#666"
+            placeholderTextColor={theme.colors.textMuted}
             value={whatsappNumber}
             onChangeText={setWhatsappNumber}
             keyboardType="phone-pad"

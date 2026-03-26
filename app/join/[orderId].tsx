@@ -1,4 +1,5 @@
 import AppLogo from '@/components/AppLogo';
+import { getIosAppStoreUrl, getPlayStoreUrl } from '@/constants/storeLinks';
 import { REFERRAL_ORDER_ID_KEY, REFERRAL_STORAGE_KEY } from '@/lib/invite-link';
 import { db } from '@/services/firebase';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -16,10 +17,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { shadows, theme } from '@/constants/theme';
 
-const APP_STORE_URL = 'https://apps.apple.com/app/halforder-split-meals/id123456789';
-const PLAY_STORE_URL =
-  'https://play.google.com/store/apps/details?id=com.anonymous.ourfoodclean';
+const c = theme.colors;
 
 type OrderData = {
   restaurantName: string;
@@ -140,20 +140,20 @@ export default function JoinInviteScreen() {
     }
     Linking.openURL(deepLink).catch(() => {
       if (Platform.OS === 'ios') {
-        Linking.openURL(APP_STORE_URL).catch(() => {});
+        Linking.openURL(getIosAppStoreUrl()).catch(() => {});
       } else {
-        Linking.openURL(PLAY_STORE_URL).catch(() => {});
+        Linking.openURL(getPlayStoreUrl()).catch(() => {});
       }
     });
   };
 
   const handleDownloadApp = () => {
     if (Platform.OS === 'ios') {
-      Linking.openURL(APP_STORE_URL).catch(() => {});
+      Linking.openURL(getIosAppStoreUrl()).catch(() => {});
     } else if (Platform.OS === 'android') {
-      Linking.openURL(PLAY_STORE_URL).catch(() => {});
+      Linking.openURL(getPlayStoreUrl()).catch(() => {});
     } else {
-      Linking.openURL(PLAY_STORE_URL).catch(() => {});
+      Linking.openURL(getPlayStoreUrl()).catch(() => {});
     }
   };
 
@@ -161,7 +161,7 @@ export default function JoinInviteScreen() {
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.centered}>
-          <ActivityIndicator size="large" color="#2563eb" />
+          <ActivityIndicator size="large" color={c.primary} />
           <Text style={styles.loadingText}>Loading invite…</Text>
         </View>
       </SafeAreaView>
@@ -172,7 +172,7 @@ export default function JoinInviteScreen() {
     return (
       <SafeAreaView style={styles.safe}>
         <View style={[styles.cardWrapper, styles.centered]}>
-          <AppLogo />
+          <AppLogo size={88} marginTop={0} />
           <Text style={styles.notFoundTitle}>Order not found</Text>
           <Text style={styles.notFoundSub}>
             This invite link may be invalid or the order was removed.
@@ -207,7 +207,7 @@ export default function JoinInviteScreen() {
           </View>
 
           <View style={styles.logoRow}>
-            <AppLogo width={120} height={56} marginTop={0} />
+            <AppLogo size={96} marginTop={0} />
           </View>
 
           {/* Order card */}
@@ -292,7 +292,7 @@ export default function JoinInviteScreen() {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: c.chromeWash,
   },
   centered: {
     justifyContent: 'center',
@@ -312,40 +312,40 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 12,
     fontSize: 16,
-    color: '#64748b',
+    color: c.textMuted,
   },
   notFoundTitle: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#1e293b',
+    color: c.textSlateDark,
     marginTop: 24,
     textAlign: 'center',
   },
   notFoundSub: {
     fontSize: 15,
-    color: '#64748b',
+    color: c.textMuted,
     marginTop: 8,
     textAlign: 'center',
     paddingHorizontal: 16,
   },
   previewBubble: {
-    backgroundColor: '#dcfce7',
+    backgroundColor: c.successBackground,
     borderRadius: 12,
     padding: 16,
     marginBottom: 24,
     borderLeftWidth: 4,
-    borderLeftColor: '#22c55e',
+    borderLeftColor: c.success,
   },
   previewLabel: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#166534',
+    color: c.successTextDark,
     marginBottom: 4,
     textTransform: 'uppercase',
   },
   previewText: {
     fontSize: 15,
-    color: '#166534',
+    color: c.successTextDark,
     lineHeight: 22,
   },
   logoRow: {
@@ -353,36 +353,32 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   card: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 20,
+    backgroundColor: c.white,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.section,
+    marginBottom: theme.spacing.section,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
+    borderColor: c.border,
+    ...shadows.card,
   },
   cardTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#1e293b',
+    color: c.textSlateDark,
     marginBottom: 16,
   },
   cardRow: {
     fontSize: 16,
-    color: '#334155',
+    color: c.textSlateDark,
     marginBottom: 10,
   },
   cardLabel: {
     fontWeight: '600',
-    color: '#475569',
+    color: c.textSlate,
   },
   inviteMessage: {
     fontSize: 16,
-    color: '#475569',
+    color: c.textSlate,
     textAlign: 'center',
     marginBottom: 24,
     lineHeight: 24,
@@ -392,38 +388,42 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     padding: 16,
     borderRadius: 12,
-    backgroundColor: '#fef2f2',
+    backgroundColor: c.dangerBackground,
     alignItems: 'center',
   },
   statusError: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#dc2626',
+    color: c.danger,
   },
   primaryButton: {
-    backgroundColor: '#2563eb',
+    backgroundColor: c.primary,
     paddingVertical: 16,
-    borderRadius: 12,
+    borderRadius: theme.radius.button,
     alignItems: 'center',
-    marginBottom: 12,
+    justifyContent: 'center',
+    minHeight: theme.spacing.touchMin,
+    marginBottom: theme.spacing.tight,
     width: '100%',
   },
   primaryButtonText: {
-    color: '#ffffff',
+    color: c.textOnPrimary,
     fontSize: 17,
     fontWeight: '700',
   },
   secondaryButton: {
-    backgroundColor: '#ffffff',
-    paddingVertical: 14,
-    borderRadius: 12,
+    backgroundColor: c.white,
+    paddingVertical: 16,
+    borderRadius: theme.radius.button,
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: theme.spacing.touchMin,
     borderWidth: 2,
-    borderColor: '#2563eb',
+    borderColor: c.primary,
     width: '100%',
   },
   secondaryButtonText: {
-    color: '#2563eb',
+    color: c.primary,
     fontSize: 16,
     fontWeight: '600',
   },

@@ -26,7 +26,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { theme } from '@/constants/theme';
+import { shadows, theme } from '@/constants/theme';
 
 const NEARBY_RADIUS_KM = 1;
 
@@ -126,7 +126,7 @@ export default function NearbyOrdersScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <AppLogo />
+        <AppLogo size={64} marginTop={4} />
         <Text style={styles.title}>Nearby Orders</Text>
         <Text style={styles.subtitle}>
           Within {NEARBY_RADIUS_KM} km • Tap Join to open the order
@@ -223,16 +223,23 @@ const styles = StyleSheet.create({
   messageBox: {
     marginHorizontal: theme.spacing.screen,
     padding: 16,
-    backgroundColor: '#fef2f2',
+    backgroundColor: theme.colors.dangerBackground,
     borderRadius: theme.radius.card,
     alignItems: 'center',
   },
-  errorText: { fontSize: 14, color: '#b91c1c', marginBottom: 12 },
+  errorText: {
+    fontSize: 14,
+    color: theme.colors.dangerText,
+    marginBottom: 12,
+  },
   retryButton: {
     backgroundColor: theme.colors.primary,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
+    paddingVertical: 14,
+    paddingHorizontal: theme.spacing.section,
     borderRadius: theme.radius.button,
+    minHeight: theme.spacing.touchMin,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   retryButtonText: {
     color: theme.colors.textOnPrimary,
@@ -253,9 +260,10 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surface,
     borderWidth: 1,
     borderColor: theme.colors.border,
-    borderRadius: theme.radius.card,
-    padding: 16,
-    marginBottom: 12,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.md,
+    marginBottom: theme.spacing.tight,
+    ...shadows.card,
   },
   cardRestaurant: {
     fontSize: 18,
@@ -270,10 +278,12 @@ const styles = StyleSheet.create({
   },
   joinButton: {
     backgroundColor: theme.colors.primary,
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderRadius: theme.radius.button,
     alignItems: 'center',
-    marginTop: 12,
+    justifyContent: 'center',
+    minHeight: theme.spacing.touchMin,
+    marginTop: theme.spacing.tight,
   },
   joinButtonDisabled: { opacity: 0.7 },
   joinButtonText: {

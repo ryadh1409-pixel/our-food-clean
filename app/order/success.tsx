@@ -1,5 +1,5 @@
 import AppLogo from '@/components/AppLogo';
-import { theme } from '@/constants/theme';
+import { shadows, theme } from '@/constants/theme';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Sharing from 'expo-sharing';
 import React, { useRef, useState } from 'react';
@@ -110,7 +110,7 @@ export default function OrderSuccessScreen() {
         <View ref={cardRef} style={styles.card} collapsable={false}>
           <View style={styles.cardInner}>
             <View style={styles.logoWrap}>
-              <AppLogo />
+              <AppLogo size={88} marginTop={0} />
             </View>
             <Text style={styles.cardRestaurant}>{restaurantName}</Text>
             <Text style={styles.cardTotal}>Meal total: {totalLabel}</Text>
@@ -230,20 +230,20 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     padding: 14,
     borderRadius: 12,
-    backgroundColor: '#D4EDDA',
+    backgroundColor: theme.colors.successBackground,
     borderWidth: 1,
-    borderColor: '#FFD700',
+    borderColor: theme.colors.primary,
     alignSelf: 'stretch',
   },
   taxGiftBannerTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#155724',
+    color: theme.colors.successTextDark,
     textAlign: 'center',
   },
   taxGiftBannerText: {
     fontSize: 14,
-    color: '#155724',
+    color: theme.colors.successTextDark,
     marginTop: 4,
     textAlign: 'center',
   },
@@ -251,13 +251,14 @@ const styles = StyleSheet.create({
     width: CARD_WIDTH,
     minHeight: CARD_HEIGHT,
     backgroundColor: theme.colors.surface,
-    borderRadius: theme.radius.card,
+    borderRadius: theme.radius.lg,
     borderWidth: 1,
     borderColor: theme.colors.border,
-    padding: 20,
-    marginBottom: 20,
+    padding: theme.spacing.section,
+    marginBottom: theme.spacing.section,
     alignItems: 'center',
     justifyContent: 'center',
+    ...shadows.card,
   },
   cardInner: {
     alignItems: 'center',
@@ -289,12 +290,14 @@ const styles = StyleSheet.create({
   },
   shareButton: {
     backgroundColor: theme.colors.primary,
-    paddingVertical: 14,
-    paddingHorizontal: 28,
+    paddingVertical: 16,
+    paddingHorizontal: theme.spacing.lg + 4,
     borderRadius: theme.radius.button,
     minWidth: 200,
     alignItems: 'center',
-    marginBottom: 20,
+    justifyContent: 'center',
+    minHeight: theme.spacing.touchMin,
+    marginBottom: theme.spacing.section,
   },
   shareButtonDisabled: { opacity: 0.7 },
   shareButtonText: {

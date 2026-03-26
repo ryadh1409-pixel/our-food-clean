@@ -57,12 +57,12 @@ export default function OnboardingScreen() {
 
   const handleSkip = async () => {
     await AsyncStorage.setItem(ONBOARDING_COMPLETE_KEY, 'true');
-    router.replace('/(auth)/login');
+    router.replace('/');
   };
 
   const handleGetStarted = async () => {
     await AsyncStorage.setItem(ONBOARDING_COMPLETE_KEY, 'true');
-    router.replace('/(auth)/login');
+    router.replace('/');
   };
 
   const isLastPage = index === SLIDES.length - 1;
@@ -71,7 +71,10 @@ export default function OnboardingScreen() {
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
         <View style={styles.logoWrap}>
-          <AppLogo width={140} height={56} marginTop={0} />
+          <AppLogo
+            size={Math.min(132, Math.round(width * 0.36))}
+            marginTop={0}
+          />
         </View>
         <TouchableOpacity
           style={styles.skipButton}

@@ -19,17 +19,9 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { adminColors as COLORS } from '@/constants/adminTheme';
 
 const ADMIN_EMAIL = 'support@halforder.app';
-
-const COLORS = {
-  background: '#F5F5F5',
-  text: '#000000',
-  textMuted: '#666666',
-  primary: '#FFD700',
-  border: '#E5E5E5',
-  error: '#B91C1C',
-} as const;
 
 type ActivityPoint = {
   id: string;
@@ -243,7 +235,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: COLORS.card,
   },
   backText: {
     fontSize: 16,
@@ -285,7 +277,7 @@ const styles = StyleSheet.create({
   },
   footer: {
     padding: 12,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: COLORS.card,
     borderTopWidth: 1,
     borderTopColor: COLORS.border,
   },
@@ -321,7 +313,7 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
   },
   errorBox: {
-    backgroundColor: '#FEE2E2',
+    backgroundColor: COLORS.dangerBg,
     padding: 12,
     marginHorizontal: 16,
     marginTop: 8,

@@ -13,18 +13,10 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { adminCardShell, adminColors as COLORS } from '@/constants/adminTheme';
+import { theme } from '@/constants/theme';
 
 const ADMIN_EMAIL = 'support@halforder.app';
-
-const COLORS = {
-  background: '#F5F5F5',
-  card: '#FFFFFF',
-  text: '#000000',
-  textMuted: '#666666',
-  primary: '#FFD700',
-  border: '#E5E5E5',
-  error: '#B91C1C',
-} as const;
 
 function startOfTodayMs(): number {
   const d = new Date();
@@ -249,6 +241,13 @@ export default function AdminScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.navButton}
+            onPress={() => router.push('/admin-reports')}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.navButtonText}>User Reports (UGC)</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.navButton}
             onPress={() => router.push('/admin-orders')}
             activeOpacity={0.85}
           >
@@ -289,13 +288,15 @@ export default function AdminScreen() {
           >
             <Text style={styles.navButtonText}>Broadcast</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.navButton}
-            onPress={() => router.push('/admin/campuses')}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.navButtonText}>Campuses</Text>
-          </TouchableOpacity>
+          {__DEV__ ? (
+            <TouchableOpacity
+              style={styles.navButton}
+              onPress={() => router.push('/admin/test-order-flow')}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.navButtonText}>Developer tools</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -348,7 +349,7 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
   },
   errorBox: {
-    backgroundColor: '#FEE2E2',
+    backgroundColor: COLORS.dangerBg,
     padding: 12,
     borderRadius: 8,
     marginBottom: 16,
@@ -361,11 +362,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   card: {
-    backgroundColor: COLORS.card,
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    ...adminCardShell,
     marginBottom: 12,
   },
   cardLabel: {
@@ -384,10 +381,12 @@ const styles = StyleSheet.create({
   },
   navButton: {
     backgroundColor: COLORS.primary,
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: theme.spacing.section,
+    borderRadius: theme.radius.button,
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: theme.spacing.touchMin,
     marginBottom: 12,
   },
   navButtonText: {

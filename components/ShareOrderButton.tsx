@@ -10,6 +10,9 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { theme } from '@/constants/theme';
+
+const c = theme.colors;
 
 type ShareOrderButtonProps = {
   orderId: string;
@@ -143,7 +146,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#000',
+    color: c.text,
     marginBottom: 8,
   },
   row: {
@@ -158,20 +161,20 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: 'center',
   },
-  btnText: { color: '#fff', fontWeight: '600', fontSize: 14 },
-  copyBtnText: { color: '#000', fontWeight: '600', fontSize: 14 },
-  whatsapp: { backgroundColor: '#25D366' },
-  imessage: { backgroundColor: '#34C759' },
-  instagram: { backgroundColor: '#E4405F' },
-  copy: { backgroundColor: '#FFD700' },
+  btnText: { color: c.textOnPrimary, fontWeight: '600', fontSize: 14 },
+  copyBtnText: { color: c.textOnPrimary, fontWeight: '600', fontSize: 14 },
+  whatsapp: { backgroundColor: c.whatsapp },
+  imessage: { backgroundColor: c.imessageGreen },
+  instagram: { backgroundColor: c.instagramBrand },
+  copy: { backgroundColor: c.primary },
   primaryButton: {
-    backgroundColor: '#FFD700',
+    backgroundColor: c.primary,
     paddingVertical: 12,
     borderRadius: 12,
     alignItems: 'center',
   },
   primaryButtonText: {
-    color: '#000',
+    color: c.textOnPrimary,
     fontWeight: '700',
     fontSize: 16,
   },

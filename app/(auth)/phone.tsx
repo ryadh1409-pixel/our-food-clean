@@ -13,13 +13,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { auth } from '@/services/firebase';
+import { theme } from '@/constants/theme';
 
-const BG = '#0D0D0D';
-const INPUT_BG = '#1A1A1A';
-const BORDER = '#2A2A2A';
-const PLACEHOLDER = '#6B7280';
-const LABEL = '#9CA3AF';
-const BRAND = '#2563EB';
+const c = theme.colors;
 
 export default function PhoneLoginScreen() {
   const router = useRouter();
@@ -89,7 +85,7 @@ export default function PhoneLoginScreen() {
             <TextInput
               style={styles.input}
               placeholder="+1 234 567 8900"
-              placeholderTextColor={PLACEHOLDER}
+              placeholderTextColor={c.textMuted}
               value={phone}
               onChangeText={setPhone}
               keyboardType="phone-pad"
@@ -101,7 +97,7 @@ export default function PhoneLoginScreen() {
               disabled={loading}
             >
               {loading ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color={c.textOnPrimary} />
               ) : (
                 <Text style={styles.primaryBtnText}>Send code</Text>
               )}
@@ -113,7 +109,7 @@ export default function PhoneLoginScreen() {
             <TextInput
               style={styles.input}
               placeholder="123456"
-              placeholderTextColor={PLACEHOLDER}
+              placeholderTextColor={c.textMuted}
               value={code}
               onChangeText={setCode}
               keyboardType="number-pad"
@@ -125,7 +121,7 @@ export default function PhoneLoginScreen() {
               disabled={loading}
             >
               {loading ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color={c.textOnPrimary} />
               ) : (
                 <Text style={styles.primaryBtnText}>Confirm</Text>
               )}
@@ -153,45 +149,54 @@ export default function PhoneLoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: BG },
+  container: { flex: 1, backgroundColor: c.sheetDark },
   content: { flex: 1, paddingHorizontal: 24, paddingTop: 48 },
   recaptchaHidden: { position: 'absolute', left: -9999, width: 1, height: 1 },
   title: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#fff',
+    color: c.white,
     textAlign: 'center',
   },
   subtitle: {
     fontSize: 14,
-    color: LABEL,
+    color: c.textSecondary,
     textAlign: 'center',
     marginTop: 8,
     marginBottom: 24,
   },
-  label: { fontSize: 14, fontWeight: '600', color: LABEL, marginBottom: 8 },
+  label: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: c.textSecondary,
+    marginBottom: 8,
+  },
   input: {
-    backgroundColor: INPUT_BG,
+    backgroundColor: c.surfaceDark,
     borderWidth: 1,
-    borderColor: BORDER,
+    borderColor: c.surfaceDarkElevated,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: 16,
-    color: '#fff',
+    color: c.white,
     marginBottom: 16,
   },
   primaryBtn: {
-    backgroundColor: BRAND,
+    backgroundColor: c.primary,
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: 'center',
     marginTop: 8,
   },
-  primaryBtnText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  primaryBtnText: {
+    color: c.textOnPrimary,
+    fontSize: 16,
+    fontWeight: '600',
+  },
   btnDisabled: { opacity: 0.7 },
   backBtn: { marginTop: 16, alignItems: 'center' },
-  backBtnText: { color: LABEL, fontSize: 14 },
+  backBtnText: { color: c.textSecondary, fontSize: 14 },
   linkBtn: { marginTop: 32, alignItems: 'center' },
-  linkBtnText: { color: BRAND, fontSize: 15, fontWeight: '600' },
+  linkBtnText: { color: c.primary, fontSize: 15, fontWeight: '600' },
 });

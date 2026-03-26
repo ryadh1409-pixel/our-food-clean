@@ -12,7 +12,10 @@ export default function AdminLayout() {
       />
       <Stack.Screen name="map" options={{ title: 'Activity Map' }} />
       <Stack.Screen name="broadcast" options={{ title: 'Broadcast' }} />
-      <Stack.Screen name="campuses" options={{ title: 'Campuses' }} />
+      <Stack.Screen
+        name="test-order-flow"
+        options={{ title: 'Order Flow Test' }}
+      />
     </Stack>
   );
 }

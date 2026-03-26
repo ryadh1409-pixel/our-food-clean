@@ -111,7 +111,7 @@ export default function LoginScreen() {
               ref={emailRef}
               style={styles.input}
               placeholder="you@example.com"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={theme.colors.iconInactive}
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
@@ -128,7 +128,7 @@ export default function LoginScreen() {
               ref={passwordRef}
               style={styles.input}
               placeholder="••••••••"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={theme.colors.iconInactive}
               value={password}
               onChangeText={setPassword}
               secureTextEntry
@@ -179,7 +179,7 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
+  container: { flex: 1, backgroundColor: theme.colors.background },
   keyboard: { flex: 1 },
   content: {
     flex: 1,
@@ -190,26 +190,31 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 32,
     fontWeight: '800',
-    color: '#111827',
+    color: theme.colors.text,
     textAlign: 'center',
   },
   subtitle: {
     fontSize: 16,
-    color: '#6B7280',
+    color: theme.colors.textMuted,
     textAlign: 'center',
     marginTop: 8,
     marginBottom: 40,
   },
   form: { gap: 16, width: '100%', maxWidth: 400 },
-  label: { fontSize: 16, fontWeight: '600', color: '#374151', marginBottom: 4 },
+  label: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: theme.colors.textSlateDark,
+    marginBottom: 4,
+  },
   input: {
     borderWidth: 1,
-    borderColor: '#D1D5DB',
+    borderColor: theme.colors.borderStrong,
     padding: 12,
     borderRadius: 8,
     fontSize: 16,
-    color: '#111827',
-    backgroundColor: '#fff',
+    color: theme.colors.text,
+    backgroundColor: theme.colors.background,
   },
   forgotRow: {
     alignSelf: 'flex-end',
@@ -240,6 +245,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 40,
   },
-  footerText: { color: '#6B7280', fontSize: 15 },
+  footerText: { color: theme.colors.textMuted, fontSize: 15 },
   link: { color: theme.colors.primary, fontSize: 15, fontWeight: '600' },
 });

@@ -1,3 +1,4 @@
+import { theme } from '@/constants/theme';
 import React from 'react';
 import {
   InputAccessoryView,
@@ -8,6 +9,8 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+
+const c = theme.colors;
 
 export const KEYBOARD_TOOLBAR_NATIVE_ID = 'keyboardToolbar';
 
@@ -76,9 +79,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 10,
-    backgroundColor: '#F2F2F7',
+    backgroundColor: c.surfaceMuted,
     borderTopWidth: 0.5,
-    borderColor: '#ccc',
+    borderColor: c.borderStrong,
   },
   button: {
     paddingVertical: 6,
@@ -86,15 +89,15 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 18,
-    color: '#007AFF',
+    color: c.accentBlue,
   },
   labelDisabled: {
     opacity: 0.4,
-    color: '#8E8E93',
+    color: c.textSecondary,
   },
   done: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#007AFF',
+    color: c.accentBlue,
   },
 });

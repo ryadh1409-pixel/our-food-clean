@@ -1,6 +1,6 @@
 import { getIsAdminByRole } from '@/firebase/adminAuth';
 import { auth } from '@/firebase/config';
-import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { signInWithEmailAndPassword, signOut } from '@firebase/auth';
 import { useRouter } from 'next/router';
 import React, { useState } from 'react';
 

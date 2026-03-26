@@ -15,13 +15,9 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { theme } from '@/constants/theme';
 
-const BG = '#0D0D0D';
-const BRAND = '#2563EB';
-const FORM_LABEL = '#374151';
-const FORM_INPUT = '#111827';
-const FORM_PLACEHOLDER = '#9CA3AF';
-const FORM_HELPER = '#6B7280';
+const c = theme.colors;
 
 const REGISTER_INPUTS = 3;
 
@@ -102,7 +98,7 @@ export default function RegisterScreen() {
               ref={emailRef}
               style={styles.input}
               placeholder="you@example.com"
-              placeholderTextColor={FORM_PLACEHOLDER}
+              placeholderTextColor={c.iconInactive}
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
@@ -119,7 +115,7 @@ export default function RegisterScreen() {
               ref={passwordRef}
               style={styles.input}
               placeholder="At least 6 characters"
-              placeholderTextColor={FORM_PLACEHOLDER}
+              placeholderTextColor={c.iconInactive}
               value={password}
               onChangeText={setPassword}
               secureTextEntry
@@ -134,7 +130,7 @@ export default function RegisterScreen() {
               ref={confirmPasswordRef}
               style={styles.input}
               placeholder="••••••••"
-              placeholderTextColor={FORM_PLACEHOLDER}
+              placeholderTextColor={c.iconInactive}
               value={confirmPassword}
               onChangeText={setConfirmPassword}
               secureTextEntry
@@ -151,7 +147,7 @@ export default function RegisterScreen() {
               disabled={loading}
             >
               {loading ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color={c.textOnPrimary} />
               ) : (
                 <Text style={styles.primaryBtnText}>Create account</Text>
               )}
@@ -171,7 +167,7 @@ export default function RegisterScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: BG },
+  container: { flex: 1, backgroundColor: c.sheetDark },
   keyboard: { flex: 1 },
   content: {
     flex: 1,
@@ -181,36 +177,50 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 32,
     fontWeight: '800',
-    color: '#fff',
+    color: c.white,
     textAlign: 'center',
   },
   subtitle: {
     fontSize: 16,
-    color: FORM_HELPER,
+    color: c.textSecondary,
     textAlign: 'center',
     marginTop: 8,
     marginBottom: 40,
   },
-  form: { gap: 16, backgroundColor: '#FFFFFF', padding: 24, borderRadius: 16 },
-  label: { fontSize: 16, fontWeight: '600', color: FORM_LABEL, marginBottom: 4 },
+  form: {
+    gap: 16,
+    backgroundColor: c.background,
+    padding: 24,
+    borderRadius: 16,
+  },
+  label: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: c.textSlateDark,
+    marginBottom: 4,
+  },
   input: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: c.background,
     borderWidth: 1,
-    borderColor: '#D1D5DB',
+    borderColor: c.borderStrong,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: 16,
-    color: FORM_INPUT,
+    color: c.text,
   },
   primaryBtn: {
-    backgroundColor: BRAND,
+    backgroundColor: c.primary,
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: 'center',
     marginTop: 8,
   },
-  primaryBtnText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  primaryBtnText: {
+    color: c.textOnPrimary,
+    fontSize: 16,
+    fontWeight: '600',
+  },
   btnDisabled: { opacity: 0.7 },
   footer: {
     flexDirection: 'row',
@@ -218,6 +228,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 32,
   },
-  footerText: { color: FORM_HELPER, fontSize: 15 },
-  link: { color: BRAND, fontSize: 15, fontWeight: '600' },
+  footerText: { color: c.textSecondary, fontSize: 15 },
+  link: { color: c.primary, fontSize: 15, fontWeight: '600' },
 });

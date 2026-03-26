@@ -9,6 +9,9 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { theme } from '@/constants/theme';
+
+const c = theme.colors;
 
 export default function MapScreenNative() {
   const router = useRouter();
@@ -49,31 +52,31 @@ export default function MapScreenNative() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFFFF' },
+  container: { flex: 1, backgroundColor: c.background },
   centered: { justifyContent: 'center', alignItems: 'center' },
   header: {
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 8,
-    backgroundColor: 'rgba(255,255,255,0.9)',
+    backgroundColor: c.lightGray,
   },
   title: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#000000',
+    color: c.text,
   },
   demandMap: { flex: 1, margin: 12 },
   fab: {
     position: 'absolute',
     bottom: 24,
     alignSelf: 'center',
-    backgroundColor: '#FFD700',
+    backgroundColor: c.primary,
     paddingVertical: 14,
     paddingHorizontal: 24,
     borderRadius: 12,
     ...Platform.select({
       ios: {
-        shadowColor: '#000',
+        shadowColor: c.shadow,
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.2,
         shadowRadius: 4,
@@ -81,15 +84,15 @@ const styles = StyleSheet.create({
       android: { elevation: 4 },
     }),
   },
-  fabText: { color: '#000', fontSize: 16, fontWeight: '600' },
+  fabText: { color: c.textOnPrimary, fontSize: 16, fontWeight: '600' },
   mapPlaceholder: {
     height: 200,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f2f2f2',
+    backgroundColor: c.surface,
   },
   mapPlaceholderText: {
     fontSize: 14,
-    color: '#666',
+    color: c.textMuted,
   },
 });

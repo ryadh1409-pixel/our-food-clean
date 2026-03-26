@@ -1,6 +1,9 @@
 import type { NearbyOrder } from '@/hooks/useNearbyOrders';
 import { Marker } from '@/components/SafeMap';
+import { theme } from '@/constants/theme';
 import React from 'react';
+
+const c = theme.colors;
 import { Platform, StyleSheet, Text, View } from 'react-native';
 
 const MEAL_ICONS: Record<string, string> = {
@@ -55,17 +58,22 @@ export default function OrderMarker({
 
 const styles = StyleSheet.create({
   marker: {
-    backgroundColor: '#FFF',
+    backgroundColor: c.white,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 16,
     borderWidth: 2,
-    borderColor: '#FFD700',
+    borderColor: c.primary,
     alignItems: 'center',
     justifyContent: 'center',
     minWidth: 36,
     flexDirection: 'row',
   },
   icon: { fontSize: 18 },
-  count: { fontSize: 12, fontWeight: '700', color: '#000', marginLeft: 2 },
+  count: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: c.text,
+    marginLeft: 2,
+  },
 });

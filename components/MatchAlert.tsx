@@ -1,10 +1,8 @@
+import { theme } from '@/constants/theme';
 import React from 'react';
 import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-const BG_OVERLAY = 'rgba(0,0,0,0.7)';
-const CARD_BG = '#1C1C1E';
-const PRIMARY = '#FFD700';
-const SECONDARY = '#3A3A3C';
+const c = theme.colors;
 
 type MatchAlertProps = {
   visible: boolean;
@@ -64,13 +62,13 @@ export default function MatchAlert({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: BG_OVERLAY,
+    backgroundColor: c.overlayScrim,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
   },
   card: {
-    backgroundColor: CARD_BG,
+    backgroundColor: c.surfaceDark,
     borderRadius: 20,
     padding: 24,
     width: '100%',
@@ -79,13 +77,13 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 22,
     fontWeight: '700',
-    color: '#FFF',
+    color: c.white,
     textAlign: 'center',
     marginBottom: 12,
   },
   message: {
     fontSize: 16,
-    color: '#E5E5EA',
+    color: c.textSecondary,
     textAlign: 'center',
     lineHeight: 22,
     marginBottom: 24,
@@ -94,13 +92,13 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   primaryBtn: {
-    backgroundColor: PRIMARY,
+    backgroundColor: c.primary,
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: 'center',
   },
   secondaryBtn: {
-    backgroundColor: SECONDARY,
+    backgroundColor: c.surfaceDarkElevated,
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: 'center',
@@ -109,12 +107,12 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   primaryBtnText: {
-    color: '#0B0B0B',
+    color: c.textOnPrimary,
     fontSize: 17,
     fontWeight: '700',
   },
   secondaryBtnText: {
-    color: '#FFF',
+    color: c.white,
     fontSize: 16,
     fontWeight: '600',
   },

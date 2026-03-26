@@ -15,20 +15,9 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { theme } from '@/constants/theme';
 
-const COLORS = {
-  overlay: 'rgba(0,0,0,0.55)',
-  card: '#FFFFFF',
-  title: '#1a1a1a',
-  starFilled: '#FFD700',
-  starEmpty: '#E5E7EB',
-  inputBorder: '#E5E7EB',
-  inputText: '#1a1a1a',
-  placeholder: '#666',
-  button: '#FFD700',
-  buttonText: '#000000',
-  buttonDisabled: '#E5E7EB',
-};
+const C = theme.colors;
 
 export type RateOrderPartnerModalProps = {
   visible: boolean;
@@ -119,7 +108,7 @@ export function RateOrderPartnerModal({
             value={comment}
             onChangeText={setComment}
             placeholder="Optional comment"
-            placeholderTextColor={COLORS.placeholder}
+            placeholderTextColor={C.textMuted}
             style={styles.commentInput}
             multiline
             maxLength={200}
@@ -131,7 +120,7 @@ export function RateOrderPartnerModal({
             disabled={submitting || stars < 1}
           >
             {submitting ? (
-              <ActivityIndicator size="small" color={COLORS.buttonText} />
+              <ActivityIndicator size="small" color={C.textOnPrimary} />
             ) : (
               <Text style={styles.submitText}>Submit</Text>
             )}
@@ -145,18 +134,18 @@ export function RateOrderPartnerModal({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: COLORS.overlay,
+    backgroundColor: C.overlayScrim,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
   },
   content: {
-    backgroundColor: COLORS.card,
+    backgroundColor: C.background,
     borderRadius: 20,
     padding: 28,
     width: '100%',
     maxWidth: 340,
-    shadowColor: '#000',
+    shadowColor: C.shadow,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.15,
     shadowRadius: 24,
@@ -165,7 +154,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 20,
     fontWeight: '700',
-    color: COLORS.title,
+    color: C.text,
     textAlign: 'center',
     marginBottom: 20,
   },
@@ -182,32 +171,32 @@ const styles = StyleSheet.create({
     fontSize: 40,
   },
   starFilled: {
-    color: COLORS.starFilled,
+    color: C.warning,
   },
   starEmpty: {
-    color: COLORS.starEmpty,
+    color: C.dotInactive,
   },
   commentInput: {
     borderWidth: 1,
-    borderColor: COLORS.inputBorder,
+    borderColor: C.border,
     borderRadius: 12,
     padding: 14,
     fontSize: 15,
-    color: COLORS.inputText,
+    color: C.text,
     minHeight: 88,
     marginBottom: 20,
   },
   submitButton: {
-    backgroundColor: COLORS.button,
+    backgroundColor: C.primary,
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: 'center',
   },
   submitDisabled: {
-    backgroundColor: COLORS.buttonDisabled,
+    backgroundColor: C.surface,
   },
   submitText: {
-    color: COLORS.buttonText,
+    color: C.textOnPrimary,
     fontWeight: '600',
     fontSize: 16,
   },

@@ -14,18 +14,10 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { adminCardShell, adminColors as COLORS } from '@/constants/adminTheme';
+import { theme } from '@/constants/theme';
 
 const ADMIN_EMAIL = 'support@halforder.app';
-
-const COLORS = {
-  background: '#F5F5F5',
-  card: '#FFFFFF',
-  text: '#000000',
-  textMuted: '#666666',
-  primary: '#FFD700',
-  border: '#E5E5E5',
-  error: '#B91C1C',
-} as const;
 
 type UserRow = {
   id: string;
@@ -272,7 +264,7 @@ const styles = StyleSheet.create({
   link: { fontSize: 16, color: COLORS.primary, fontWeight: '600' },
   loadingText: { marginTop: 12, fontSize: 14, color: COLORS.textMuted },
   errorBox: {
-    backgroundColor: '#FEE2E2',
+    backgroundColor: COLORS.dangerBg,
     padding: 12,
     borderRadius: 8,
     marginBottom: 16,
@@ -291,10 +283,16 @@ const styles = StyleSheet.create({
   bannedBadge: { fontSize: 14, fontWeight: '600', color: COLORS.error },
   banButton: {
     backgroundColor: COLORS.error,
-    paddingVertical: 10,
-    borderRadius: 8,
+    paddingVertical: 14,
+    borderRadius: theme.radius.sm,
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: theme.spacing.touchMin,
     marginTop: 4,
   },
-  banButtonText: { color: '#FFF', fontWeight: '600', fontSize: 14 },
+  banButtonText: {
+    color: COLORS.onPrimary,
+    fontWeight: '600',
+    fontSize: 14,
+  },
 });

@@ -11,6 +11,9 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { shadows, theme } from '@/constants/theme';
+
+const c = theme.colors;
 
 export default function MapScreenWeb() {
   const router = useRouter();
@@ -25,7 +28,7 @@ export default function MapScreenWeb() {
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {loading ? (
         <View style={styles.centered}>
-          <ActivityIndicator size="large" color="#FFD700" />
+          <ActivityIndicator size="large" color={c.primary} />
         </View>
       ) : (
         <ScrollView
@@ -67,54 +70,65 @@ export default function MapScreenWeb() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFFFF' },
+  container: { flex: 1, backgroundColor: c.background },
   title: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#000000',
+    color: c.text,
     paddingHorizontal: 16,
     paddingTop: 16,
     paddingBottom: 12,
   },
-  hint: { fontSize: 14, color: '#666', paddingHorizontal: 16, marginBottom: 8 },
+  hint: {
+    fontSize: 14,
+    color: c.textMuted,
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
   error: {
     fontSize: 14,
-    color: '#b91c1c',
+    color: c.dangerText,
     paddingHorizontal: 16,
     marginBottom: 8,
   },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   list: { padding: 16, paddingBottom: 100 },
-  empty: { fontSize: 16, color: '#666', textAlign: 'center', marginTop: 24 },
+  empty: {
+    fontSize: 16,
+    color: c.textMuted,
+    textAlign: 'center',
+    marginTop: 24,
+  },
   card: {
-    backgroundColor: '#FFF',
+    backgroundColor: c.white,
     borderWidth: 1,
-    borderColor: '#E5E5E5',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
+    borderColor: c.border,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.md,
+    marginBottom: theme.spacing.tight,
+    ...shadows.card,
   },
   cardTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#000',
+    color: c.text,
     marginBottom: 8,
   },
-  cardRow: { fontSize: 14, color: '#333', marginBottom: 4 },
+  cardRow: { fontSize: 14, color: c.textSlateDark, marginBottom: 4 },
   joinLabel: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#22c55e',
+    color: c.success,
     marginTop: 8,
   },
   fab: {
     position: 'absolute',
     bottom: 24,
     alignSelf: 'center',
-    backgroundColor: '#FFD700',
+    backgroundColor: c.primary,
     paddingVertical: 14,
     paddingHorizontal: 24,
     borderRadius: 12,
   },
-  fabText: { color: '#000', fontSize: 16, fontWeight: '600' },
+  fabText: { color: c.textOnPrimary, fontSize: 16, fontWeight: '600' },
 });

@@ -8,14 +8,9 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { shadows, theme } from '@/constants/theme';
 
-const COLORS = {
-  background: '#FFFFFF',
-  primary: '#FFD54F',
-  text: '#1A1A1A',
-  textMuted: '#6B7280',
-  border: '#E5E7EB',
-} as const;
+const c = theme.colors;
 
 export default function SafetyScreen() {
   const router = useRouter();
@@ -72,7 +67,7 @@ export default function SafetyScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: c.background,
   },
   header: {
     flexDirection: 'row',
@@ -80,17 +75,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    borderBottomColor: c.border,
   },
   backText: {
     fontSize: 16,
-    color: COLORS.primary,
+    color: c.primary,
     fontWeight: '600',
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: COLORS.text,
+    color: c.text,
     marginLeft: 16,
   },
   scrollContent: {
@@ -98,22 +93,23 @@ const styles = StyleSheet.create({
     paddingBottom: 32,
   },
   card: {
-    backgroundColor: COLORS.background,
+    backgroundColor: c.background,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 16,
+    borderColor: c.border,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.section,
+    marginBottom: theme.spacing.md,
+    ...shadows.card,
   },
   cardTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: COLORS.text,
+    color: c.text,
     marginBottom: 12,
   },
   cardText: {
     fontSize: 15,
-    color: COLORS.textMuted,
+    color: c.textMuted,
     lineHeight: 22,
     marginBottom: 8,
   },

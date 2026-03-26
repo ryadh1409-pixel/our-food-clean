@@ -1,9 +1,6 @@
 import AppLogo from '@/components/AppLogo';
-import CampusBanner from '@/components/CampusBanner';
 import MatchAlert from '@/components/MatchAlert';
-import { theme } from '@/constants/theme';
-import { useCampusDetection } from '@/hooks/useCampusDetection';
-import { CAMPUS_MATCH_RADIUS_METERS } from '@/services/campusMode';
+import { shadows, theme } from '@/constants/theme';
 import { haversineDistanceKm } from '@/lib/haversine';
 import { getTimeAgo } from '@/lib/time-ago';
 import {
@@ -51,7 +48,6 @@ type ExploreOrder = {
   latitude: number | null;
   longitude: number | null;
   distanceKm: number | null;
-  campus?: string | null;
 };
 
 export default function ExploreScreen() {
@@ -71,9 +67,6 @@ export default function ExploreScreen() {
   const dismissedMatchIds = useRef<Set<string>>(new Set());
   const currentMatchIdRef = useRef<string | null>(null);
   const hasActiveOrderRef = useRef<boolean>(false);
-  const { isCampusMode, campusName } = useCampusDetection();
-  const [userCampus, setUserCampus] = useState<string | null>(null);
-
   const fetchUserLocation = useCallback(async () => {
     setLocationError(null);
     try {
@@ -89,20 +82,6 @@ export default function ExploreScreen() {
   }, [fetchUserLocation]);
 
   const uid = auth.currentUser?.uid ?? '';
-
-  useEffect(() => {
-    if (!uid) {
-      setUserCampus(null);
-      return;
-    }
-    const userRef = doc(db, 'users', uid);
-    getDoc(userRef)
-      .then((snap) => {
-        const data = snap.data();
-        setUserCampus(typeof data?.campus === 'string' ? data.campus : null);
-      })
-      .catch(() => setUserCampus(null));
-  }, [uid]);
 
   useEffect(() => {
     if (!uid) return;
@@ -135,7 +114,6 @@ export default function ExploreScreen() {
 
   useEffect(() => {
     if (!uid || !userLocation) return;
-    const radiusMeters = isCampusMode ? CAMPUS_MATCH_RADIUS_METERS : undefined;
     const unsub = subscribeToNearbyOpenOrders(
       userLocation.latitude,
       userLocation.longitude,
@@ -147,10 +125,9 @@ export default function ExploreScreen() {
         currentMatchIdRef.current = order.id;
         setMatchAlertOrder(order);
       },
-      { radiusMeters },
     );
     return () => unsub();
-  }, [uid, userLocation?.latitude, userLocation?.longitude, isCampusMode]);
+  }, [uid, userLocation?.latitude, userLocation?.longitude]);
 
   const handleMatchJoin = async () => {
     const order = matchAlertOrder;
@@ -236,7 +213,6 @@ export default function ExploreScreen() {
             typeof data?.longitude === 'number'
               ? data.longitude
               : (data?.location?.longitude ?? null);
-          const campus = typeof data?.campus === 'string' ? data.campus : null;
           return {
             id: d.id,
             restaurantName:
@@ -253,13 +229,9 @@ export default function ExploreScreen() {
             latitude: lat,
             longitude: lng,
             distanceKm: null,
-            campus,
           };
         });
-        const filtered = userCampus
-          ? list.filter((o) => o.campus === userCampus)
-          : list;
-        setOrders(filtered);
+        setOrders(list);
         setLoading(false);
       },
       () => {
@@ -268,9 +240,9 @@ export default function ExploreScreen() {
       },
     );
     return () => unsubscribe();
-  }, [userCampus]);
+  }, []);
 
-  const RADAR_RADIUS_KM = isCampusMode ? 0.15 : 5;
+  const RADAR_RADIUS_KM = 5;
 
   const ordersWithDistance = React.useMemo(() => {
     if (!userLocation) return [];
@@ -298,7 +270,7 @@ export default function ExploreScreen() {
       return bTime - aTime;
     });
     return sorted;
-  }, [orders, userLocation, isCampusMode]);
+  }, [orders, userLocation]);
 
   const handleJoinOrder = async (orderId: string) => {
     const uid = auth.currentUser?.uid;
@@ -368,7 +340,6 @@ export default function ExploreScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      {isCampusMode ? <CampusBanner campusName={campusName} /> : null}
       <MatchAlert
         visible={matchAlertOrder != null}
         restaurantName={matchAlertOrder?.restaurantName ?? ''}
@@ -377,10 +348,8 @@ export default function ExploreScreen() {
         joining={joiningMatchId != null}
       />
       <View style={styles.header}>
-        <AppLogo />
-        <Text style={styles.title}>
-          {isCampusMode ? 'Nearby student orders' : 'Nearby orders'}
-        </Text>
+        <AppLogo size={64} marginTop={4} />
+        <Text style={styles.title}>Nearby orders</Text>
       </View>
 
       {locationError ? (
@@ -424,23 +393,7 @@ export default function ExploreScreen() {
 
               return (
                 <View key={order.id} style={styles.card}>
-                  <View style={styles.cardTitleRow}>
-                    <Text style={styles.cardRestaurant}>
-                      {order.restaurantName}
-                    </Text>
-                    {isCampusMode ? (
-                      <View style={styles.studentBadge}>
-                        <Text style={styles.studentBadgeText}>
-                          Student match
-                        </Text>
-                      </View>
-                    ) : null}
-                  </View>
-                  {order.campus ? (
-                    <Text style={styles.cardCampus}>
-                      Campus: {order.campus}
-                    </Text>
-                  ) : null}
+                  <Text style={styles.cardRestaurant}>{order.restaurantName}</Text>
                   <Text style={styles.cardDistance}>{distanceLabel}</Text>
                   <Text style={styles.cardTime}>{timeLabel}</Text>
                   <TouchableOpacity
@@ -501,9 +454,12 @@ const styles = StyleSheet.create({
   },
   retryButton: {
     backgroundColor: theme.colors.primary,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
+    paddingVertical: 14,
+    paddingHorizontal: theme.spacing.section,
     borderRadius: theme.radius.button,
+    minHeight: theme.spacing.touchMin,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   retryButtonText: {
     color: theme.colors.textOnPrimary,
@@ -523,37 +479,16 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surface,
     borderWidth: 1,
     borderColor: theme.colors.border,
-    borderRadius: theme.radius.card,
-    padding: 16,
-    marginBottom: 12,
-  },
-  cardTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    flexWrap: 'wrap',
-    marginBottom: 6,
-  },
-  studentBadge: {
-    backgroundColor: '#FFD700',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  studentBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#0B0B0B',
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.md,
+    marginBottom: theme.spacing.tight,
+    ...shadows.card,
   },
   cardRestaurant: {
     fontSize: 18,
     fontWeight: '700',
     color: theme.colors.text,
-  },
-  cardCampus: {
-    fontSize: 13,
-    color: theme.colors.textMuted,
-    marginBottom: 4,
+    marginBottom: 6,
   },
   cardDistance: {
     fontSize: 14,
@@ -567,9 +502,11 @@ const styles = StyleSheet.create({
   },
   joinButton: {
     backgroundColor: theme.colors.primary,
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderRadius: theme.radius.button,
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: theme.spacing.touchMin,
   },
   joinButtonDisabled: { opacity: 0.7 },
   joinButtonText: {
@@ -579,13 +516,15 @@ const styles = StyleSheet.create({
   },
   createButton: {
     position: 'absolute',
-    bottom: 24,
+    bottom: theme.spacing.lg,
     left: theme.spacing.screen,
     right: theme.spacing.screen,
     backgroundColor: theme.colors.primary,
-    paddingVertical: 14,
+    paddingVertical: 16,
     borderRadius: theme.radius.button,
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: theme.spacing.touchMin,
   },
   createButtonText: {
     color: theme.colors.textOnPrimary,

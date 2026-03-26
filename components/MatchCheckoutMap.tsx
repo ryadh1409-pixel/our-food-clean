@@ -1,5 +1,8 @@
 import SafeMap, { Marker, Polyline } from '@/components/SafeMap';
+import { theme } from '@/constants/theme';
 import React from 'react';
+
+const c = theme.colors;
 
 export type MapPoint = { latitude: number; longitude: number };
 
@@ -38,12 +41,12 @@ export default function MatchCheckoutMap({
         longitudeDelta: delta,
       }}
     >
-      <Marker coordinate={restaurant} title="Restaurant" pinColor="#FFD700" />
-      <Marker coordinate={userA} title="You" pinColor="#34C759" />
-      <Marker coordinate={userB} title="Match" pinColor="#007AFF" />
+      <Marker coordinate={restaurant} title="Restaurant" pinColor={c.primary} />
+      <Marker coordinate={userA} title="You" pinColor={c.success} />
+      <Marker coordinate={userB} title="Match" pinColor={c.accentBlue} />
       <Polyline
         coordinates={[userA, restaurant, userB]}
-        strokeColor="rgba(255, 215, 0, 0.6)"
+        strokeColor={c.mapRouteTint}
         strokeWidth={2}
       />
     </SafeMap>

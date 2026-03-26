@@ -1,6 +1,9 @@
+import { shadows, theme } from '@/constants/theme';
 import { useRouter } from 'expo-router';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+
+const c = theme.colors;
 
 export default function AuthGate() {
   const router = useRouter();
@@ -38,7 +41,7 @@ export default function AuthGate() {
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: c.overlayScrim,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
@@ -46,46 +49,44 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     maxWidth: 360,
-    backgroundColor: '#ffffff',
-    borderRadius: 20,
-    padding: 24,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 8,
+    backgroundColor: c.background,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.lg,
+    borderWidth: 1,
+    borderColor: c.border,
+    ...shadows.card,
   },
   closeButton: {
     position: 'absolute',
-    top: 10,
-    right: 10,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    top: theme.spacing.sm,
+    right: theme.spacing.sm,
+    width: theme.spacing.touchMin,
+    height: theme.spacing.touchMin,
+    borderRadius: theme.radius.full,
     justifyContent: 'center',
     alignItems: 'center',
   },
   closeText: {
     fontSize: 20,
-    color: '#9ca3af',
+    color: c.iconInactive,
   },
   title: {
     fontSize: 28,
     fontWeight: '800',
-    color: '#111827',
+    color: c.text,
     textAlign: 'center',
     marginTop: 8,
   },
   subtitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#4b5563',
+    color: c.textSlateDark,
     textAlign: 'center',
     marginTop: 8,
   },
   description: {
     fontSize: 13,
-    color: '#6b7280',
+    color: c.textMuted,
     textAlign: 'center',
     marginTop: 8,
     marginBottom: 24,
@@ -94,13 +95,15 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   primaryButton: {
-    backgroundColor: '#2563eb',
-    borderRadius: 14,
-    paddingVertical: 12,
+    backgroundColor: c.primary,
+    borderRadius: theme.radius.button,
+    paddingVertical: 16,
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: theme.spacing.touchMin,
   },
   primaryButtonText: {
-    color: '#ffffff',
+    color: c.textOnPrimary,
     fontSize: 15,
     fontWeight: '600',
   },

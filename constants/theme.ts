@@ -1,30 +1,15 @@
-export const theme = {
-  colors: {
-    primary: '#FFD54F',
-    primaryLight: '#FFE58F',
-    primaryDark: '#F59E0B',
-    background: '#FFFFFF',
-    backgroundDark: '#F9FAFB',
-    surface: '#F9FAFB',
-    text: '#1A1A1A',
-    textMuted: '#6B7280',
-    textOnPrimary: '#000000',
-    border: '#E5E7EB',
-    dotInactive: '#E5E7EB',
-    iconInactive: '#9CA3AF',
-    success: '#22C55E',
-    warning: '#F59E0B',
-    accentBlue: '#3B82F6',
-  },
-  radius: {
-    button: 12,
-    card: 12,
-    input: 12,
-    dot: 6,
-  },
-  spacing: {
-    screen: 24,
-    section: 20,
-    tight: 12,
-  },
-} as const;
+/**
+ * App theme entry — design tokens live in `@/theme/theme`.
+ */
+export {
+  Colors,
+  colors,
+  gradients,
+  layoutStyles,
+  palette,
+  radius,
+  shadows,
+  spacing,
+  theme,
+  typography,
+} from '@/theme/theme';

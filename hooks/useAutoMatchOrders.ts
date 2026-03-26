@@ -19,10 +19,9 @@ export type AutoMatchOrder = {
   hostId: string;
   distanceKm: number;
   status: string;
-  campus?: string | null;
 };
 
-export function useAutoMatchOrders(userCampus?: string | null) {
+export function useAutoMatchOrders() {
   const [orders, setOrders] = useState<AutoMatchOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -65,8 +64,6 @@ export function useAutoMatchOrders(userCampus?: string | null) {
             ? createdAt.seconds * 1000
             : 0);
         if (createdAtMs < cutoff) return;
-        const campus = typeof data?.campus === 'string' ? data.campus : null;
-        if (userCampus && campus !== userCampus) return;
         const participantIds = Array.isArray(data?.participantIds)
           ? data.participantIds
           : [];
@@ -91,7 +88,6 @@ export function useAutoMatchOrders(userCampus?: string | null) {
             '') as string,
           distanceKm,
           status: (data?.status as string) ?? 'active',
-          campus,
         });
       });
       list.sort((a, b) => {

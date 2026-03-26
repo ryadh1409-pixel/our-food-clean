@@ -1,4 +1,5 @@
 import { submitComplaint } from '@/services/complaints';
+import { moderateUserContent } from '@/utils/contentModeration';
 import { useAuth } from '@/services/AuthContext';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
@@ -13,14 +14,9 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { theme } from '@/constants/theme';
 
-const COLORS = {
-  background: '#FFFFFF',
-  primary: '#FFD54F',
-  text: '#1A1A1A',
-  textMuted: '#6B7280',
-  border: '#E5E7EB',
-} as const;
+const c = theme.colors;
 
 export default function ComplaintScreen() {
   const router = useRouter();
@@ -34,6 +30,11 @@ export default function ComplaintScreen() {
       Alert.alert('Error', 'Please enter your message.');
       return;
     }
+    const mod = moderateUserContent(trimmed, { maxLength: 2000 });
+    if (!mod.ok) {
+      Alert.alert('Message not sent', mod.reason);
+      return;
+    }
     if (!user) {
       Alert.alert('Error', 'Please sign in to submit a complaint or inquiry.');
       return;
@@ -42,7 +43,7 @@ export default function ComplaintScreen() {
     try {
       await submitComplaint(
         { uid: user.uid, email: user.email ?? null },
-        trimmed,
+        mod.text,
       );
       setMessage('');
       Alert.alert(
@@ -96,7 +97,7 @@ export default function ComplaintScreen() {
           value={message}
           onChangeText={setMessage}
           placeholder="Describe your complaint or inquiry..."
-          placeholderTextColor={COLORS.textMuted}
+          placeholderTextColor={c.iconInactive}
           style={styles.input}
           multiline
           numberOfLines={5}
@@ -120,7 +121,7 @@ export default function ComplaintScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: c.background,
   },
   header: {
     flexDirection: 'row',
@@ -128,17 +129,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    borderBottomColor: c.border,
   },
   backText: {
     fontSize: 16,
-    color: COLORS.primary,
+    color: c.primary,
     fontWeight: '600',
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: COLORS.text,
+    color: c.text,
     marginLeft: 16,
   },
   content: {
@@ -148,21 +149,21 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: '600',
-    color: COLORS.text,
+    color: c.text,
     marginBottom: 8,
   },
   input: {
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: c.border,
     borderRadius: 12,
     padding: 14,
     fontSize: 15,
-    color: COLORS.text,
+    color: c.text,
     minHeight: 140,
     textAlignVertical: 'top',
   },
   submitBtn: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: c.primary,
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: 'center',
@@ -174,7 +175,7 @@ const styles = StyleSheet.create({
   submitBtnText: {
     fontSize: 16,
     fontWeight: '600',
-    color: COLORS.text,
+    color: c.textOnPrimary,
   },
   centered: {
     flex: 1,
@@ -184,7 +185,7 @@ const styles = StyleSheet.create({
   },
   hint: {
     fontSize: 16,
-    color: COLORS.textMuted,
+    color: c.textMuted,
     textAlign: 'center',
   },
 });

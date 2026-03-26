@@ -4,19 +4,32 @@ import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 
 import AppLogo from '@/components/AppLogo';
+import { TERMS_ACCEPTANCE_STORAGE_KEY } from '@/constants/termsAcceptance';
 
 const ONBOARDING_COMPLETE_KEY = 'onboardingComplete';
 
 export default function Index() {
   const [done, setDone] = useState<boolean | null>(null);
+  const [termsAccepted, setTermsAccepted] = useState<boolean | null>(null);
 
   useEffect(() => {
-    AsyncStorage.getItem(ONBOARDING_COMPLETE_KEY).then((v) =>
-      setDone(v === 'true'),
-    );
+    let cancelled = false;
+    (async () => {
+      const [ob, ta] = await Promise.all([
+        AsyncStorage.getItem(ONBOARDING_COMPLETE_KEY),
+        AsyncStorage.getItem(TERMS_ACCEPTANCE_STORAGE_KEY),
+      ]);
+      if (!cancelled) {
+        setDone(ob === 'true');
+        setTermsAccepted(ta != null && ta.length > 0);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  if (done === null) {
+  if (done === null || termsAccepted === null) {
     return (
       <View
         style={{
@@ -26,11 +39,17 @@ export default function Index() {
           paddingTop: 60,
         }}
       >
-        <AppLogo width={110} height={110} marginTop={0} />
+        <AppLogo size={112} marginTop={0} />
         <ActivityIndicator size="large" style={{ marginTop: 40 }} />
       </View>
     );
   }
 
-  return done ? <Redirect href="/(tabs)" /> : <Redirect href="/onboarding" />;
+  if (!done) {
+    return <Redirect href="/onboarding" />;
+  }
+  if (!termsAccepted) {
+    return <Redirect href="/terms-acceptance" />;
+  }
+  return <Redirect href="/(tabs)" />;
 }

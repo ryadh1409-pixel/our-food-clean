@@ -1,3 +1,4 @@
+import { theme } from '@/constants/theme';
 import { Text, View } from 'react-native';
 
 export default function NativeMap(_props: {
@@ -10,7 +11,7 @@ export default function NativeMap(_props: {
         height: 200,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: '#f2f2f2',
+        backgroundColor: theme.colors.surface,
         borderRadius: 12,
       }}
     >

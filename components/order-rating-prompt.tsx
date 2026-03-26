@@ -2,6 +2,9 @@ import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import { Modal, Text, TouchableOpacity, View } from 'react-native';
 import { auth, db } from '@/services/firebase';
+import { theme } from '@/constants/theme';
+
+const c = theme.colors;
 
 type Props = {
   orderId: string;
@@ -52,7 +55,7 @@ export function OrderRatingPrompt({ orderId, visible, onDismiss }: Props) {
       <View
         style={{
           flex: 1,
-          backgroundColor: 'rgba(0,0,0,0.5)',
+          backgroundColor: c.overlayScrim,
           justifyContent: 'center',
           alignItems: 'center',
           padding: 24,
@@ -60,7 +63,7 @@ export function OrderRatingPrompt({ orderId, visible, onDismiss }: Props) {
       >
         <View
           style={{
-            backgroundColor: '#fff',
+            backgroundColor: c.background,
             borderRadius: 16,
             padding: 24,
             width: '100%',
@@ -71,7 +74,7 @@ export function OrderRatingPrompt({ orderId, visible, onDismiss }: Props) {
             style={{
               fontSize: 18,
               fontWeight: '600',
-              color: '#334155',
+              color: c.textSlateDark,
               marginBottom: 8,
               textAlign: 'center',
             }}
@@ -81,7 +84,7 @@ export function OrderRatingPrompt({ orderId, visible, onDismiss }: Props) {
           <Text
             style={{
               fontSize: 14,
-              color: '#64748b',
+              color: c.textMuted,
               marginBottom: 20,
               textAlign: 'center',
             }}
@@ -113,13 +116,15 @@ export function OrderRatingPrompt({ orderId, visible, onDismiss }: Props) {
             disabled={selected < 1 || loading}
             style={{
               backgroundColor:
-                selected >= 1 && !loading ? '#2563eb' : '#cbd5e1',
+                selected >= 1 && !loading ? c.primary : c.borderStrong,
               paddingVertical: 12,
               borderRadius: 10,
               alignItems: 'center',
             }}
           >
-            <Text style={{ color: '#fff', fontWeight: '600' }}>Submit</Text>
+            <Text style={{ color: c.textOnPrimary, fontWeight: '600' }}>
+              Submit
+            </Text>
           </TouchableOpacity>
         </View>
       </View>

@@ -32,7 +32,7 @@ export default function JoinOrderScreen({
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.content}>
-        <AppLogo />
+        <AppLogo size={88} marginTop={0} />
         <Text style={styles.title}>{'You\'re invited'}</Text>
         <Text style={styles.restaurant}>{restaurantName || 'This order'}</Text>
         <Text style={styles.subtitle}>Want to split the order?</Text>
@@ -46,7 +46,10 @@ export default function JoinOrderScreen({
             activeOpacity={0.85}
           >
             {joining ? (
-              <ActivityIndicator size="small" color="#000" />
+              <ActivityIndicator
+                size="small"
+                color={theme.colors.textOnPrimary}
+              />
             ) : (
               <Text style={styles.joinButtonText}>Join Order</Text>
             )}
@@ -60,7 +63,7 @@ export default function JoinOrderScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: theme.colors.background,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
@@ -101,14 +104,14 @@ const styles = StyleSheet.create({
     opacity: 0.8,
   },
   joinButtonText: {
-    color: theme.colors.textOnPrimary ?? '#000',
+    color: theme.colors.textOnPrimary,
     fontWeight: '700',
     fontSize: 16,
   },
   expiredMessage: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#DC2626',
+    color: theme.colors.danger,
     textAlign: 'center',
     marginTop: 8,
   },

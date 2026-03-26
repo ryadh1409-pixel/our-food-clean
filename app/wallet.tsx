@@ -12,15 +12,9 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { theme } from '@/constants/theme';
 
-const COLORS = {
-  background: '#FFFFFF',
-  primary: '#FFD54F',
-  text: '#1A1A1A',
-  textMuted: '#6B7280',
-  card: '#1A1A1A',
-  cardText: '#FFFFFF',
-} as const;
+const c = theme.colors;
 
 export default function WalletScreen() {
   const router = useRouter();
@@ -94,7 +88,7 @@ export default function WalletScreen() {
         {loading ? (
           <ActivityIndicator
             size="large"
-            color={COLORS.primary}
+            color={c.primary}
             style={{ marginTop: 48 }}
           />
         ) : (
@@ -123,7 +117,7 @@ export default function WalletScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: c.background,
   },
   header: {
     flexDirection: 'row',
@@ -131,24 +125,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: c.border,
   },
   backText: {
     fontSize: 16,
-    color: COLORS.primary,
+    color: c.primary,
     fontWeight: '600',
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: COLORS.text,
+    color: c.text,
     marginLeft: 16,
   },
   scrollContent: {
     padding: 20,
   },
   balanceCard: {
-    backgroundColor: COLORS.card,
+    backgroundColor: c.surfaceDark,
     borderRadius: 20,
     padding: 32,
     alignItems: 'center',
@@ -156,16 +150,16 @@ const styles = StyleSheet.create({
   },
   balanceLabel: {
     fontSize: 16,
-    color: COLORS.textMuted,
+    color: c.textSecondary,
     marginBottom: 8,
   },
   balanceValue: {
     fontSize: 36,
     fontWeight: '700',
-    color: COLORS.cardText,
+    color: c.white,
   },
   addFundsButton: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: c.primary,
     borderRadius: 12,
     paddingVertical: 16,
     alignItems: 'center',
@@ -173,11 +167,11 @@ const styles = StyleSheet.create({
   addFundsText: {
     fontSize: 16,
     fontWeight: '600',
-    color: COLORS.text,
+    color: c.textOnPrimary,
   },
   disclaimer: {
     fontSize: 12,
-    color: COLORS.textMuted,
+    color: c.textMuted,
     marginTop: 16,
     textAlign: 'center',
   },
@@ -188,6 +182,6 @@ const styles = StyleSheet.create({
   },
   hint: {
     fontSize: 16,
-    color: COLORS.textMuted,
+    color: c.textMuted,
   },
 });

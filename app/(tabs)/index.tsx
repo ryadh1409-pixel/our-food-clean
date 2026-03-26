@@ -9,7 +9,7 @@ import { getOrCreateChat } from '@/services/chat';
 import { db } from '@/services/firebase';
 import { createAlert } from '@/services/alerts';
 import { useRouter } from 'expo-router';
-import { getAuth } from 'firebase/auth';
+import { getAuth } from '@firebase/auth';
 import {
   addDoc,
   arrayUnion,
@@ -32,7 +32,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { theme } from '@/constants/theme';
+import { ScreenHeader } from '@/components/ScreenHeader';
+import { layoutStyles, theme, typography } from '@/constants/theme';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -42,13 +43,12 @@ export default function HomeScreen() {
   const [creditExpiresAt, setCreditExpiresAt] = useState<number | null>(null);
   const [ordersCount, setOrdersCount] = useState<number>(0);
   const [creditLoading, setCreditLoading] = useState(!!user?.uid);
-  const [campus, setCampus] = useState<string | null>(null);
   const {
     orders: autoMatchOrders,
     loading: autoMatchLoading,
     error: autoMatchError,
     refetch: refetchAutoMatch,
-  } = useAutoMatchOrders(campus);
+  } = useAutoMatchOrders();
   const [joiningId, setJoiningId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -68,7 +68,6 @@ export default function HomeScreen() {
           setCredits(0);
           setCreditExpiresAt(null);
           setOrdersCount(0);
-          setCampus(null);
           setCreditLoading(false);
           return;
         }
@@ -89,14 +88,12 @@ export default function HomeScreen() {
         setOrdersCount(
           typeof data?.ordersCount === 'number' ? data.ordersCount : 0,
         );
-        setCampus(typeof data?.campus === 'string' ? data.campus : null);
         setCreditLoading(false);
       },
       () => {
         setCredits(0);
         setCreditExpiresAt(null);
         setOrdersCount(0);
-        setCampus(null);
         setCreditLoading(false);
       },
     );
@@ -204,18 +201,21 @@ export default function HomeScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={layoutStyles.container} edges={['top']}>
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        <ScreenHeader
+          subtitle="Split meals. Pay half."
+          variant="hero"
+          align="center"
+          logo="hero"
+        />
         <View style={styles.content}>
-          <Text style={styles.title}>HalfOrder</Text>
-          <Text style={styles.subtitle}>Split meals. Pay half.</Text>
-
           {user && (
-            <View style={styles.creditCard}>
+            <View style={[layoutStyles.card, styles.creditCardInner]}>
               {creditLoading ? (
                 <ActivityIndicator size="small" color={theme.colors.primary} />
               ) : (
@@ -234,7 +234,7 @@ export default function HomeScreen() {
           )}
 
           {user && (
-            <View style={styles.taxGiftProgressCard}>
+            <View style={[layoutStyles.cardFlat, styles.taxGiftProgressCard]}>
               <Text style={styles.taxGiftProgressText}>
                 {nextOrderIsTaxGift
                   ? 'This order qualifies for a tax gift 🎁'
@@ -276,23 +276,19 @@ export default function HomeScreen() {
                       : `${order.distanceKm.toFixed(1)} km`;
                   const timeLabel = getTimeAgo(new Date(order.createdAtMs));
                   return (
-                    <View key={order.id} style={styles.autoMatchCard}>
+                    <View key={order.id} style={[layoutStyles.card, styles.autoMatchCard]}>
                       <Text style={styles.autoMatchRestaurant}>
                         {order.restaurantName}
                       </Text>
                       <Text style={styles.autoMatchMeta}>
                         Distance: {distanceLabel}
                       </Text>
-                      {order.campus ? (
-                        <Text style={styles.autoMatchMeta}>
-                          Campus: {order.campus}
-                        </Text>
-                      ) : null}
                       <Text style={styles.autoMatchMeta}>
                         Created: {timeLabel}
                       </Text>
                       <TouchableOpacity
                         style={[
+                          layoutStyles.primaryButton,
                           styles.autoMatchJoinBtn,
                           (isJoining || isFull || alreadyJoined) &&
                             styles.autoMatchJoinBtnDisabled,
@@ -306,15 +302,18 @@ export default function HomeScreen() {
                         activeOpacity={0.85}
                       >
                         {isJoining ? (
-                          <ActivityIndicator size="small" color="#000" />
+                          <ActivityIndicator
+                            size="small"
+                            color={theme.colors.textOnPrimary}
+                          />
                         ) : alreadyJoined ? (
-                          <Text style={styles.autoMatchJoinBtnText}>
+                          <Text style={layoutStyles.primaryButtonText}>
                             View Order
                           </Text>
                         ) : isFull ? (
-                          <Text style={styles.autoMatchJoinBtnText}>Full</Text>
+                          <Text style={layoutStyles.primaryButtonText}>Full</Text>
                         ) : (
-                          <Text style={styles.autoMatchJoinBtnText}>
+                          <Text style={layoutStyles.primaryButtonText}>
                             Join Order
                           </Text>
                         )}
@@ -328,25 +327,25 @@ export default function HomeScreen() {
 
           <View style={styles.buttons}>
             <TouchableOpacity
-              style={styles.primaryButton}
+              style={layoutStyles.primaryButton}
               onPress={handleCreateOrder}
               activeOpacity={0.85}
             >
-              <Text style={styles.primaryButtonText}>Create Order</Text>
+              <Text style={layoutStyles.primaryButtonText}>Create Order</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.secondaryButton}
+              style={layoutStyles.secondaryButton}
               onPress={handleJoinOrder}
               activeOpacity={0.85}
             >
-              <Text style={styles.secondaryButtonText}>Join Order</Text>
+              <Text style={layoutStyles.secondaryButtonText}>Join Order</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.tertiaryButton}
+              style={layoutStyles.outlineButton}
               onPress={handleNearbyOrders}
               activeOpacity={0.85}
             >
-              <Text style={styles.tertiaryButtonText}>Nearby Orders</Text>
+              <Text style={layoutStyles.outlineButtonText}>Nearby Orders</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -356,114 +355,51 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
   scroll: {
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 32,
+    paddingBottom: theme.spacing.xl,
   },
   content: {
     flex: 1,
     paddingHorizontal: theme.spacing.screen,
-    paddingTop: 48,
+    paddingTop: theme.spacing.md,
     alignItems: 'center',
   },
-  title: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: theme.colors.text,
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: theme.colors.textMuted,
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  creditCard: {
-    backgroundColor: theme.colors.surface,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: theme.radius.card,
-    marginBottom: 24,
+  creditCardInner: {
+    marginBottom: theme.spacing.lg,
     minWidth: 200,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    paddingVertical: theme.spacing.md,
   },
   creditBalance: {
+    ...typography.bodyMedium,
     fontSize: 18,
     fontWeight: '700',
-    color: theme.colors.text,
   },
   creditExpiry: {
-    fontSize: 12,
-    color: theme.colors.textMuted,
-    marginTop: 4,
+    ...typography.caption,
+    marginTop: theme.spacing.xs,
   },
   taxGiftProgressCard: {
-    backgroundColor: theme.colors.surface,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: theme.radius.card,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: theme.colors.primary,
+    paddingVertical: theme.spacing.md - 2,
+    paddingHorizontal: theme.spacing.md,
+    marginBottom: theme.spacing.md,
+    borderLeftWidth: 3,
+    borderLeftColor: theme.colors.primaryOrange,
   },
   taxGiftProgressText: {
-    fontSize: 13,
+    ...typography.caption,
+    fontSize: 14,
     color: theme.colors.primaryDark,
     textAlign: 'center',
     fontWeight: '500',
   },
   buttons: {
     width: '100%',
-    maxWidth: 320,
-    gap: 16,
-  },
-  primaryButton: {
-    backgroundColor: theme.colors.primary,
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    borderRadius: theme.radius.button,
-    alignItems: 'center',
-  },
-  primaryButtonText: {
-    color: theme.colors.textOnPrimary,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  secondaryButton: {
-    backgroundColor: theme.colors.surface,
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    borderRadius: theme.radius.button,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  secondaryButtonText: {
-    color: theme.colors.text,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  tertiaryButton: {
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    borderRadius: theme.radius.button,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  tertiaryButtonText: {
-    color: theme.colors.textMuted,
-    fontSize: 16,
-    fontWeight: '600',
+    maxWidth: 340,
+    gap: theme.spacing.md,
   },
   autoMatchSection: {
     width: '100%',
@@ -471,10 +407,11 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   autoMatchTitle: {
+    ...typography.caption,
     fontSize: 14,
     fontWeight: '600',
     color: theme.colors.text,
-    marginBottom: 12,
+    marginBottom: theme.spacing.tight,
     textAlign: 'center',
   },
   autoMatchError: {
@@ -490,12 +427,8 @@ const styles = StyleSheet.create({
     marginVertical: 8,
   },
   autoMatchCard: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.radius.card,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    padding: theme.spacing.md - 2,
+    marginBottom: theme.spacing.sm + 2,
   },
   autoMatchRestaurant: {
     fontSize: 16,
@@ -509,19 +442,12 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   autoMatchJoinBtn: {
-    backgroundColor: theme.colors.primary,
-    paddingVertical: 10,
-    borderRadius: theme.radius.button,
-    alignItems: 'center',
-    marginTop: 10,
+    marginTop: theme.spacing.sm + 2,
+    minHeight: 48,
+    paddingVertical: 12,
   },
   autoMatchJoinBtnDisabled: {
-    backgroundColor: theme.colors.border,
-    opacity: 0.8,
-  },
-  autoMatchJoinBtnText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: theme.colors.textOnPrimary,
+    backgroundColor: theme.colors.dotInactive,
+    opacity: 0.85,
   },
 });

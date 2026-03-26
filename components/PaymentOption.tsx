@@ -1,4 +1,7 @@
+import { theme } from '@/constants/theme';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+
+const c = theme.colors;
 
 export type PaymentChoice = 'pay_at_restaurant_split';
 
@@ -35,7 +38,7 @@ const styles = StyleSheet.create({
   },
   option: {
     flex: 1,
-    backgroundColor: '#2C2C2E',
+    backgroundColor: c.surfaceDarkElevated,
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: 'center',
@@ -44,11 +47,11 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   optionSelected: {
-    borderColor: '#FFD700',
-    backgroundColor: '#2C2C2E',
+    borderColor: c.primary,
+    backgroundColor: c.surfaceDarkElevated,
   },
   label: {
-    color: '#FFF',
+    color: c.white,
     fontSize: 14,
     fontWeight: '600',
     textAlign: 'center',

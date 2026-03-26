@@ -1,20 +1,22 @@
+import AppLogo from '@/components/AppLogo';
 import { KeyboardToolbar, KEYBOARD_TOOLBAR_NATIVE_ID } from '@/components/KeyboardToolbar';
-import { DEFAULT_CAMPUSES, getCampusOptions } from '@/constants/campuses';
+import { ScreenHeader } from '@/components/ScreenHeader';
 import { logError } from '@/utils/errorLogger';
+import { moderateUserContent } from '@/utils/contentModeration';
 import { useTrustScore } from '@/hooks/useTrustScore';
 import { useAuth } from '@/services/AuthContext';
-import { db, storage } from '@/services/firebase';
+import {
+  deleteUserAccount,
+  getDeleteAccountAuthErrorMessage,
+} from '@/services/deleteUserAccount';
+import { db } from '@/services/firebase';
 import { doc, onSnapshot, setDoc, type DocumentData } from 'firebase/firestore';
-import { getDownloadURL, ref, uploadString } from 'firebase/storage';
 import { useRouter } from 'expo-router';
-import { readAsStringAsync } from 'expo-file-system/legacy';
-import * as ImagePicker from 'expo-image-picker';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Image,
   Linking,
   Platform,
   ScrollView,
@@ -26,20 +28,12 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { shadows, theme } from '@/constants/theme';
 
 const SUPPORT_EMAIL = 'support@halforder.app';
 const ADMIN_EMAIL = 'support@halforder.app';
 
-const COLORS = {
-  background: '#FFFFFF',
-  primary: '#FFD54F',
-  text: '#1A1A1A',
-  border: '#E5E7EB',
-  textMuted: '#6B7280',
-  accentBlue: '#3B82F6',
-  cardDark: '#1A1A1A',
-  cardDarkText: '#FFFFFF',
-} as const;
+const c = theme.colors;
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -50,15 +44,10 @@ export default function ProfileScreen() {
   const [profileLoading, setProfileLoading] = useState(true);
   const [nameSuccessMessage, setNameSuccessMessage] = useState('');
   const [ordersCount, setOrdersCount] = useState<number>(0);
-  const [photoURL, setPhotoURL] = useState<string | null>(null);
-  const [uploadingPhoto, setUploadingPhoto] = useState(false);
-  const [campus, setCampus] = useState<string | null>(null);
-  const [campusOptions, setCampusOptions] = useState<string[]>([
-    ...DEFAULT_CAMPUSES,
-  ]);
-  const [savingCampus, setSavingCampus] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
   const [focusedInputIndex, setFocusedInputIndex] = useState<number | null>(null);
   const displayNameInputRef = useRef<TextInput>(null);
+  const nameSuccessClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const uid = user?.uid ?? null;
   const trustScore = useTrustScore(uid);
@@ -76,8 +65,6 @@ export default function ProfileScreen() {
           setDisplayNameInput('');
           setNotificationsEnabled(false);
           setOrdersCount(0);
-          setPhotoURL(null);
-          setCampus(null);
         } else {
           const data = snap.data() as DocumentData;
           setDisplayNameInput(
@@ -87,8 +74,6 @@ export default function ProfileScreen() {
           setOrdersCount(
             typeof data.ordersCount === 'number' ? data.ordersCount : 0,
           );
-          setPhotoURL(typeof data.photoURL === 'string' ? data.photoURL : null);
-          setCampus(typeof data.campus === 'string' ? data.campus : null);
         }
         setProfileLoading(false);
       },
@@ -102,108 +87,41 @@ export default function ProfileScreen() {
   }, [uid]);
 
   useEffect(() => {
-    getCampusOptions().then((list) => {
-      setCampusOptions(list.length > 0 ? list : [...DEFAULT_CAMPUSES]);
-    });
+    return () => {
+      if (nameSuccessClearRef.current != null) {
+        clearTimeout(nameSuccessClearRef.current);
+      }
+    };
   }, []);
 
-  const handleCampusSelect = async (selected: string) => {
-    if (!uid || selected === campus) return;
-    setSavingCampus(true);
-    try {
-      await setDoc(
-        doc(db, 'users', uid),
-        { campus: selected },
-        { merge: true },
-      );
-      setCampus(selected);
-    } catch (e) {
-      logError(e, { alert: false });
-      Alert.alert(
-        'Error',
-        e instanceof Error ? e.message : 'Failed to update campus',
-      );
-    } finally {
-      setSavingCampus(false);
-    }
-  };
-
-  const pickAndUploadPhoto = async () => {
-    if (!uid) return;
-
-    const permission =
-      await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert(
-        'Permission required',
-        'Allow access to your photos to upload a profile image.',
-      );
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.7,
-    });
-
-    if (result.canceled || !result.assets?.[0]?.uri) return;
-
-    const imageUri = result.assets[0].uri;
-    setUploadingPhoto(true);
-
-    try {
-      const base64 = await readAsStringAsync(imageUri, {
-        encoding: 'base64',
-      });
-      if (!base64) {
-        throw new Error('Could not read image');
-      }
-
-      const storageRef = ref(storage, `profileImages/${uid}.jpg`);
-      await uploadString(storageRef, base64, 'base64', {
-        contentType: 'image/jpeg',
-      });
-      const downloadURL = await getDownloadURL(storageRef);
-
-      await setDoc(
-        doc(db, 'users', uid),
-        { photoURL: downloadURL },
-        { merge: true },
-      );
-      setPhotoURL(downloadURL);
-    } catch (e) {
-      logError(e, { alert: false });
-      const message =
-        e && typeof e === 'object' && 'message' in e
-          ? String((e as { message: string }).message)
-          : 'Upload failed';
-      const friendly =
-        message.includes('storage/') || message.includes('Firebase')
-          ? 'Could not upload image. Please check your connection and try again.'
-          : message;
-      Alert.alert('Upload failed', friendly);
-    } finally {
-      setUploadingPhoto(false);
-    }
-  };
-
   const handleSaveDisplayName = async () => {
+    if (savingName) return;
     const trimmed = displayNameInput.trim();
     if (!uid) return;
     if (!trimmed) {
       Alert.alert('Error', 'Display name cannot be empty.');
       return;
     }
+    const mod = moderateUserContent(trimmed, { maxLength: 80 });
+    if (!mod.ok) {
+      Alert.alert('Display name', mod.reason);
+      return;
+    }
+    if (nameSuccessClearRef.current != null) {
+      clearTimeout(nameSuccessClearRef.current);
+      nameSuccessClearRef.current = null;
+    }
     setSavingName(true);
     setNameSuccessMessage('');
     try {
       const userRef = doc(db, 'users', uid);
-      await setDoc(userRef, { displayName: trimmed }, { merge: true });
-      setDisplayNameInput(trimmed);
+      await setDoc(userRef, { displayName: mod.text }, { merge: true });
+      setDisplayNameInput(mod.text);
       setNameSuccessMessage('Name updated');
-      setTimeout(() => setNameSuccessMessage(''), 2500);
+      nameSuccessClearRef.current = setTimeout(() => {
+        setNameSuccessMessage('');
+        nameSuccessClearRef.current = null;
+      }, 2000);
     } catch (err) {
       logError(err, { alert: false });
       const message =
@@ -238,6 +156,56 @@ export default function ProfileScreen() {
     router.replace('/(auth)/login');
   };
 
+  const handleDeleteAccount = () => {
+    if (!user) return;
+    Alert.alert(
+      'Delete Account',
+      'Are you sure you want to delete your account? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            void confirmDeleteAccount();
+          },
+        },
+      ],
+    );
+  };
+
+  const confirmDeleteAccount = async () => {
+    if (!user) return;
+    setDeletingAccount(true);
+    try {
+      await deleteUserAccount(user);
+      Alert.alert(
+        'Account deleted',
+        'Your account has been permanently removed.',
+        [
+          {
+            text: 'OK',
+            onPress: () => router.replace('/(auth)/login'),
+          },
+        ],
+      );
+    } catch (err: unknown) {
+      logError(err, { alert: false });
+      const code =
+        err && typeof err === 'object' && 'code' in err
+          ? String((err as { code: string }).code)
+          : '';
+      const message = code
+        ? getDeleteAccountAuthErrorMessage(code)
+        : err instanceof Error
+          ? err.message
+          : 'Something went wrong.';
+      Alert.alert('Could not delete account', message);
+    } finally {
+      setDeletingAccount(false);
+    }
+  };
+
   const openSupportEmail = async () => {
     const url = `mailto:${SUPPORT_EMAIL}`;
     try {
@@ -255,7 +223,7 @@ export default function ProfileScreen() {
   if (profileLoading && uid) {
     return (
       <SafeAreaView style={[styles.container, styles.centered]}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+        <ActivityIndicator size="large" color={c.primary} />
       </SafeAreaView>
     );
   }
@@ -267,7 +235,8 @@ export default function ProfileScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          <Text style={styles.title}>My Account</Text>
+          <ScreenHeader title="My Account" logo="inline" />
+          <View style={styles.profileBody}>
           <View style={styles.card}>
             <Text style={styles.cardHint}>
               Sign in to manage your account and settings.
@@ -292,6 +261,7 @@ export default function ProfileScreen() {
               </TouchableOpacity>
             </View>
           </View>
+          </View>
         </ScrollView>
       </SafeAreaView>
     );
@@ -299,7 +269,6 @@ export default function ProfileScreen() {
 
   const emailLabel = user?.email ?? 'Not set';
   const displayName = displayNameInput || 'User';
-  const initialLetter = displayName.charAt(0).toUpperCase();
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -308,36 +277,13 @@ export default function ProfileScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.title}>Profile</Text>
-
-        {/* Profile header: avatar, name, rating */}
+        <ScreenHeader title="Profile" logo="inline" />
+        <View style={styles.profileBody}>
+        {/* Profile header: logo, name, rating */}
         <View style={styles.profileHeader}>
-          <TouchableOpacity
-            style={styles.avatarTouch}
-            onPress={pickAndUploadPhoto}
-            disabled={uploadingPhoto}
-          >
-            {photoURL ? (
-              <Image source={{ uri: photoURL }} style={styles.avatar} />
-            ) : (
-              <View style={styles.avatarPlaceholder}>
-                <Text style={styles.avatarInitial}>{initialLetter}</Text>
-              </View>
-            )}
-            {uploadingPhoto ? (
-              <View style={styles.avatarOverlay}>
-                <ActivityIndicator color="#fff" size="small" />
-              </View>
-            ) : (
-              <View style={styles.avatarEditBadge}>
-                <MaterialIcons
-                  name="camera-alt"
-                  size={14}
-                  color={COLORS.text}
-                />
-              </View>
-            )}
-          </TouchableOpacity>
+          <View style={styles.profileLogoRing}>
+            <AppLogo size={72} marginTop={0} />
+          </View>
           <Text style={styles.profileName} numberOfLines={1}>
             {displayName}
           </Text>
@@ -354,8 +300,8 @@ export default function ProfileScreen() {
           ) : null}
         </View>
 
-        {/* Action cards: Help, Wallet, Safety, Inbox */}
-        <View style={styles.actionGrid}>
+        {/* Help */}
+        <View style={styles.actionRow}>
           <TouchableOpacity
             style={styles.actionCard}
             onPress={() => router.push('/help')}
@@ -364,37 +310,9 @@ export default function ProfileScreen() {
             <MaterialIcons
               name="help-outline"
               size={28}
-              color={COLORS.primary}
+              color={c.primary}
             />
             <Text style={styles.actionCardTitle}>Help</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.actionCard}
-            onPress={() => router.push('/wallet')}
-            activeOpacity={0.8}
-          >
-            <MaterialIcons
-              name="account-balance-wallet"
-              size={28}
-              color={COLORS.primary}
-            />
-            <Text style={styles.actionCardTitle}>Wallet</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.actionCard}
-            onPress={() => router.push('/safety')}
-            activeOpacity={0.8}
-          >
-            <MaterialIcons name="shield" size={28} color={COLORS.primary} />
-            <Text style={styles.actionCardTitle}>Safety</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.actionCard}
-            onPress={() => router.push('/inbox')}
-            activeOpacity={0.8}
-          >
-            <MaterialIcons name="inbox" size={28} color={COLORS.primary} />
-            <Text style={styles.actionCardTitle}>Inbox</Text>
           </TouchableOpacity>
         </View>
 
@@ -408,7 +326,7 @@ export default function ProfileScreen() {
             value={displayNameInput}
             onChangeText={setDisplayNameInput}
             placeholder="Add your name"
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor={c.iconInactive}
             editable={!savingName}
             inputAccessoryViewID={
               Platform.OS === 'ios' ? KEYBOARD_TOOLBAR_NATIVE_ID : undefined
@@ -420,11 +338,9 @@ export default function ProfileScreen() {
             disabled={savingName}
             onPress={handleSaveDisplayName}
           >
-            {savingName ? (
-              <ActivityIndicator color={COLORS.text} />
-            ) : (
-              <Text style={styles.primaryButtonText}>Save</Text>
-            )}
+            <Text style={styles.primaryButtonText}>
+              {savingName ? 'Saving...' : 'Save'}
+            </Text>
           </TouchableOpacity>
           {nameSuccessMessage ? (
             <Text style={styles.successMessage}>{nameSuccessMessage}</Text>
@@ -432,33 +348,6 @@ export default function ProfileScreen() {
 
           <Text style={styles.sectionLabel}>Email</Text>
           <Text style={styles.readOnlyValue}>{emailLabel}</Text>
-
-          <Text style={[styles.sectionLabel, { marginTop: 12 }]}>Campus</Text>
-          <Text style={styles.readOnlyValue}>{campus ?? 'Not set'}</Text>
-          <View style={styles.campusChipRow}>
-            {campusOptions.map((opt) => (
-              <TouchableOpacity
-                key={opt}
-                style={[
-                  styles.campusChip,
-                  campus === opt && styles.campusChipActive,
-                  savingCampus && styles.campusChipDisabled,
-                ]}
-                onPress={() => handleCampusSelect(opt)}
-                disabled={savingCampus}
-              >
-                <Text
-                  style={[
-                    styles.campusChipText,
-                    campus === opt && styles.campusChipTextActive,
-                  ]}
-                  numberOfLines={1}
-                >
-                  {opt}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
 
           <View style={{ marginTop: 12 }}>
             <Text style={styles.sectionLabel}>Tax Gifts Earned</Text>
@@ -472,8 +361,8 @@ export default function ProfileScreen() {
             <Switch
               value={notificationsEnabled}
               onValueChange={handleNotificationsToggle}
-              trackColor={{ false: COLORS.border, true: COLORS.primary }}
-              thumbColor={COLORS.background}
+              trackColor={{ false: c.border, true: c.primaryLight }}
+              thumbColor={c.white}
             />
           </View>
 
@@ -494,6 +383,28 @@ export default function ProfileScreen() {
             <Text style={styles.primaryButtonText}>
               Submit complaint or inquiry
             </Text>
+          </TouchableOpacity>
+
+          <Text style={[styles.sectionLabel, { marginTop: 24 }]}>Settings</Text>
+          <Text style={styles.settingsHint}>
+            To report or block someone: open your shared order (chat bar or
+            Safety section), use Help for completed orders, or Report host /
+            Block host on Join. See Terms for how we handle reports.
+          </Text>
+          <TouchableOpacity
+            style={[
+              styles.dangerButton,
+              deletingAccount && styles.buttonDisabled,
+            ]}
+            onPress={handleDeleteAccount}
+            disabled={deletingAccount}
+            activeOpacity={0.85}
+          >
+            {deletingAccount ? (
+              <ActivityIndicator size="small" color={c.textOnPrimary} />
+            ) : (
+              <Text style={styles.dangerButtonText}>Delete Account</Text>
+            )}
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -531,6 +442,7 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           </View>
         </View>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -539,74 +451,38 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: c.background,
   },
   centered: {
     justifyContent: 'center',
     alignItems: 'center',
   },
   scrollContent: {
-    padding: 16,
     paddingBottom: 32,
   },
-  title: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: COLORS.text,
-    marginBottom: 20,
+  profileBody: {
+    paddingHorizontal: 16,
   },
   profileHeader: {
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: theme.spacing.lg,
   },
-  avatarTouch: {
-    position: 'relative',
-    marginBottom: 12,
-  },
-  avatar: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-  },
-  avatarPlaceholder: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    backgroundColor: COLORS.border,
+  profileLogoRing: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    backgroundColor: c.chromeWash,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  avatarInitial: {
-    fontSize: 32,
-    fontWeight: '700',
-    color: COLORS.textMuted,
-  },
-  avatarOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    borderRadius: 44,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  avatarEditBadge: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: COLORS.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
+    marginBottom: theme.spacing.sm + 4,
+    borderWidth: 1,
+    borderColor: c.borderSubtle,
+    ...shadows.card,
   },
   profileName: {
     fontSize: 20,
     fontWeight: '700',
-    color: COLORS.text,
+    color: c.text,
     marginBottom: 4,
   },
   profileRatingBadge: {
@@ -615,125 +491,95 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   profileStar: {
-    color: '#FFD700',
+    color: c.warning,
     fontSize: 16,
   },
   profileRatingText: {
     fontSize: 14,
     fontWeight: '600',
-    color: COLORS.text,
+    color: c.text,
   },
   profileReviewsText: {
     fontSize: 14,
-    color: COLORS.textMuted,
+    color: c.textMuted,
   },
-  actionGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 24,
+  actionRow: {
+    marginBottom: theme.spacing.lg,
   },
   actionCard: {
-    flex: 1,
-    minWidth: '47%',
-    backgroundColor: COLORS.cardDark,
-    borderRadius: 16,
-    padding: 20,
+    width: '100%',
+    backgroundColor: c.surface,
+    borderRadius: theme.radius.lg,
+    paddingVertical: theme.spacing.md,
+    paddingHorizontal: theme.spacing.section,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 100,
+    minHeight: theme.spacing.touchMin + 28,
+    borderWidth: 1,
+    borderColor: c.border,
+    ...shadows.card,
   },
   actionCardTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: COLORS.cardDarkText,
-    marginTop: 8,
+    color: c.text,
+    marginTop: theme.spacing.sm,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: COLORS.text,
-    marginBottom: 12,
+    color: c.text,
+    marginBottom: theme.spacing.tight,
   },
   card: {
-    backgroundColor: COLORS.background,
+    backgroundColor: c.background,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 16,
+    borderColor: c.border,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.section,
+    marginBottom: theme.spacing.md,
+    ...shadows.card,
   },
   cardRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 12,
+    marginTop: theme.spacing.tight,
   },
   sectionLabel: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#374151',
+    color: c.textSlateDark,
     marginBottom: 8,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#D1D5DB',
+    borderColor: c.borderStrong,
     borderRadius: 12,
     padding: 12,
     fontSize: 16,
-    color: '#111827',
+    color: c.text,
     marginBottom: 12,
   },
   readOnlyValue: {
     fontSize: 16,
-    color: '#6B7280',
+    color: c.textMuted,
     marginBottom: 16,
-  },
-  campusChipRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 8,
-    marginBottom: 8,
-  },
-  campusChip: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.background,
-  },
-  campusChipActive: {
-    borderColor: COLORS.primary,
-    backgroundColor: '#FEF9C3',
-  },
-  campusChipDisabled: {
-    opacity: 0.6,
-  },
-  campusChipText: {
-    fontSize: 13,
-    color: COLORS.textMuted,
-    fontWeight: '500',
-  },
-  campusChipTextActive: {
-    color: COLORS.text,
-    fontWeight: '600',
   },
   taxGiftsStat: {
     fontSize: 13,
-    color: '#6B7280',
+    color: c.textMuted,
     marginTop: 4,
   },
   primaryButton: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: c.primary,
     borderRadius: 12,
     paddingVertical: 12,
     alignItems: 'center',
     marginBottom: 16,
   },
   primaryButtonText: {
-    color: COLORS.text,
+    color: c.textOnPrimary,
     fontSize: 16,
     fontWeight: '600',
   },
@@ -742,29 +588,47 @@ const styles = StyleSheet.create({
   },
   successMessage: {
     fontSize: 13,
-    color: '#6B7280',
+    color: c.textMuted,
     marginBottom: 12,
+  },
+  settingsHint: {
+    fontSize: 13,
+    color: c.textMuted,
+    lineHeight: 18,
+    marginBottom: 16,
+  },
+  dangerButton: {
+    backgroundColor: c.danger,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  dangerButtonText: {
+    color: c.textOnPrimary,
+    fontSize: 16,
+    fontWeight: '600',
   },
   signOutButton: {
     paddingVertical: 12,
     alignItems: 'center',
     borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-    marginTop: 16,
+    borderTopColor: c.border,
+    marginTop: 8,
   },
   signOutText: {
-    color: COLORS.text,
+    color: c.text,
     fontWeight: '600',
     fontSize: 16,
   },
   linkText: {
     fontSize: 16,
-    color: COLORS.accentBlue,
+    color: c.accentBlue,
     textDecorationLine: 'underline',
   },
   cardHint: {
     fontSize: 14,
-    color: COLORS.textMuted,
+    color: c.textMuted,
     marginBottom: 16,
   },
   footer: {
@@ -773,12 +637,12 @@ const styles = StyleSheet.create({
   },
   footerText: {
     fontSize: 14,
-    color: COLORS.textMuted,
+    color: c.textMuted,
     marginBottom: 4,
   },
   versionText: {
     fontSize: 13,
-    color: COLORS.textMuted,
+    color: c.textMuted,
   },
   legalRow: {
     flexDirection: 'row',
@@ -788,11 +652,11 @@ const styles = StyleSheet.create({
   },
   legalLink: {
     fontSize: 12,
-    color: COLORS.textMuted,
+    color: c.textMuted,
     textDecorationLine: 'underline',
   },
   legalSpacer: {
     fontSize: 12,
-    color: COLORS.textMuted,
+    color: c.textMuted,
   },
 });

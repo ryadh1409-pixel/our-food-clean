@@ -15,7 +15,7 @@ import {
   Timestamp,
   where,
 } from 'firebase/firestore';
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   Alert,
   Keyboard,
@@ -27,8 +27,10 @@ import {
   TouchableWithoutFeedback,
   View,
 } from 'react-native';
+import { theme } from '@/constants/theme';
 
 export default function CreateScreen() {
+  const c = theme.colors;
   const router = useRouter();
   const maxPeopleRef = useRef<TextInput>(null);
   const totalPriceRef = useRef<TextInput>(null);
@@ -51,7 +53,6 @@ export default function CreateScreen() {
   const [restaurantName, setRestaurantName] = useState('');
   const [restaurantLocation, setRestaurantLocation] = useState('');
   const [orderTime, setOrderTime] = useState('Now');
-  const [campus, setCampus] = useState<string | null>(null);
 
   const inputRefs = [
     maxPeopleRef,
@@ -79,21 +80,6 @@ export default function CreateScreen() {
       prevRef.current?.focus();
     }
   };
-
-  useEffect(() => {
-    const uid = auth.currentUser?.uid;
-    if (!uid) {
-      setCampus(null);
-      return;
-    }
-    const userRef = doc(db, 'users', uid);
-    getDoc(userRef)
-      .then((snap) => {
-        const data = snap.data();
-        setCampus(typeof data?.campus === 'string' ? data.campus : null);
-      })
-      .catch(() => setCampus(null));
-  }, []);
 
   const handleCreate = async () => {
     const num = Number(maxPeople);
@@ -135,7 +121,7 @@ export default function CreateScreen() {
       const existingQ = query(
         ordersRef,
         where('hostId', '==', uid),
-        where('status', '==', 'waiting'),
+        where('status', '==', 'open'),
       );
       const existingSnap = await getDocs(existingQ);
       if (!existingSnap.empty) {
@@ -169,7 +155,7 @@ export default function CreateScreen() {
         hostId: uid,
         createdBy: uid,
         participantIds: [uid],
-        status: 'waiting',
+        status: 'open',
         createdAt: serverTimestamp(),
         expiresAt,
         maxPeople: num,
@@ -181,7 +167,6 @@ export default function CreateScreen() {
         restaurantLocation: restaurantLocation.trim() || '',
         orderTime,
         orderAt: Timestamp.fromDate(orderAt),
-        campus: campus ?? null,
         ...(location && {
           location: {
             latitude: location.latitude,
@@ -242,23 +227,37 @@ export default function CreateScreen() {
   const formLabel = {
     fontSize: 16,
     fontWeight: '600' as const,
-    color: '#374151',
+    color: c.textSlateDark,
     marginBottom: 8,
   };
   const formInput = {
     borderWidth: 1,
-    borderColor: '#D1D5DB',
+    borderColor: c.borderStrong,
     borderRadius: 10,
     padding: 12,
     marginBottom: 16,
-    color: '#111827',
+    color: c.text,
     fontSize: 16,
   };
-  const formHelper = { fontSize: 13, color: '#6B7280', marginBottom: 16 };
+  const formHelper = { fontSize: 13, color: c.textMuted, marginBottom: 16 };
 
   const content = (
-    <View style={{ flex: 1, justifyContent: 'center', padding: 24, backgroundColor: '#FFFFFF' }}>
-      <Text style={{ fontSize: 22, fontWeight: '600', marginBottom: 16, color: '#111827' }}>
+    <View
+      style={{
+        flex: 1,
+        justifyContent: 'center',
+        padding: 24,
+        backgroundColor: c.background,
+      }}
+    >
+      <Text
+        style={{
+          fontSize: 22,
+          fontWeight: '600',
+          marginBottom: 16,
+          color: c.text,
+        }}
+      >
         Create Order
       </Text>
 
@@ -274,7 +273,7 @@ export default function CreateScreen() {
         }
         onFocus={() => setFocusedIndex(0)}
         style={formInput}
-        placeholderTextColor="#9CA3AF"
+        placeholderTextColor={c.iconInactive}
       />
 
       <Text style={formLabel}>Total price</Text>
@@ -289,7 +288,7 @@ export default function CreateScreen() {
         }
         onFocus={() => setFocusedIndex(1)}
         style={formInput}
-        placeholderTextColor="#9CA3AF"
+        placeholderTextColor={c.iconInactive}
       />
 
       <Text style={formLabel}>Sharing price</Text>
@@ -304,7 +303,7 @@ export default function CreateScreen() {
         }
         onFocus={() => setFocusedIndex(2)}
         style={formInput}
-        placeholderTextColor="#9CA3AF"
+        placeholderTextColor={c.iconInactive}
       />
 
       {pricePerPerson > 0 && splitCount > 0 ? (
@@ -318,7 +317,7 @@ export default function CreateScreen() {
         <TouchableOpacity
           onPress={() => setFoodType('pizza')}
           style={{
-            backgroundColor: foodType === 'pizza' ? '#2563eb' : '#e2e8f0',
+            backgroundColor: foodType === 'pizza' ? c.primary : c.surface,
             paddingVertical: 10,
             paddingHorizontal: 14,
             borderRadius: 8,
@@ -326,7 +325,8 @@ export default function CreateScreen() {
         >
           <Text
             style={{
-              color: foodType === 'pizza' ? 'white' : '#1f2937',
+              color:
+                foodType === 'pizza' ? c.textOnPrimary : c.text,
               fontWeight: '600',
             }}
           >
@@ -336,7 +336,7 @@ export default function CreateScreen() {
         <TouchableOpacity
           onPress={() => setFoodType('noodles')}
           style={{
-            backgroundColor: foodType === 'noodles' ? '#2563eb' : '#e2e8f0',
+            backgroundColor: foodType === 'noodles' ? c.primary : c.surface,
             paddingVertical: 10,
             paddingHorizontal: 14,
             borderRadius: 8,
@@ -344,7 +344,8 @@ export default function CreateScreen() {
         >
           <Text
             style={{
-              color: foodType === 'noodles' ? 'white' : '#1f2937',
+              color:
+                foodType === 'noodles' ? c.textOnPrimary : c.text,
               fontWeight: '600',
             }}
           >
@@ -364,7 +365,7 @@ export default function CreateScreen() {
         }
         onFocus={() => setFocusedIndex(3)}
         style={formInput}
-        placeholderTextColor="#9CA3AF"
+        placeholderTextColor={c.iconInactive}
       />
 
       <Text style={formLabel}>Restaurant location</Text>
@@ -378,7 +379,7 @@ export default function CreateScreen() {
         }
         onFocus={() => setFocusedIndex(4)}
         style={formInput}
-        placeholderTextColor="#9CA3AF"
+        placeholderTextColor={c.iconInactive}
       />
 
       <Text style={formLabel}>Order in</Text>
@@ -395,7 +396,7 @@ export default function CreateScreen() {
             key={opt}
             onPress={() => setOrderTime(opt)}
             style={{
-              backgroundColor: orderTime === opt ? '#2563eb' : '#e2e8f0',
+              backgroundColor: orderTime === opt ? c.primary : c.surface,
               paddingVertical: 8,
               paddingHorizontal: 12,
               borderRadius: 8,
@@ -403,7 +404,8 @@ export default function CreateScreen() {
           >
             <Text
               style={{
-                color: orderTime === opt ? 'white' : '#1f2937',
+                color:
+                  orderTime === opt ? c.textOnPrimary : c.text,
                 fontWeight: '600',
                 fontSize: 14,
               }}
@@ -417,7 +419,7 @@ export default function CreateScreen() {
       <TouchableOpacity
         onPress={handleCreate}
         style={{
-          backgroundColor: '#2563eb',
+          backgroundColor: c.primary,
           padding: 14,
           borderRadius: 10,
           alignItems: 'center',
@@ -425,7 +427,7 @@ export default function CreateScreen() {
         }}
         disabled={loading}
       >
-        <Text style={{ color: 'white', fontWeight: '600' }}>
+        <Text style={{ color: c.textOnPrimary, fontWeight: '600' }}>
           {loading ? 'Creating...' : 'Create Order'}
         </Text>
       </TouchableOpacity>

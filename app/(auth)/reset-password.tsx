@@ -1,5 +1,5 @@
 import { auth } from '@/services/firebase';
-import { sendPasswordResetEmail } from 'firebase/auth';
+import { sendPasswordResetEmail } from '@firebase/auth';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
@@ -73,9 +73,9 @@ export default function ResetPasswordScreen() {
           <View style={styles.form}>
             <Text style={styles.label}>Email</Text>
             <TextInput
-              style={[styles.input, { color: '#000', fontSize: 16 }]}
+              style={[styles.input, { fontSize: 16 }]}
               placeholder="you@example.com"
-              placeholderTextColor="#666"
+              placeholderTextColor={theme.colors.textMuted}
               value={email}
               onChangeText={(text) => {
                 setEmail(text);
@@ -118,7 +118,7 @@ export default function ResetPasswordScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
+  container: { flex: 1, backgroundColor: theme.colors.background },
   keyboard: { flex: 1 },
   content: {
     flex: 1,
@@ -129,36 +129,40 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: '800',
-    color: '#000',
+    color: theme.colors.text,
     textAlign: 'center',
   },
   subtitle: {
     fontSize: 15,
-    color: '#000',
+    color: theme.colors.textMuted,
     textAlign: 'center',
     marginTop: 12,
     marginBottom: 32,
     paddingHorizontal: 8,
   },
   form: { gap: 16, width: '100%', maxWidth: 400 },
-  label: { fontSize: 14, fontWeight: '600', color: '#000' },
+  label: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: theme.colors.text,
+  },
   input: {
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: theme.colors.border,
     padding: 12,
     borderRadius: 8,
-    color: '#000',
-    backgroundColor: '#fff',
+    color: theme.colors.text,
+    backgroundColor: theme.colors.background,
   },
   errorText: {
     fontSize: 14,
-    color: '#b91c1c',
+    color: theme.colors.dangerText,
     marginTop: 4,
     textAlign: 'center',
   },
   messageText: {
     fontSize: 14,
-    color: '#16a34a',
+    color: theme.colors.success,
     marginTop: 4,
     textAlign: 'center',
   },

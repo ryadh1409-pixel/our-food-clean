@@ -18,18 +18,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { sendExpoPush } from '@/services/sendExpoPush';
+import { adminColors as COLORS } from '@/constants/adminTheme';
 
 const ADMIN_EMAIL = 'support@halforder.app';
-
-const COLORS = {
-  background: '#F5F5F5',
-  card: '#FFFFFF',
-  text: '#000000',
-  textMuted: '#666666',
-  primary: '#FFD700',
-  border: '#E5E5E5',
-  error: '#B91C1C',
-} as const;
 
 function getPushToken(data: {
   expoPushToken?: unknown;

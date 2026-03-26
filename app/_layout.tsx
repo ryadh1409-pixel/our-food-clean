@@ -6,11 +6,23 @@ import {
 import { Redirect, Stack, useRouter, useSegments } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import { StatusBar } from 'expo-status-bar';
-import React, { useEffect } from 'react';
-import { Platform } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  DeviceEventEmitter,
+  Platform,
+  View,
+} from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+import {
+  TERMS_ACCEPTANCE_STORAGE_KEY,
+  TERMS_ACCEPTED_EVENT,
+} from '@/constants/termsAcceptance';
 import 'react-native-reanimated';
 
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { theme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AuthProvider, useAuth } from '@/services/AuthContext';
 import {
@@ -46,6 +58,40 @@ function RootLayoutNav() {
   const { user } = useAuth();
   const router = useRouter();
   const segments = useSegments();
+  const [termsAccepted, setTermsAccepted] = useState<boolean | null>(null);
+
+  const seg0 = segments[0] as string | undefined;
+  const pathname =
+    segments.length > 0 ? `/${segments.join('/')}` : '/';
+
+  const termsExempt =
+    seg0 === 'index' ||
+    seg0 === 'onboarding' ||
+    seg0 === 'terms-acceptance' ||
+    seg0 === 'terms' ||
+    seg0 === 'privacy' ||
+    seg0 === '(auth)';
+
+  const termsLoadingBlock = termsAccepted === null && !termsExempt;
+
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(TERMS_ACCEPTED_EVENT, () => {
+      setTermsAccepted(true);
+    });
+    return () => sub.remove();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void AsyncStorage.getItem(TERMS_ACCEPTANCE_STORAGE_KEY).then((v) => {
+      if (!cancelled) {
+        setTermsAccepted(v != null && v.length > 0);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [seg0]);
 
   useEffect(() => {
     const uid = user?.uid;
@@ -119,7 +165,12 @@ function RootLayoutNav() {
 
   const inAuthGroup = segments[0] === '(auth)';
   const onJoinRedirect = segments[0] === 'join';
-  const redirectToLogin = !user && !inAuthGroup && !onJoinRedirect;
+  const onTermsFlow =
+    segments[0] === 'terms-acceptance' ||
+    segments[0] === 'terms' ||
+    segments[0] === 'privacy';
+  const redirectToLogin =
+    !user && !inAuthGroup && !onJoinRedirect && !onTermsFlow;
   const redirectToTabs = user && inAuthGroup;
   const pathname = segments.length > 0 ? `/${segments.join('/')}` : '';
   const loginHref =
@@ -127,14 +178,46 @@ function RootLayoutNav() {
       ? `/(auth)/login?redirectTo=${encodeURIComponent(pathname)}`
       : '/(auth)/login';
 
+  const needsTermsRedirect =
+    termsAccepted === false && !termsExempt;
+  const termsHref =
+    pathname !== '/' &&
+    pathname !== '/index' &&
+    !pathname.startsWith('/(auth)')
+      ? (`/terms-acceptance?returnTo=${encodeURIComponent(pathname)}` as Parameters<
+          typeof Redirect
+        >[0]['href'])
+      : ('/terms-acceptance' as Parameters<typeof Redirect>[0]['href']);
+
+  if (termsLoadingBlock) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          justifyContent: 'center',
+          alignItems: 'center',
+          backgroundColor: theme.colors.background,
+        }}
+      >
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
+
   return (
     <>
-      {redirectToLogin ? (
+      {needsTermsRedirect ? (
+        <Redirect href={termsHref} />
+      ) : redirectToLogin ? (
         <Redirect href={loginHref as Parameters<typeof Redirect>[0]['href']} />
       ) : null}
       {redirectToTabs ? <Redirect href="/(tabs)" /> : null}
       <Stack>
         <Stack.Screen name="index" options={{ headerShown: false }} />
+        <Stack.Screen
+          name="terms-acceptance"
+          options={{ headerShown: false, title: 'Terms' }}
+        />
         <Stack.Screen name="onboarding" options={{ headerShown: false }} />
         <Stack.Screen name="support" options={{ title: 'Support' }} />
         <Stack.Screen
@@ -161,6 +244,10 @@ function RootLayoutNav() {
         <Stack.Screen
           name="admin-notifications"
           options={{ title: 'Send Notifications' }}
+        />
+        <Stack.Screen
+          name="admin-reports"
+          options={{ title: 'User reports' }}
         />
         <Stack.Screen
           name="wallet"

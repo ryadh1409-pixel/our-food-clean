@@ -25,11 +25,11 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { theme } from '@/constants/theme';
+
+const c = theme.colors;
 
 type MeetingOption = 'meet_now' | 'meet_at_restaurant' | 'schedule';
-
-const BG = '#0B0B0B';
-const CARD = '#1C1C1E';
 
 export default function MatchCheckoutScreen() {
   const router = useRouter();
@@ -255,7 +255,7 @@ export default function MatchCheckoutScreen() {
   if (loading) {
     return (
       <View style={[styles.container, styles.centered]}>
-        <ActivityIndicator size="large" color="#FFD700" />
+        <ActivityIndicator size="large" color={c.primary} />
       </View>
     );
   }
@@ -367,7 +367,7 @@ export default function MatchCheckoutScreen() {
             activeOpacity={0.9}
           >
             {confirming ? (
-              <ActivityIndicator size="small" color="#0B0B0B" />
+              <ActivityIndicator size="small" color={c.textOnPrimary} />
             ) : (
               <Text style={styles.confirmBtnText}>Confirm Meeting</Text>
             )}
@@ -381,7 +381,7 @@ export default function MatchCheckoutScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: BG,
+    backgroundColor: c.sheetDark,
   },
   centered: {
     justifyContent: 'center',
@@ -400,11 +400,11 @@ const styles = StyleSheet.create({
   screenTitle: {
     fontSize: 22,
     fontWeight: '700',
-    color: '#FFF',
+    color: c.white,
     marginBottom: 20,
   },
   card: {
-    backgroundColor: CARD,
+    backgroundColor: c.surfaceDark,
     borderRadius: 16,
     padding: 16,
     marginBottom: 12,
@@ -412,13 +412,13 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#8E8E93',
+    color: c.textSecondary,
     marginBottom: 12,
     textTransform: 'uppercase',
   },
   infoLine: {
     fontSize: 16,
-    color: '#FFF',
+    color: c.white,
     marginBottom: 6,
   },
   meetingRow: {
@@ -427,34 +427,36 @@ const styles = StyleSheet.create({
   },
   meetingBtn: {
     flex: 1,
-    backgroundColor: '#2C2C2E',
-    paddingVertical: 12,
-    borderRadius: 12,
+    backgroundColor: c.surfaceDarkElevated,
+    paddingVertical: 14,
+    borderRadius: theme.radius.button,
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: theme.spacing.touchMin,
     borderWidth: 2,
     borderColor: 'transparent',
   },
   meetingBtnSelected: {
-    borderColor: '#FFD700',
+    borderColor: c.primary,
   },
   meetingIcon: {
     fontSize: 18,
     marginBottom: 4,
   },
   meetingLabel: {
-    color: '#FFF',
+    color: c.white,
     fontSize: 12,
     fontWeight: '600',
   },
   mapPlaceholder: {
     height: 220,
-    backgroundColor: '#2C2C2E',
+    backgroundColor: c.surfaceDarkElevated,
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
   },
   mapPlaceholderText: {
-    color: '#8E8E93',
+    color: c.textSecondary,
     fontSize: 14,
   },
   footer: {
@@ -464,10 +466,10 @@ const styles = StyleSheet.create({
     right: 0,
     padding: 16,
     paddingBottom: 24,
-    backgroundColor: BG,
+    backgroundColor: c.sheetDark,
   },
   confirmBtn: {
-    backgroundColor: '#FFD700',
+    backgroundColor: c.primary,
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
@@ -475,7 +477,7 @@ const styles = StyleSheet.create({
     minHeight: 52,
   },
   confirmBtnText: {
-    color: '#0B0B0B',
+    color: c.textOnPrimary,
     fontSize: 17,
     fontWeight: '700',
   },

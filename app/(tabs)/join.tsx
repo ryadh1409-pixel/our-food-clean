@@ -1,13 +1,15 @@
+import { useHiddenUserIds } from '@/hooks/useHiddenUserIds';
 import { formatTorontoOrderTime } from '@/lib/format-toronto-time';
 import { isUserBanned } from '@/services/adminGuard';
-import { logError } from '@/utils/errorLogger';
 import { trackEvent } from '@/services/analytics';
 import { auth, db } from '@/services/firebase';
 import { hasBlockConflict } from '@/services/report-block';
+import { blockUser, submitUserReport } from '@/services/userSafety';
+import { logError } from '@/utils/errorLogger';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
-import type { User } from 'firebase/auth';
-import { onAuthStateChanged } from 'firebase/auth';
+import type { User } from '@firebase/auth';
+import { onAuthStateChanged } from '@firebase/auth';
 import {
   addDoc,
   arrayRemove,
@@ -33,6 +35,9 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { theme } from '@/constants/theme';
+
+const c = theme.colors;
 
 const ANON_ID_KEY = '@join_anon_id';
 
@@ -47,6 +52,7 @@ async function getOrCreateAnonId(): Promise<string> {
 
 type OpenOrder = {
   id: string;
+  hostId: string;
   maxPeople: number;
   participantIds: string[];
   totalPrice: number;
@@ -218,6 +224,7 @@ export default function JoinScreen() {
   const [loading, setLoading] = useState(true);
   const [joiningId, setJoiningId] = useState<string | null>(null);
   const [anonId, setAnonId] = useState<string | null>(null);
+  const hiddenUserIds = useHiddenUserIds();
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => setUser(u ?? null));
@@ -231,13 +238,16 @@ export default function JoinScreen() {
   useEffect(() => {
     const q = query(
       collection(db, 'orders'),
-      where('status', '==', 'waiting'),
+      where('status', '==', 'open'),
       orderBy('createdAt', 'desc'),
     );
     setLoading(true);
     const unsubscribe = onSnapshot(
       q,
       (snap) => {
+        if (__DEV__) {
+          console.log('Realtime orders update:', snap.docs.length);
+        }
         const now = Date.now();
         const list: OpenOrder[] = snap.docs.map((d) => {
           const d2 = d.data();
@@ -249,8 +259,15 @@ export default function JoinScreen() {
               : typeof expRaw?.toMillis === 'function'
                 ? expRaw.toMillis()
                 : null;
+          const hostId =
+            (typeof d2?.hostId === 'string' && d2.hostId) ||
+            (typeof d2?.userId === 'string' && d2.userId) ||
+            (Array.isArray(d2?.participantIds) && d2.participantIds[0]
+              ? String(d2.participantIds[0])
+              : '');
           return {
             id: d.id,
+            hostId,
             maxPeople: Number(d2?.maxPeople ?? 0),
             participantIds: Array.isArray(d2?.participantIds)
               ? d2.participantIds
@@ -294,8 +311,11 @@ export default function JoinScreen() {
   }, []);
 
   const displayOrders = useMemo(
-    () => [...orders].sort((a, b) => b.createdAt - a.createdAt),
-    [orders],
+    () =>
+      [...orders]
+        .filter((o) => o.hostId && !hiddenUserIds.has(o.hostId))
+        .sort((a, b) => b.createdAt - a.createdAt),
+    [orders, hiddenUserIds],
   );
 
   const handleJoinPress = (orderId: string) => {
@@ -376,6 +396,86 @@ export default function JoinScreen() {
     }
   };
 
+  const handleReportHost = (hostId: string, orderId: string) => {
+    const u = user?.uid;
+    if (!u) {
+      router.push({
+        pathname: '/login',
+        params: { redirectTo: '/join' },
+      });
+      return;
+    }
+    Alert.alert(
+      'Report host',
+      'Send a report to HalfOrder for review? This does not automatically block the host.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Report',
+          onPress: () => {
+            void (async () => {
+              try {
+                await submitUserReport({
+                  reporterId: u,
+                  reportedUserId: hostId,
+                  orderId,
+                  reason: 'join_list_report_host',
+                });
+                Alert.alert(
+                  'Report received',
+                  'Thank you. We review reports as described in our Terms of Use.',
+                );
+              } catch (e) {
+                Alert.alert(
+                  'Error',
+                  e instanceof Error ? e.message : 'Could not submit report.',
+                );
+              }
+            })();
+          },
+        },
+      ],
+    );
+  };
+
+  const handleBlockHost = (hostId: string) => {
+    const u = user?.uid;
+    if (!u) {
+      router.push({
+        pathname: '/login',
+        params: { redirectTo: '/join' },
+      });
+      return;
+    }
+    Alert.alert(
+      'Block host',
+      'You will not see orders from this host in your join list.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Block',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              try {
+                await blockUser(u, hostId);
+                Alert.alert(
+                  'Blocked',
+                  'This host will not appear in your join list.',
+                );
+              } catch (e) {
+                Alert.alert(
+                  'Error',
+                  e instanceof Error ? e.message : 'Could not block user.',
+                );
+              }
+            })();
+          },
+        },
+      ],
+    );
+  };
+
   const handleConfirm = async (orderId: string) => {
     const user = auth.currentUser;
     if (!user || !user.uid) {
@@ -397,7 +497,7 @@ export default function JoinScreen() {
       <SafeAreaView
         style={{
           flex: 1,
-          backgroundColor: '#fff',
+          backgroundColor: c.background,
           justifyContent: 'center',
           alignItems: 'center',
         }}
@@ -409,13 +509,13 @@ export default function JoinScreen() {
 
   return (
     <SafeAreaView
-      style={{ flex: 1, backgroundColor: '#fff', paddingHorizontal: 24 }}
+      style={{ flex: 1, backgroundColor: c.background, paddingHorizontal: 24 }}
     >
       <Text
         style={{
           fontSize: 28,
           fontWeight: '700',
-          color: '#22223b',
+          color: c.text,
           marginTop: 16,
           marginBottom: 24,
         }}
@@ -427,7 +527,9 @@ export default function JoinScreen() {
         data={displayOrders}
         keyExtractor={(item) => item.id}
         ListEmptyComponent={
-          <Text style={{ color: '#666', marginTop: 16 }}>No open orders</Text>
+          <Text style={{ color: c.textMuted, marginTop: 16 }}>
+            No open orders
+          </Text>
         }
         renderItem={({ item }) => {
           const currentUid = user?.uid ?? '';
@@ -445,13 +547,14 @@ export default function JoinScreen() {
               : item.restaurantName;
           const accentColor =
             foodType === 'pizza'
-              ? '#f97316'
+              ? c.primary
               : foodType === 'noodles'
-                ? '#eab308'
-                : '#9ca3af';
+                ? c.warning
+                : c.iconInactive;
           const almostFull = item.maxPeople - item.participantIds.length === 1;
 
           return (
+            <View style={{ marginBottom: 14 }}>
             <View
               style={{
                 flexDirection: 'row',
@@ -460,42 +563,49 @@ export default function JoinScreen() {
                 paddingVertical: 16,
                 paddingHorizontal: 18,
                 borderWidth: 1,
-                borderColor: '#e2e8f0',
+                borderColor: c.border,
                 borderLeftWidth: 6,
                 borderLeftColor: accentColor,
                 borderRadius: 10,
-                marginBottom: 14,
               }}
             >
               <View>
                 <Text
-                  style={{ color: '#334155', fontSize: 26, fontWeight: '700' }}
+                  style={{
+                    color: c.textSlateDark,
+                    fontSize: 26,
+                    fontWeight: '700',
+                  }}
                 >
                   {(FOOD_EMOJI[foodType] ?? '🍽️') + ' ' + foodLabel}
                 </Text>
-                <Text style={{ color: '#64748b', fontSize: 14 }}>
+                <Text style={{ color: c.textMuted, fontSize: 14 }}>
                   {restaurantLabel}
                 </Text>
                 {item.restaurantLocation ? (
-                  <Text style={{ color: '#64748b', fontSize: 13 }}>
+                  <Text style={{ color: c.textMuted, fontSize: 13 }}>
                     📍 {item.restaurantLocation}
                   </Text>
                 ) : null}
-                <Text style={{ color: '#64748b', fontSize: 13 }}>
+                <Text style={{ color: c.textMuted, fontSize: 13 }}>
                   {item.orderAtMs != null
                     ? `⏰ ${formatTorontoOrderTime(item.orderAtMs)}`
                     : `⏱ ${item.orderTime || 'Now'}`}
                 </Text>
-                <Text style={{ color: '#94a3b8', fontSize: 11, marginTop: 2 }}>
+                <Text
+                  style={{ color: c.iconInactive, fontSize: 11, marginTop: 2 }}
+                >
                   Please be ready 5 minutes before order time
                 </Text>
-                <Text style={{ color: '#64748b', fontSize: 14 }}>
+                <Text style={{ color: c.textMuted, fontSize: 14 }}>
                   👥 {item.participantIds.length} / {item.maxPeople} people
                 </Text>
-                <Text style={{ color: '#334155', fontSize: 14, marginTop: 2 }}>
+                <Text
+                  style={{ color: c.textSlateDark, fontSize: 14, marginTop: 2 }}
+                >
                   Total: ${item.totalPrice.toFixed(2)}
                 </Text>
-                <Text style={{ color: '#22c55e', fontSize: 14, marginTop: 2 }}>
+                <Text style={{ color: c.success, fontSize: 14, marginTop: 2 }}>
                   Per person: $
                   {item.participantIds.length > 0
                     ? (item.totalPrice / item.participantIds.length).toFixed(2)
@@ -503,7 +613,7 @@ export default function JoinScreen() {
                 </Text>
                 {item.paidBy ? (
                   <Text
-                    style={{ color: '#64748b', fontSize: 12, marginTop: 2 }}
+                    style={{ color: c.textMuted, fontSize: 12, marginTop: 2 }}
                   >
                     {item.paidBy === currentUid
                       ? 'You are paying'
@@ -513,7 +623,7 @@ export default function JoinScreen() {
                 {almostFull && (
                   <Text
                     style={{
-                      color: '#ea580c',
+                      color: c.timerAccent,
                       fontSize: 12,
                       fontWeight: '600',
                       marginTop: 4,
@@ -522,13 +632,19 @@ export default function JoinScreen() {
                     🔥 Almost full
                   </Text>
                 )}
-                <Text style={{ color: '#94a3b8', fontSize: 12, marginTop: 4 }}>
+                <Text
+                  style={{ color: c.iconInactive, fontSize: 12, marginTop: 4 }}
+                >
                   {item.id}
                 </Text>
               </View>
               {item.status === 'ready_to_pay' ? (
                 <Text
-                  style={{ color: '#16a34a', fontSize: 12, fontWeight: '600' }}
+                  style={{
+                    color: c.successTextDark,
+                    fontSize: 12,
+                    fontWeight: '600',
+                  }}
                 >
                   All confirmed. Ready to pay.
                 </Text>
@@ -538,13 +654,13 @@ export default function JoinScreen() {
                     onPress={() => handleConfirm(item.id)}
                     disabled={!!joiningId}
                     style={{
-                      backgroundColor: '#22c55e',
+                      backgroundColor: c.success,
                       paddingVertical: 8,
                       paddingHorizontal: 16,
                       borderRadius: 8,
                     }}
                   >
-                    <Text style={{ color: '#fff', fontWeight: '600' }}>
+                    <Text style={{ color: c.textOnPrimary, fontWeight: '600' }}>
                       {!item.confirmations || !item.confirmations[currentUid]
                         ? 'Confirm Participation'
                         : 'Confirmed'}
@@ -553,7 +669,7 @@ export default function JoinScreen() {
                 ) : (
                   <Text
                     style={{
-                      color: '#dc2626',
+                      color: c.danger,
                       fontSize: 12,
                       fontWeight: '600',
                     }}
@@ -570,21 +686,79 @@ export default function JoinScreen() {
                   }
                   disabled={!!joiningId}
                   style={{
-                    backgroundColor: alreadyJoined ? '#dc2626' : '#2563eb',
+                    backgroundColor: alreadyJoined ? c.danger : c.accentBlue,
                     paddingVertical: 8,
                     paddingHorizontal: 16,
                     borderRadius: 8,
                   }}
                 >
                   {joining ? (
-                    <ActivityIndicator size="small" color="#fff" />
+                    <ActivityIndicator size="small" color={c.textOnPrimary} />
                   ) : (
-                    <Text style={{ color: '#fff', fontWeight: '600' }}>
+                    <Text style={{ color: c.textOnPrimary, fontWeight: '600' }}>
                       {alreadyJoined ? 'Leave' : 'Join'}
                     </Text>
                   )}
                 </TouchableOpacity>
               )}
+            </View>
+            {currentUid &&
+            item.hostId &&
+            item.hostId !== currentUid &&
+            item.status === 'open' ? (
+              <View
+                style={{
+                  flexDirection: 'row',
+                  flexWrap: 'wrap',
+                  paddingHorizontal: 18,
+                  paddingTop: 10,
+                  gap: 10,
+                }}
+              >
+                <TouchableOpacity
+                  onPress={() => handleReportHost(item.hostId, item.id)}
+                  style={{
+                    paddingVertical: 8,
+                    paddingHorizontal: 12,
+                    borderRadius: 8,
+                    borderWidth: 1,
+                    borderColor: c.borderStrong,
+                    backgroundColor: c.chromeWash,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 13,
+                      fontWeight: '600',
+                      color: c.textSlate,
+                    }}
+                  >
+                    Report host
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => handleBlockHost(item.hostId)}
+                  style={{
+                    paddingVertical: 8,
+                    paddingHorizontal: 12,
+                    borderRadius: 8,
+                    backgroundColor: c.dangerBackground,
+                    borderWidth: 1,
+                    borderColor: c.dangerBorder,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 13,
+                      fontWeight: '600',
+                      color: c.dangerText,
+                    }}
+                  >
+                    Block host
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
             </View>
           );
         }}

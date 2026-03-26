@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 const SUPPORT_EMAIL = 'support@halforder.app';
+const LAST_UPDATED = 'March 26, 2026';
 
 export default function PrivacyScreen() {
   const router = useRouter();
@@ -31,24 +32,58 @@ export default function PrivacyScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.title}>Privacy Policy</Text>
-        <Text style={styles.paragraph}>HalfOrder respects your privacy.</Text>
+        <Text style={styles.title}>Privacy Policy – HalfOrder</Text>
+        <Text style={styles.meta}>Last updated: {LAST_UPDATED}</Text>
+
         <Text style={styles.paragraph}>
-          We may collect basic information such as:
+          HalfOrder respects your privacy and is committed to protecting your
+          personal data.
         </Text>
-        <View style={styles.bulletList}>
-          <Text style={styles.bulletItem}>• display name</Text>
-          <Text style={styles.bulletItem}>• email address</Text>
-          <Text style={styles.bulletItem}>• profile photo</Text>
-          <Text style={styles.bulletItem}>• messages between users</Text>
-          <Text style={styles.bulletItem}>• basic usage data</Text>
-        </View>
+
+        <Text style={styles.sectionHeading}>1. Information We Collect</Text>
+        <Text style={styles.paragraph}>We may collect:</Text>
+        <Text style={styles.bullet}>• Name</Text>
+        <Text style={styles.bullet}>• Email address</Text>
+        <Text style={styles.bullet}>• Usage data in the app</Text>
+
+        <Text style={styles.sectionHeading}>2. How We Use Information</Text>
+        <Text style={styles.paragraph}>We use your data to:</Text>
+        <Text style={styles.bullet}>• Create and manage your account</Text>
+        <Text style={styles.bullet}>• Improve the app experience</Text>
+        <Text style={styles.bullet}>• Communicate with you</Text>
+
+        <Text style={styles.sectionHeading}>3. Data Sharing</Text>
         <Text style={styles.paragraph}>
-          This information is used only to provide the HalfOrder service and
-          improve the app.
+          We do NOT sell your personal data.
         </Text>
-        <Text style={styles.paragraph}>HalfOrder does not sell user data.</Text>
-        <Text style={styles.paragraph}>Contact: </Text>
+        <Text style={styles.paragraph}>
+          We may share data with trusted third-party services (e.g., Firebase)
+          for app functionality.
+        </Text>
+
+        <Text style={styles.sectionHeading}>4. Data Security</Text>
+        <Text style={styles.paragraph}>
+          We use reasonable security measures to protect your information, but
+          no system is 100% secure.
+        </Text>
+
+        <Text style={styles.sectionHeading}>5. User Rights</Text>
+        <Text style={styles.paragraph}>You can:</Text>
+        <Text style={styles.bullet}>• Update your information</Text>
+        <Text style={styles.bullet}>• Request deletion of your account</Text>
+
+        <Text style={styles.sectionHeading}>6. Data Retention</Text>
+        <Text style={styles.paragraph}>
+          We keep your data only as long as necessary to provide the service.
+        </Text>
+
+        <Text style={styles.sectionHeading}>7. Changes to Policy</Text>
+        <Text style={styles.paragraph}>
+          We may update this policy. Continued use means acceptance.
+        </Text>
+
+        <Text style={styles.sectionHeading}>8. Contact</Text>
+        <Text style={styles.paragraph}>For privacy questions: </Text>
         <TouchableOpacity
           onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`)}
         >
@@ -77,7 +112,19 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: '700',
     color: theme.colors.text,
+    marginBottom: 8,
+  },
+  meta: {
+    fontSize: 14,
+    color: theme.colors.textMuted,
     marginBottom: 20,
+  },
+  sectionHeading: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: theme.colors.text,
+    marginTop: 8,
+    marginBottom: 8,
   },
   paragraph: {
     fontSize: 16,
@@ -85,17 +132,18 @@ const styles = StyleSheet.create({
     color: theme.colors.text,
     marginBottom: 12,
   },
-  bulletList: { marginBottom: 12, paddingLeft: 8 },
-  bulletItem: {
+  bullet: {
     fontSize: 16,
     lineHeight: 24,
     color: theme.colors.text,
-    marginBottom: 4,
+    marginBottom: 6,
+    paddingLeft: 4,
   },
   link: {
     fontSize: 16,
     lineHeight: 24,
     color: theme.colors.accentBlue,
     textDecorationLine: 'underline',
+    marginBottom: 12,
   },
 });

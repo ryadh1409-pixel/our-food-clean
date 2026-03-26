@@ -23,7 +23,7 @@ export type AutoMatchOrder = {
 /**
  * Subscribe to open/active orders and call onMatch when a nearby order appears
  * (within radiusMeters, same restaurant optional, creatorId !== currentUserId).
- * When Campus Mode is active, pass radiusMeters = 150.
+ * Optional `radiusMeters` overrides the default auto-match radius.
  * Returns unsubscribe function.
  */
 export function subscribeToNearbyOpenOrders(

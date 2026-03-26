@@ -1,5 +1,6 @@
 import { useAuth } from '@/services/AuthContext';
 import { db } from '@/services/firebase';
+import { blockUser, submitUserReport } from '@/services/userSafety';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { useRouter } from 'expo-router';
 import * as Linking from 'expo-linking';
@@ -14,14 +15,9 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { shadows, theme } from '@/constants/theme';
 
-const COLORS = {
-  background: '#FFFFFF',
-  primary: '#FFD54F',
-  text: '#1A1A1A',
-  textMuted: '#6B7280',
-  border: '#E5E7EB',
-} as const;
+const c = theme.colors;
 
 type PreviousOrder = {
   id: string;
@@ -29,6 +25,8 @@ type PreviousOrder = {
   date: string;
   totalPrice: number;
   itemsCount?: number;
+  /** Another participant on the order (for report/block). Null if only you or data missing. */
+  otherUserId: string | null;
 };
 
 export default function HelpScreen() {
@@ -57,6 +55,16 @@ export default function HelpScreen() {
         const data = d.data();
         const createdAt =
           data?.createdAt?.toMillis?.() ?? data?.createdAt ?? Date.now();
+        const participantIds: string[] = Array.isArray(data?.participantIds)
+          ? data.participantIds
+          : [];
+        const hostId =
+          typeof data?.hostId === 'string' && data.hostId ? data.hostId : null;
+        let otherUserId =
+          participantIds.find((pid) => pid !== uid) ?? null;
+        if (!otherUserId && hostId && hostId !== uid) {
+          otherUserId = hostId;
+        }
         list.push({
           id: d.id,
           restaurantName: data?.restaurantName ?? 'Unknown',
@@ -69,6 +77,7 @@ export default function HelpScreen() {
             typeof data?.totalPrice === 'number' ? data.totalPrice : 0,
           itemsCount:
             typeof data?.itemsCount === 'number' ? data.itemsCount : undefined,
+          otherUserId,
         });
       });
       setOrders(list);
@@ -106,6 +115,72 @@ export default function HelpScreen() {
     );
   };
 
+  const handleReportUser = (order: PreviousOrder) => {
+    const reportedId = order.otherUserId;
+    if (!uid || !reportedId) return;
+    Alert.alert(
+      'Report user',
+      'Send a report to HalfOrder for review? This does not automatically block the user.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Report',
+          onPress: () => {
+            void (async () => {
+              try {
+                await submitUserReport({
+                  reporterId: uid,
+                  reportedUserId: reportedId,
+                  orderId: order.id,
+                  reason: 'help_past_order_report',
+                });
+                Alert.alert(
+                  'Report received',
+                  'Thank you. We review reports as described in our Terms of Use.',
+                );
+              } catch (e) {
+                Alert.alert(
+                  'Error',
+                  e instanceof Error ? e.message : 'Could not submit report.',
+                );
+              }
+            })();
+          },
+        },
+      ],
+    );
+  };
+
+  const handleBlockUser = (order: PreviousOrder) => {
+    const blockedId = order.otherUserId;
+    if (!uid || !blockedId) return;
+    Alert.alert(
+      'Block user',
+      'You will not see each other in join lists. You can still email support about this order.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Block',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              try {
+                await blockUser(uid, blockedId);
+                Alert.alert('Blocked', 'This user has been blocked.');
+                await loadOrders();
+              } catch (e) {
+                Alert.alert(
+                  'Error',
+                  e instanceof Error ? e.message : 'Could not block user.',
+                );
+              }
+            })();
+          },
+        },
+      ],
+    );
+  };
+
   if (!uid) {
     return (
       <SafeAreaView style={styles.container}>
@@ -136,24 +211,19 @@ export default function HelpScreen() {
         showsVerticalScrollIndicator={false}
       >
         <Text style={styles.sectionLabel}>
-          Previous orders — tap to report a problem
+          Previous orders — report a user, block, or contact support
         </Text>
         {loading ? (
           <ActivityIndicator
             size="large"
-            color={COLORS.primary}
+            color={c.primary}
             style={{ marginTop: 24 }}
           />
         ) : orders.length === 0 ? (
           <Text style={styles.emptyText}>No completed orders yet.</Text>
         ) : (
           orders.map((order) => (
-            <TouchableOpacity
-              key={order.id}
-              style={styles.orderCard}
-              onPress={() => handleReportOrder(order)}
-              activeOpacity={0.8}
-            >
+            <View key={order.id} style={styles.orderCard}>
               <Text style={styles.orderRestaurant}>{order.restaurantName}</Text>
               <Text style={styles.orderDate}>{order.date}</Text>
               <Text style={styles.orderTotal}>
@@ -162,8 +232,36 @@ export default function HelpScreen() {
               {order.itemsCount != null && (
                 <Text style={styles.orderItems}>Items: {order.itemsCount}</Text>
               )}
-              <Text style={styles.reportHint}>Tap to report a problem</Text>
-            </TouchableOpacity>
+              {order.otherUserId ? (
+                <View style={styles.safetyRow}>
+                  <TouchableOpacity
+                    style={styles.safetyBtn}
+                    onPress={() => handleReportUser(order)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.safetyBtnText}>Report user</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.safetyBtnDanger}
+                    onPress={() => handleBlockUser(order)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.safetyBtnTextLight}>Block user</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <Text style={styles.reportHintMuted}>
+                  No other participant linked — use email support below.
+                </Text>
+              )}
+              <TouchableOpacity
+                style={styles.supportBtn}
+                onPress={() => handleReportOrder(order)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.supportBtnText}>Email support</Text>
+              </TouchableOpacity>
+            </View>
           ))
         )}
       </ScrollView>
@@ -174,7 +272,7 @@ export default function HelpScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: c.background,
   },
   header: {
     flexDirection: 'row',
@@ -182,17 +280,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    borderBottomColor: c.border,
   },
   backText: {
     fontSize: 16,
-    color: COLORS.primary,
+    color: c.primary,
     fontWeight: '600',
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: COLORS.text,
+    color: c.text,
     marginLeft: 16,
   },
   scrollContent: {
@@ -202,13 +300,13 @@ const styles = StyleSheet.create({
   sectionLabel: {
     fontSize: 14,
     fontWeight: '600',
-    color: COLORS.textMuted,
+    color: c.textMuted,
     marginBottom: 12,
   },
   orderCard: {
-    backgroundColor: COLORS.background,
+    backgroundColor: c.background,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: c.border,
     borderRadius: 16,
     padding: 16,
     marginBottom: 12,
@@ -216,33 +314,84 @@ const styles = StyleSheet.create({
   orderRestaurant: {
     fontSize: 16,
     fontWeight: '700',
-    color: COLORS.text,
+    color: c.text,
     marginBottom: 4,
   },
   orderDate: {
     fontSize: 14,
-    color: COLORS.textMuted,
+    color: c.textMuted,
     marginBottom: 4,
   },
   orderTotal: {
     fontSize: 14,
     fontWeight: '600',
-    color: COLORS.text,
+    color: c.text,
     marginBottom: 2,
   },
   orderItems: {
     fontSize: 13,
-    color: COLORS.textMuted,
+    color: c.textMuted,
     marginBottom: 8,
   },
-  reportHint: {
+  reportHintMuted: {
     fontSize: 12,
-    color: COLORS.primary,
+    color: c.textMuted,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  safetyRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 12,
+  },
+  safetyBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: theme.spacing.sm + 2,
+    borderRadius: theme.radius.sm,
+    borderWidth: 1,
+    borderColor: c.border,
+    backgroundColor: c.chromeWash,
+    minHeight: theme.spacing.touchMin,
+    justifyContent: 'center',
+  },
+  safetyBtnDanger: {
+    paddingVertical: 12,
+    paddingHorizontal: theme.spacing.sm + 2,
+    borderRadius: theme.radius.sm,
+    backgroundColor: c.danger,
+    minHeight: theme.spacing.touchMin,
+    justifyContent: 'center',
+  },
+  safetyBtnText: {
+    fontSize: 14,
     fontWeight: '600',
+    color: c.text,
+  },
+  safetyBtnTextLight: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: c.textOnPrimary,
+  },
+  supportBtn: {
+    marginTop: theme.spacing.tight,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: theme.radius.button,
+    borderWidth: 1,
+    borderColor: c.primary,
+    backgroundColor: c.warningBackground,
+    minHeight: theme.spacing.touchMin,
+  },
+  supportBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: c.warningTextDark,
   },
   emptyText: {
     fontSize: 16,
-    color: COLORS.textMuted,
+    color: c.textMuted,
     marginTop: 16,
   },
   centered: {
@@ -252,6 +401,6 @@ const styles = StyleSheet.create({
   },
   hint: {
     fontSize: 16,
-    color: COLORS.textMuted,
+    color: c.textMuted,
   },
 });

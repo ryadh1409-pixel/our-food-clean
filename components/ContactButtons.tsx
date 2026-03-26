@@ -1,4 +1,5 @@
 import * as Linking from 'expo-linking';
+import { theme } from '@/constants/theme';
 import {
   Platform,
   StyleSheet,
@@ -6,6 +7,8 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+
+const c = theme.colors;
 
 type ContactButtonsProps = {
   onChatInApp: () => void;
@@ -58,21 +61,21 @@ const styles = StyleSheet.create({
   },
   button: {
     flex: 1,
-    backgroundColor: '#2C2C2E',
+    backgroundColor: c.surfaceDarkElevated,
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
   whatsapp: {
-    backgroundColor: '#25D366',
+    backgroundColor: c.whatsapp,
   },
   icon: {
     fontSize: 20,
     marginBottom: 4,
   },
   label: {
-    color: '#FFF',
+    color: c.white,
     fontSize: 14,
     fontWeight: '600',
   },

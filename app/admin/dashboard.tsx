@@ -12,18 +12,10 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { adminCardShell, adminColors as COLORS } from '@/constants/adminTheme';
+import { theme } from '@/constants/theme';
 
 const ADMIN_EMAIL = 'support@halforder.app';
-
-const COLORS = {
-  background: '#F5F5F5',
-  card: '#FFFFFF',
-  text: '#000000',
-  textMuted: '#666666',
-  primary: '#FFD700',
-  border: '#E5E5E5',
-  error: '#B91C1C',
-} as const;
 
 function startOfTodayMs(): number {
   const d = new Date();
@@ -250,11 +242,8 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   card: {
-    backgroundColor: COLORS.card,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    padding: 20,
+    ...adminCardShell,
+    padding: theme.spacing.section,
     marginBottom: 12,
   },
   cardLabel: {
@@ -295,7 +284,7 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
   },
   errorBox: {
-    backgroundColor: '#FEE2E2',
+    backgroundColor: COLORS.dangerBg,
     padding: 12,
     borderRadius: 8,
     marginBottom: 16,

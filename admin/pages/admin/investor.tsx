@@ -156,7 +156,7 @@ export default function InvestorPage() {
     const avgOrderValue = totalOrders > 0 ? totalOrderValue / totalOrders : 0;
     const avgSavingPerUser =
       totalUsers > 0 && totalOrders > 0 ? totalOrderValue / 2 / totalUsers : 0;
-    const estimatedRevenue = totalOrders * 0; // placeholder; could use service fee * orders
+    const estimatedRevenue = totalOrders * 0;
 
     const locationCount: Record<string, number> = {};
     ordersWithTime.forEach(({ order }) => {

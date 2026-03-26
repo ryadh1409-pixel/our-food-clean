@@ -12,14 +12,9 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { shadows, theme } from '@/constants/theme';
 
-const COLORS = {
-  background: '#FFFFFF',
-  primary: '#FFD54F',
-  text: '#1A1A1A',
-  textMuted: '#6B7280',
-  border: '#E5E7EB',
-} as const;
+const c = theme.colors;
 
 type TabId = 'all' | 'offers' | 'support' | 'updates' | 'priority';
 
@@ -168,7 +163,7 @@ export default function InboxScreen() {
       {loading ? (
         <ActivityIndicator
           size="large"
-          color={COLORS.primary}
+          color={c.primary}
           style={{ marginTop: 48 }}
         />
       ) : filtered.length === 0 ? (
@@ -200,7 +195,7 @@ export default function InboxScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: c.background,
   },
   header: {
     flexDirection: 'row',
@@ -208,72 +203,75 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    borderBottomColor: c.border,
   },
   backText: {
     fontSize: 16,
-    color: COLORS.primary,
+    color: c.primary,
     fontWeight: '600',
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: COLORS.text,
+    color: c.text,
     marginLeft: 16,
   },
   tabsScroll: {
-    maxHeight: 48,
+    maxHeight: 52,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    borderBottomColor: c.borderSubtle,
   },
   tabsContent: {
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 8,
+    paddingVertical: 14,
+    gap: 10,
+    alignItems: 'center',
   },
   tab: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
     borderRadius: 20,
     marginRight: 8,
   },
   tabActive: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: c.warningSoft,
   },
   tabText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.textMuted,
+    fontSize: 15,
+    fontWeight: '500',
+    color: c.textSlateDark,
   },
   tabTextActive: {
-    color: COLORS.text,
+    color: c.text,
+    fontWeight: '700',
   },
   listContent: {
     padding: 16,
     paddingBottom: 32,
   },
   messageCard: {
-    backgroundColor: COLORS.background,
+    backgroundColor: c.background,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
+    borderColor: c.border,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.md,
+    marginBottom: theme.spacing.tight,
+    ...shadows.card,
   },
   messageTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: COLORS.text,
+    color: c.text,
     marginBottom: 4,
   },
   messageBody: {
     fontSize: 14,
-    color: COLORS.textMuted,
+    color: c.textMuted,
     marginBottom: 8,
   },
   messageDate: {
     fontSize: 12,
-    color: COLORS.textMuted,
+    color: c.textMuted,
   },
   empty: {
     flex: 1,
@@ -283,7 +281,7 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 16,
-    color: COLORS.textMuted,
+    color: c.textMuted,
   },
   centered: {
     flex: 1,
@@ -292,6 +290,6 @@ const styles = StyleSheet.create({
   },
   hint: {
     fontSize: 16,
-    color: COLORS.textMuted,
+    color: c.textMuted,
   },
 });
