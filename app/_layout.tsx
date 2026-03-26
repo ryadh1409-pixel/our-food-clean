@@ -1,41 +1,41 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
-  DarkTheme,
-  DefaultTheme,
-  ThemeProvider,
+    DarkTheme,
+    DefaultTheme,
+    ThemeProvider,
 } from '@react-navigation/native';
-import { Redirect, Stack, useRouter, useSegments } from 'expo-router';
 import * as Notifications from 'expo-notifications';
+import { Redirect, Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  DeviceEventEmitter,
-  Platform,
-  View,
+    ActivityIndicator,
+    DeviceEventEmitter,
+    Platform,
+    View,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import {
-  TERMS_ACCEPTANCE_STORAGE_KEY,
-  TERMS_ACCEPTED_EVENT,
+    TERMS_ACCEPTANCE_STORAGE_KEY,
+    TERMS_ACCEPTED_EVENT,
 } from '@/constants/termsAcceptance';
 import 'react-native-reanimated';
 
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { theme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { trackAppOpen, trackNotificationOpen } from '@/services/analytics';
 import { AuthProvider, useAuth } from '@/services/AuthContext';
 import {
-  registerPushTokenAndSave,
-  updateLastActive,
-  updateUserLocationInFirestore,
-} from '@/services/radarAndPush';
-import { trackAppOpen, trackNotificationOpen } from '@/services/analytics';
-import {
-  logNotificationOpened,
-  logNotificationReceived,
+    logNotificationOpened,
+    logNotificationReceived,
 } from '@/services/notificationTracking';
 import { startExpiredOrdersCleanup } from '@/services/orders';
+import {
+    registerPushTokenAndSave,
+    updateLastActive,
+    updateUserLocationInFirestore,
+} from '@/services/radarAndPush';
 
 const NEARBY_MATCH_DATA_TYPE = 'nearby_match';
 
@@ -61,8 +61,6 @@ function RootLayoutNav() {
   const [termsAccepted, setTermsAccepted] = useState<boolean | null>(null);
 
   const seg0 = segments[0] as string | undefined;
-  const pathname =
-    segments.length > 0 ? `/${segments.join('/')}` : '/';
 
   const termsExempt =
     seg0 === 'index' ||
@@ -163,12 +161,12 @@ function RootLayoutNav() {
     };
   }, [router]);
 
-  const inAuthGroup = segments[0] === '(auth)';
-  const onJoinRedirect = segments[0] === 'join';
+  const inAuthGroup = seg0 === '(auth)';
+  const onJoinRedirect = seg0 === 'join';
   const onTermsFlow =
-    segments[0] === 'terms-acceptance' ||
-    segments[0] === 'terms' ||
-    segments[0] === 'privacy';
+    seg0 === 'terms-acceptance' ||
+    seg0 === 'terms' ||
+    seg0 === 'privacy';
   const redirectToLogin =
     !user && !inAuthGroup && !onJoinRedirect && !onTermsFlow;
   const redirectToTabs = user && inAuthGroup;
