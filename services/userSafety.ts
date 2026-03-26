@@ -4,12 +4,11 @@
 import {
   addDoc,
   collection,
-  doc,
   serverTimestamp,
-  setDoc,
 } from 'firebase/firestore';
 import { db } from '@/services/firebase';
 import { logError } from '@/utils/errorLogger';
+import { blockUser as blockUserService } from '@/services/block';
 
 export type ReportPayload = {
   reporterId: string;
@@ -31,20 +30,12 @@ export async function submitUserReport(payload: ReportPayload): Promise<void> {
   });
 }
 
-/** Blocks another user (bidirectional visibility handled in UI via block queries). */
+/** Blocks another user in `blockedUsers` collection. */
 export async function blockUser(
   blockerId: string,
   blockedId: string,
 ): Promise<void> {
-  if (blockerId === blockedId) {
-    throw new Error('Invalid block target.');
-  }
-  const blockId = `${blockerId}_${blockedId}`;
-  await setDoc(doc(db, 'blocks', blockId), {
-    blockerId,
-    blockedId,
-    createdAt: serverTimestamp(),
-  });
+  await blockUserService(blockedId, blockerId);
 }
 
 export function handleSafetyError(error: unknown, fallback: string): string {
