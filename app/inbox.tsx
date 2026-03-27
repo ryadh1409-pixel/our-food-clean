@@ -1,9 +1,13 @@
+import * as Haptics from 'expo-haptics';
+import { ScreenFadeIn } from '@/components/ScreenFadeIn';
+import { ShimmerSkeleton } from '@/components/ShimmerSkeleton';
 import { useAuth } from '@/services/AuthContext';
 import { db } from '@/services/firebase';
 import { collection, onSnapshot, query } from 'firebase/firestore';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
+  Animated,
   ActivityIndicator,
   ScrollView,
   StyleSheet,
@@ -13,6 +17,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { shadows, theme } from '@/constants/theme';
+import { runTapScale } from '@/utils/motion';
 
 const c = theme.colors;
 
@@ -41,6 +46,7 @@ export default function InboxScreen() {
   const [activeTab, setActiveTab] = useState<TabId>('all');
   const [messages, setMessages] = useState<InboxMessage[]>([]);
   const [loading, setLoading] = useState(true);
+  const listScale = useRef(new Animated.Value(1)).current;
 
   const uid = user?.uid ?? null;
 
@@ -81,6 +87,7 @@ export default function InboxScreen() {
           return mb - ma;
         });
         setMessages(list);
+        runTapScale(listScale);
         setLoading(false);
       },
       () => setLoading(false),
@@ -131,23 +138,27 @@ export default function InboxScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Text style={styles.backText}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Inbox</Text>
-      </View>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.tabsScroll}
-        contentContainerStyle={styles.tabsContent}
-      >
+      <ScreenFadeIn style={{ flex: 1 }}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()}>
+            <Text style={styles.backText}>← Back</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Inbox</Text>
+        </View>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.tabsScroll}
+          contentContainerStyle={styles.tabsContent}
+        >
         {TABS.map((tab) => (
           <TouchableOpacity
             key={tab.id}
             style={[styles.tab, activeTab === tab.id && styles.tabActive]}
-            onPress={() => setActiveTab(tab.id)}
+            onPress={() => {
+              Haptics.selectionAsync().catch(() => {});
+              setActiveTab(tab.id);
+            }}
           >
             <Text
               style={[
@@ -159,35 +170,41 @@ export default function InboxScreen() {
             </Text>
           </TouchableOpacity>
         ))}
-      </ScrollView>
-      {loading ? (
-        <ActivityIndicator
-          size="large"
-          color={c.primary}
-          style={{ marginTop: 48 }}
-        />
+        </ScrollView>
+        {loading ? (
+        <View style={styles.skeletonWrap}>
+          <ShimmerSkeleton width="100%" height={70} borderRadius={16} style={styles.skeletonItem} />
+          <ShimmerSkeleton width="100%" height={70} borderRadius={16} style={styles.skeletonItem} />
+          <ShimmerSkeleton width="100%" height={70} borderRadius={16} />
+          <ActivityIndicator size="small" color={c.primary} style={{ marginTop: 14 }} />
+        </View>
       ) : filtered.length === 0 ? (
         <View style={styles.empty}>
+          <Text style={styles.emptyIcon}>💬</Text>
           <Text style={styles.emptyText}>No messages</Text>
+          <Text style={styles.emptyHint}>New order chats and updates will appear here.</Text>
         </View>
-      ) : (
-        <ScrollView
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-        >
-          {filtered.map((m) => (
-            <View key={m.id} style={styles.messageCard}>
-              <Text style={styles.messageTitle} numberOfLines={1}>
-                {m.title ?? 'Message'}
-              </Text>
-              <Text style={styles.messageBody} numberOfLines={2}>
-                {m.body ?? ''}
-              </Text>
-              <Text style={styles.messageDate}>{getMessageDate(m)}</Text>
-            </View>
-          ))}
-        </ScrollView>
-      )}
+        ) : (
+        <Animated.View style={{ flex: 1, transform: [{ scale: listScale }] }}>
+          <ScrollView
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+          >
+            {filtered.map((m) => (
+              <View key={m.id} style={styles.messageCard}>
+                <Text style={styles.messageTitle} numberOfLines={1}>
+                  {m.title ?? 'Message'}
+                </Text>
+                <Text style={styles.messageBody} numberOfLines={2}>
+                  {m.body ?? ''}
+                </Text>
+                <Text style={styles.messageDate}>{getMessageDate(m)}</Text>
+              </View>
+            ))}
+          </ScrollView>
+        </Animated.View>
+        )}
+      </ScreenFadeIn>
     </SafeAreaView>
   );
 }
@@ -282,6 +299,24 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 16,
     color: c.textMuted,
+    marginTop: 6,
+    fontWeight: '700',
+  },
+  emptyIcon: {
+    fontSize: 26,
+    marginBottom: 2,
+  },
+  emptyHint: {
+    marginTop: 6,
+    fontSize: 13,
+    color: c.textMuted,
+  },
+  skeletonWrap: {
+    padding: 16,
+    paddingTop: 22,
+  },
+  skeletonItem: {
+    marginBottom: 10,
   },
   centered: {
     flex: 1,

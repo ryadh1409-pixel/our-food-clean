@@ -9,6 +9,11 @@ import {
   deleteUserAccount,
   getDeleteAccountAuthErrorMessage,
 } from '@/services/deleteUserAccount';
+import {
+  getBlockedUsersByBlocker,
+  unblockUser,
+} from '@/services/blocks';
+import { submitReport, type ReportReason } from '@/services/reports';
 import { auth, db } from '@/services/firebase';
 import { doc, onSnapshot, setDoc, type DocumentData } from 'firebase/firestore';
 import { useRouter } from 'expo-router';
@@ -49,6 +54,12 @@ export default function ProfileScreen() {
   const [initialDisplayName, setInitialDisplayName] = useState('');
   const [ordersCount, setOrdersCount] = useState<number>(0);
   const [deletingAccount, setDeletingAccount] = useState(false);
+  const [reportUserId, setReportUserId] = useState('');
+  const [reportReason, setReportReason] = useState<ReportReason>('spam');
+  const [reportMessage, setReportMessage] = useState('');
+  const [submittingReport, setSubmittingReport] = useState(false);
+  const [blockedUsers, setBlockedUsers] = useState<string[]>([]);
+  const [unblockingId, setUnblockingId] = useState<string | null>(null);
   const [focusedInputIndex, setFocusedInputIndex] = useState<number | null>(null);
   const displayNameInputRef = useRef<TextInput>(null);
   const nameFeedbackClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -93,6 +104,24 @@ export default function ProfileScreen() {
       },
     );
     return () => unsubscribe();
+  }, [uid]);
+
+  useEffect(() => {
+    if (!uid) {
+      setBlockedUsers([]);
+      return;
+    }
+    let cancelled = false;
+    getBlockedUsersByBlocker(uid)
+      .then((ids) => {
+        if (!cancelled) setBlockedUsers(ids);
+      })
+      .catch(() => {
+        if (!cancelled) setBlockedUsers([]);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [uid]);
 
   useEffect(() => {
@@ -194,6 +223,54 @@ export default function ProfileScreen() {
         },
       ],
     );
+  };
+
+  const handleSubmitProfileReport = async () => {
+    if (!uid) return;
+    const target = reportUserId.trim();
+    if (!target) {
+      Alert.alert('Missing user ID', 'Enter the user ID you want to report.');
+      return;
+    }
+    if (target === uid) {
+      Alert.alert('Invalid target', 'You cannot report yourself.');
+      return;
+    }
+    setSubmittingReport(true);
+    try {
+      await submitReport({
+        reporterId: uid,
+        reportedUserId: target,
+        reason: reportReason,
+        message: reportMessage.trim(),
+      });
+      setReportMessage('');
+      Alert.alert('Report submitted', 'Thanks. We will review this report.');
+    } catch (e) {
+      Alert.alert(
+        'Report failed',
+        e instanceof Error ? e.message : 'Please try again.',
+      );
+    } finally {
+      setSubmittingReport(false);
+    }
+  };
+
+  const handleUnblockUser = async (blockedUserId: string) => {
+    if (!uid) return;
+    setUnblockingId(blockedUserId);
+    try {
+      await unblockUser(uid, blockedUserId);
+      setBlockedUsers((prev) => prev.filter((id) => id !== blockedUserId));
+      Alert.alert('Unblocked', 'User has been unblocked.');
+    } catch (e) {
+      Alert.alert(
+        'Unblock failed',
+        e instanceof Error ? e.message : 'Please try again.',
+      );
+    } finally {
+      setUnblockingId(null);
+    }
   };
 
   const confirmDeleteAccount = async () => {
@@ -433,6 +510,75 @@ export default function ProfileScreen() {
               Submit complaint or inquiry
             </Text>
           </TouchableOpacity>
+
+          <Text style={[styles.sectionLabel, { marginTop: 10 }]}>Report User</Text>
+          <TextInput
+            value={reportUserId}
+            onChangeText={setReportUserId}
+            placeholder="Reported user ID"
+            placeholderTextColor={c.textMuted}
+            style={styles.input}
+          />
+          <View style={styles.reasonRow}>
+            {(['spam', 'inappropriate', 'scam', 'other'] as ReportReason[]).map((reason) => {
+              const active = reason === reportReason;
+              return (
+                <TouchableOpacity
+                  key={reason}
+                  style={[styles.reasonChip, active && styles.reasonChipActive]}
+                  onPress={() => setReportReason(reason)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.reasonChipText, active && styles.reasonChipTextActive]}>
+                    {reason}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <TextInput
+            value={reportMessage}
+            onChangeText={setReportMessage}
+            placeholder="Message"
+            placeholderTextColor={c.textMuted}
+            style={[styles.input, styles.inputMultiline]}
+            multiline
+          />
+          <TouchableOpacity
+            style={[styles.primaryButton, submittingReport && styles.buttonDisabled]}
+            onPress={handleSubmitProfileReport}
+            disabled={submittingReport}
+            activeOpacity={0.8}
+          >
+            {submittingReport ? (
+              <ActivityIndicator size="small" color={c.textOnPrimary} />
+            ) : (
+              <Text style={styles.primaryButtonText}>Submit Report</Text>
+            )}
+          </TouchableOpacity>
+
+          <Text style={[styles.sectionLabel, { marginTop: 16 }]}>Blocked Users</Text>
+          {blockedUsers.length === 0 ? (
+            <Text style={styles.readOnlyValue}>No blocked users</Text>
+          ) : (
+            blockedUsers.map((id) => (
+              <View key={id} style={styles.blockedRow}>
+                <Text style={styles.blockedUserId}>{id}</Text>
+                <TouchableOpacity
+                  style={styles.unblockBtn}
+                  onPress={() => handleUnblockUser(id)}
+                  disabled={unblockingId === id}
+                  activeOpacity={0.8}
+                >
+                  {unblockingId === id ? (
+                    <ActivityIndicator size="small" color={c.textOnPrimary} />
+                  ) : (
+                    <Text style={styles.unblockBtnText}>Unblock</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            ))
+          )}
 
           <Text style={[styles.sectionLabel, { marginTop: 24 }]}>Settings</Text>
           <Text style={styles.settingsHint}>
@@ -702,6 +848,69 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: c.textSlateDark,
+  },
+  reasonRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 2,
+    marginBottom: 8,
+  },
+  reasonChip: {
+    borderWidth: 1,
+    borderColor: c.border,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: c.background,
+  },
+  reasonChipActive: {
+    borderColor: c.primary,
+    backgroundColor: c.primaryLight,
+  },
+  reasonChipText: {
+    color: c.textMuted,
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'capitalize',
+  },
+  reasonChipTextActive: {
+    color: c.text,
+  },
+  inputMultiline: {
+    minHeight: 82,
+    textAlignVertical: 'top',
+    paddingTop: 10,
+  },
+  blockedRow: {
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: c.border,
+    borderRadius: 12,
+    padding: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: c.background,
+  },
+  blockedUserId: {
+    color: c.text,
+    fontSize: 13,
+    flex: 1,
+    marginRight: 10,
+  },
+  unblockBtn: {
+    minHeight: 34,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    backgroundColor: c.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  unblockBtnText: {
+    color: c.textOnPrimary,
+    fontWeight: '700',
+    fontSize: 12,
   },
   cardHint: {
     fontSize: 14,

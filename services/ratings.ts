@@ -10,8 +10,6 @@ import {
   where,
 } from 'firebase/firestore';
 
-const TIMEZONE = 'America/Toronto';
-
 export async function saveRating(
   orderId: string,
   fromUserId: string,
@@ -19,9 +17,15 @@ export async function saveRating(
   rating: number,
   comment: string,
 ): Promise<void> {
-  const alreadyRated = await hasRatedOrder(orderId, fromUserId);
+  if (!orderId || !fromUserId || !toUserId) {
+    throw new Error('Missing rating data.');
+  }
+  if (fromUserId === toUserId) {
+    throw new Error('You cannot rate yourself.');
+  }
+  const alreadyRated = await hasRatedOrderForUser(orderId, fromUserId, toUserId);
   if (alreadyRated) {
-    throw new Error('You have already rated this order.');
+    throw new Error('You already rated this participant.');
   }
   await addDoc(collection(db, 'ratings'), {
     orderId,
@@ -30,7 +34,6 @@ export async function saveRating(
     rating: Math.min(5, Math.max(1, Math.round(rating))),
     comment: comment.trim() || '',
     createdAt: serverTimestamp(),
-    timezone: TIMEZONE,
   });
   // User doc (ratingAverage, ratingCount, averageRating, totalRatings) updated by Cloud Function onRatingCreated
 }
@@ -46,6 +49,41 @@ export async function hasRatedOrder(
   );
   const snap = await getDocs(q);
   return !snap.empty;
+}
+
+export async function hasRatedOrderForUser(
+  orderId: string,
+  fromUserId: string,
+  toUserId: string,
+): Promise<boolean> {
+  const q = query(
+    collection(db, 'ratings'),
+    where('orderId', '==', orderId),
+    where('fromUserId', '==', fromUserId),
+    where('toUserId', '==', toUserId),
+  );
+  const snap = await getDocs(q);
+  return !snap.empty;
+}
+
+export async function getRatedUserIdsForOrder(
+  orderId: string,
+  fromUserId: string,
+): Promise<Set<string>> {
+  const q = query(
+    collection(db, 'ratings'),
+    where('orderId', '==', orderId),
+    where('fromUserId', '==', fromUserId),
+  );
+  const snap = await getDocs(q);
+  const ids = new Set<string>();
+  snap.docs.forEach((d) => {
+    const toUserId = d.data()?.toUserId;
+    if (typeof toUserId === 'string' && toUserId) {
+      ids.add(toUserId);
+    }
+  });
+  return ids;
 }
 
 export type TrustScore = { average: number; count: number };

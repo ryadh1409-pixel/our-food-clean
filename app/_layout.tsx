@@ -153,6 +153,10 @@ function RootLayoutNav() {
           options={{ headerShown: false, title: 'Terms' }}
         />
         <Stack.Screen name="onboarding" options={{ headerShown: false }} />
+        <Stack.Screen
+          name="create-order"
+          options={{ title: 'Create Order' }}
+        />
         <Stack.Screen name="support" options={{ title: 'Support' }} />
         <Stack.Screen
           name="admin-support"
@@ -161,6 +165,10 @@ function RootLayoutNav() {
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="order/[id]" options={{ title: 'Order' }} />
+        <Stack.Screen
+          name="order-details/[id]"
+          options={{ title: 'Order Details' }}
+        />
         <Stack.Screen name="match/[orderId]" options={{ headerShown: false }} />
         <Stack.Screen name="join/[orderId]" options={{ headerShown: false }} />
         <Stack.Screen
@@ -190,6 +198,10 @@ function RootLayoutNav() {
         <Stack.Screen
           name="inbox"
           options={{ title: 'Inbox', headerShown: false }}
+        />
+        <Stack.Screen
+          name="chat/[orderId]"
+          options={{ title: 'Chat', headerShown: false }}
         />
         <Stack.Screen
           name="help"

@@ -3,7 +3,7 @@
  * Shows after order completes; 1–5 stars, optional comment, submit.
  * Prevents duplicate ratings via hasRatedOrder check before save.
  */
-import { hasRatedOrder, saveRating } from '@/services/ratings';
+import { hasRatedOrderForUser, saveRating } from '@/services/ratings';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -55,9 +55,13 @@ export function RateOrderPartnerModal({
     }
     setSubmitting(true);
     try {
-      const alreadyRated = await hasRatedOrder(orderId, fromUserId);
+      const alreadyRated = await hasRatedOrderForUser(
+        orderId,
+        fromUserId,
+        toUserId,
+      );
       if (alreadyRated) {
-        Alert.alert('Already rated', 'You have already rated this order.');
+        Alert.alert('Already rated', 'You already rated this participant.');
         onDismiss();
         setSubmitting(false);
         return;

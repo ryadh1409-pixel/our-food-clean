@@ -1,6 +1,7 @@
 import { auth, db } from '@/services/firebase';
 import {
   arrayUnion,
+  collection,
   doc,
   getDoc,
   getDocs,

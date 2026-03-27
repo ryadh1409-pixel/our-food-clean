@@ -45,7 +45,7 @@ import JoinOrderScreen from '@/screens/JoinOrderScreen';
 import { useTrustScore } from '@/hooks/useTrustScore';
 import { useHiddenUserIds } from '@/hooks/useHiddenUserIds';
 import { RateOrderPartnerModal } from '@/components/RateOrderPartnerModal';
-import { hasRatedOrder } from '@/services/ratings';
+import { getRatedUserIdsForOrder } from '@/services/ratings';
 import {
   isBlockedByAny,
   reportAndBlock,
@@ -141,6 +141,8 @@ export default function OrderRoomScreen() {
   const [completing, setCompleting] = useState(false);
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [ratingToUserId, setRatingToUserId] = useState<string | null>(null);
+  const [pendingRatingUserIds, setPendingRatingUserIds] = useState<string[]>([]);
+  const [didAutoPromptRating, setDidAutoPromptRating] = useState(false);
   const [firstOrderCompleted, setFirstOrderCompleted] = useState<
     boolean | null
   >(null);
@@ -562,16 +564,35 @@ export default function OrderRoomScreen() {
     const uid = auth.currentUser?.uid;
     if (order?.status !== 'completed' || !orderId || !uid) {
       setCompletedOrderAlreadyRated(null);
+      setPendingRatingUserIds([]);
+      setDidAutoPromptRating(false);
       return;
     }
     let cancelled = false;
-    hasRatedOrder(orderId, uid).then((already) => {
-      if (!cancelled) setCompletedOrderAlreadyRated(already);
+    const others = (order.participantIds ?? []).filter((id) => id !== uid);
+    getRatedUserIdsForOrder(orderId, uid).then((ratedSet) => {
+      if (cancelled) return;
+      const pending = others.filter((id) => !ratedSet.has(id));
+      setPendingRatingUserIds(pending);
+      setCompletedOrderAlreadyRated(pending.length === 0);
     });
     return () => {
       cancelled = true;
     };
-  }, [order?.status, orderId, auth.currentUser?.uid]);
+  }, [order?.status, order?.participantIds, orderId, auth.currentUser?.uid]);
+
+  useEffect(() => {
+    if (
+      order?.status === 'completed' &&
+      !showRatingModal &&
+      pendingRatingUserIds.length > 0 &&
+      !didAutoPromptRating
+    ) {
+      setDidAutoPromptRating(true);
+      setRatingToUserId(pendingRatingUserIds[0]);
+      setShowRatingModal(true);
+    }
+  }, [order?.status, pendingRatingUserIds, showRatingModal, didAutoPromptRating]);
 
   const handleSend = async () => {
     const trimmed = text.trim();
@@ -984,21 +1005,9 @@ export default function OrderRoomScreen() {
 
   const confirmOrderShared = async () => {
     if (!order || order.status !== 'matched' || completing) return;
-    const uid = auth.currentUser?.uid;
-    if (!uid) return;
-    const ids = order.participantIds ?? [];
-    if (ids.length < 2) return;
-    const otherId = ids.find((id) => id !== uid) ?? null;
-    if (!otherId) return;
     setCompleting(true);
     try {
-      const alreadyRated = await hasRatedOrder(orderId, uid);
-      if (alreadyRated) {
-        await doCompleteOrder();
-        return;
-      }
-      setRatingToUserId(otherId);
-      setShowRatingModal(true);
+      await doCompleteOrder();
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed';
       Alert.alert('Error', msg);
@@ -1008,13 +1017,14 @@ export default function OrderRoomScreen() {
   };
 
   const handleRatingSuccess = async () => {
+    const ratedTarget = ratingToUserId;
     setShowRatingModal(false);
     setRatingToUserId(null);
-    if (order?.status === 'matched') {
-      await doCompleteOrder();
-    } else {
-      setCompletedOrderAlreadyRated(true);
-    }
+    setPendingRatingUserIds((prev) => {
+      const next = ratedTarget ? prev.filter((id) => id !== ratedTarget) : prev;
+      setCompletedOrderAlreadyRated(next.length === 0);
+      return next;
+    });
   };
 
   const handleNotShared = async () => {
@@ -1660,17 +1670,17 @@ export default function OrderRoomScreen() {
 
       {order?.status === 'completed' &&
       completedOrderAlreadyRated === false &&
-      otherParticipantId ? (
+      pendingRatingUserIds.length > 0 ? (
         <View style={[styles.orderStatusSection, Platform.OS === 'web' && { marginHorizontal: 16 }]}>
-          <Text style={styles.orderStatusTitle}>Rate your order partner</Text>
+          <Text style={styles.orderStatusTitle}>Rate other participants</Text>
           <TouchableOpacity
             style={styles.ratePartnerButton}
             onPress={() => {
-              setRatingToUserId(otherParticipantId);
+              setRatingToUserId(pendingRatingUserIds[0]);
               setShowRatingModal(true);
             }}
           >
-            <Text style={styles.ratePartnerButtonText}>⭐ Rate partner</Text>
+            <Text style={styles.ratePartnerButtonText}>⭐ Continue rating</Text>
           </TouchableOpacity>
         </View>
       ) : null}

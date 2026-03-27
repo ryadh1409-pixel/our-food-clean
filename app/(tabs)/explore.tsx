@@ -1,5 +1,7 @@
 import AppLogo from '@/components/AppLogo';
 import MatchAlert from '@/components/MatchAlert';
+import { ScreenFadeIn } from '@/components/ScreenFadeIn';
+import { ShimmerSkeleton } from '@/components/ShimmerSkeleton';
 import { shadows, theme } from '@/constants/theme';
 import { useHiddenUserIds } from '@/hooks/useHiddenUserIds';
 import { haversineDistanceKm } from '@/lib/haversine';
@@ -16,6 +18,7 @@ import { getOrCreateChat } from '@/services/chat';
 import { auth, db } from '@/services/firebase';
 import { getUserLocation } from '@/services/location';
 import { useRouter } from 'expo-router';
+import * as Haptics from 'expo-haptics';
 import {
   addDoc,
   arrayUnion,
@@ -186,8 +189,10 @@ export default function ExploreScreen() {
       setMatchAlertOrder(null);
       currentMatchIdRef.current = null;
       router.push(`/match/${order.id}` as const);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     } catch (e) {
       Alert.alert('Error', e instanceof Error ? e.message : 'Failed to join');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
     } finally {
       setJoiningMatchId(null);
     }
@@ -347,9 +352,11 @@ export default function ExploreScreen() {
       await trackOrderJoined(uid, orderId);
       Alert.alert('Success', 'You joined the order.');
       router.push(`/match/${orderId}` as const);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to join';
       Alert.alert('Error', msg);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
     } finally {
       setJoiningId(null);
     }
@@ -365,17 +372,18 @@ export default function ExploreScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <MatchAlert
-        visible={matchAlertOrder != null}
-        restaurantName={matchAlertOrder?.restaurantName ?? ''}
-        onJoin={handleMatchJoin}
-        onIgnore={handleMatchIgnore}
-        joining={joiningMatchId != null}
-      />
-      <View style={styles.header}>
-        <AppLogo size={64} marginTop={4} />
-        <Text style={styles.title}>Nearby orders</Text>
-      </View>
+      <ScreenFadeIn style={{ flex: 1 }}>
+        <MatchAlert
+          visible={matchAlertOrder != null}
+          restaurantName={matchAlertOrder?.restaurantName ?? ''}
+          onJoin={handleMatchJoin}
+          onIgnore={handleMatchIgnore}
+          joining={joiningMatchId != null}
+        />
+        <View style={styles.header}>
+          <AppLogo size={64} marginTop={4} />
+          <Text style={styles.title}>Nearby orders</Text>
+        </View>
 
       {locationError ? (
         <View style={styles.messageBox}>
@@ -390,8 +398,11 @@ export default function ExploreScreen() {
       ) : null}
 
       {loading ? (
-        <View style={styles.centered}>
-          <ActivityIndicator size="large" color={theme.colors.primary} />
+        <View style={styles.skeletonWrap}>
+          <ShimmerSkeleton width="100%" height={150} borderRadius={16} style={styles.skeletonItem} />
+          <ShimmerSkeleton width="100%" height={150} borderRadius={16} style={styles.skeletonItem} />
+          <ShimmerSkeleton width="100%" height={150} borderRadius={16} />
+          <ActivityIndicator size="small" color={theme.colors.primary} style={{ marginTop: 14 }} />
         </View>
       ) : (
         <ScrollView
@@ -400,9 +411,15 @@ export default function ExploreScreen() {
           showsVerticalScrollIndicator={false}
         >
           {ordersWithDistance.length === 0 ? (
-            <Text style={styles.emptyText}>
-              No orders near you yet.{'\n'}Create one and invite someone!
-            </Text>
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyEmoji}>🍽️</Text>
+              <Text style={styles.emptyText}>
+                No orders near you yet.{'\n'}Create one and invite someone!
+              </Text>
+              <TouchableOpacity style={styles.emptyCreateButton} onPress={handleCreateOrder}>
+                <Text style={styles.emptyCreateButtonText}>Create First Order</Text>
+              </TouchableOpacity>
+            </View>
           ) : (
             ordersWithDistance.map((order) => {
               const distanceLabel =
@@ -445,9 +462,10 @@ export default function ExploreScreen() {
         </ScrollView>
       )}
 
-      <TouchableOpacity style={styles.createButton} onPress={handleCreateOrder}>
-        <Text style={styles.createButtonText}>Create Order</Text>
-      </TouchableOpacity>
+        <TouchableOpacity style={styles.createButton} onPress={handleCreateOrder}>
+          <Text style={styles.createButtonText}>Create Order</Text>
+        </TouchableOpacity>
+      </ScreenFadeIn>
     </SafeAreaView>
   );
 }
@@ -492,13 +510,32 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  skeletonWrap: { flex: 1, padding: theme.spacing.screen, paddingTop: 10 },
+  skeletonItem: { marginBottom: theme.spacing.tight },
   scroll: { flex: 1 },
   scrollContent: { padding: theme.spacing.screen, paddingBottom: 100 },
+  emptyState: { alignItems: 'center', marginTop: 24 },
+  emptyEmoji: { fontSize: 28, marginBottom: 8 },
   emptyText: {
     fontSize: 16,
     color: theme.colors.textMuted,
     textAlign: 'center',
-    marginTop: 24,
+  },
+  emptyCreateButton: {
+    marginTop: 14,
+    minHeight: 42,
+    borderRadius: 12,
+    backgroundColor: '#10241D',
+    borderWidth: 1,
+    borderColor: '#1E3A2F',
+    paddingHorizontal: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyCreateButtonText: {
+    color: '#6EE7B7',
+    fontWeight: '700',
+    fontSize: 13,
   },
   card: {
     backgroundColor: theme.colors.surface,
