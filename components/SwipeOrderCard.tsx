@@ -1,8 +1,8 @@
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
 import {
   Image,
-  ImageBackground,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -25,192 +25,280 @@ type Props = {
 export function SwipeOrderCard({ order, dimmed = false, onReport }: Props) {
   return (
     <View style={[styles.card, dimmed && styles.cardDimmed]}>
-      <ImageBackground
-        source={{ uri: order.imageUrl }}
-        style={styles.cardImage}
-        imageStyle={styles.cardImageStyle}
-      >
+      {/* Hero image — food delivery style, large top */}
+      <View style={styles.heroWrap}>
+        <Image
+          source={{ uri: order.imageUrl }}
+          style={styles.heroImage}
+          resizeMode="cover"
+        />
         <LinearGradient
-          colors={['rgba(0,0,0,0.05)', 'rgba(0,0,0,0.92)']}
-          style={styles.cardOverlay}
-        >
-          <View style={styles.badges}>
-            <View style={styles.savingsBadge}>
-              <Text style={styles.savingsBadgeText}>Save {order.savingsPercent}%</Text>
+          colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0.9)']}
+          style={styles.heroScrim}
+        />
+        <View style={styles.heroTopRow}>
+          {order.savingsPercent > 0 ? (
+            <View style={styles.pillGreen}>
+              <Text style={styles.pillGreenText}>Save {order.savingsPercent}%</Text>
             </View>
-            <View style={styles.rightBadges}>
-              {onReport ? (
-                <TouchableOpacity
-                  style={styles.reportBadge}
-                  onPress={onReport}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.reportBadgeText}>Report</Text>
-                </TouchableOpacity>
-              ) : null}
-              <View style={styles.urgencyBadge}>
-                <Text style={styles.urgencyBadgeText}>
-                  Closing in {order.closingInMin} min
-                </Text>
-              </View>
+          ) : (
+            <View />
+          )}
+          <View style={styles.heroRight}>
+            {onReport ? (
+              <TouchableOpacity
+                style={styles.reportPill}
+                onPress={onReport}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.reportPillText}>Report</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        </View>
+        <View style={styles.heroCaption}>
+          <Text style={styles.heroDishName} numberOfLines={2}>
+            {order.dishName}
+          </Text>
+        </View>
+      </View>
+
+      {/* Details panel */}
+      <View style={styles.panel}>
+        <View style={styles.priceRow}>
+          <Text style={styles.priceLabel}>Price per person</Text>
+          <Text style={styles.priceValue}>{formatSplitPrice(order.splitPriceCents)}</Text>
+        </View>
+
+        <View style={styles.statsRow}>
+          <View style={styles.statItem}>
+            <MaterialIcons name="schedule" size={20} color="#34D399" />
+            <View>
+              <Text style={styles.statLabel}>Arrives in</Text>
+              <Text style={styles.statValue}>{order.etaMin} min</Text>
             </View>
           </View>
-
-          <View style={styles.cardFooter}>
-            <Text style={styles.dishName}>{order.dishName}</Text>
-            <Text style={styles.splitPrice}>{formatSplitPrice(order.splitPriceCents)}</Text>
-            <View style={styles.metaRow}>
-              <Text style={styles.metaText}>Arrives in {order.etaMin} min</Text>
-              <Text style={styles.metaDot}>•</Text>
-              <Text style={styles.metaText}>{order.distanceKm.toFixed(1)} km away</Text>
-            </View>
-
-            <View style={styles.socialRow}>
-              <View style={styles.avatarStack}>
-                {order.joinedAvatarUrls.slice(0, 3).map((avatar, idx) => (
-                  <Image
-                    key={`${avatar}-${idx}`}
-                    source={{ uri: avatar }}
-                    style={[styles.avatar, { marginLeft: idx === 0 ? 0 : -10 }]}
-                  />
-                ))}
-              </View>
-              <View>
-                <Text style={styles.socialText}>
-                  {order.joinedCount}/{order.maxPeople} joined
-                </Text>
-                <Text style={styles.socialSubText}>{buildSpotLeftLabel(order)}</Text>
-              </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <MaterialIcons name="near-me" size={20} color="#60A5FA" />
+            <View>
+              <Text style={styles.statLabel}>Distance</Text>
+              <Text style={styles.statValue}>{order.distanceKm.toFixed(1)} km</Text>
             </View>
           </View>
-        </LinearGradient>
-      </ImageBackground>
+        </View>
+
+        <View style={styles.joinedCard}>
+          <View style={styles.avatarRow}>
+            {order.joinedAvatarUrls.slice(0, 4).map((uri, idx) => (
+              <Image
+                key={`${uri}-${idx}`}
+                source={{ uri }}
+                style={[styles.avatar, { marginLeft: idx === 0 ? 0 : -8 }]}
+              />
+            ))}
+          </View>
+          <View style={styles.joinedTextCol}>
+            <Text style={styles.joinedTitle}>
+              {order.joinedCount} of {order.maxPeople} joined
+            </Text>
+            <Text style={styles.joinedSub}>{buildSpotLeftLabel(order)}</Text>
+          </View>
+        </View>
+
+        <View style={styles.urgencyFoot}>
+          <MaterialIcons name="local-fire-department" size={16} color="#FB923C" />
+          <Text style={styles.urgencyFootText}>
+            Closing in ~{order.closingInMin} min · join while spots last
+          </Text>
+        </View>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
+    flex: 1,
     width: '100%',
-    height: '100%',
-    borderRadius: 26,
+    borderRadius: 24,
     overflow: 'hidden',
-    backgroundColor: '#141922',
+    backgroundColor: '#12171F',
     ...shadows.card,
   },
   cardDimmed: {
-    opacity: 0.65,
+    opacity: 0.72,
   },
-  cardImage: {
-    flex: 1,
-    justifyContent: 'flex-end',
+  heroWrap: {
+    flex: 3.1,
+    width: '100%',
+    position: 'relative',
   },
-  cardImageStyle: {
-    borderRadius: 26,
+  heroImage: {
+    ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    height: '100%',
   },
-  cardOverlay: {
-    flex: 1,
-    justifyContent: 'space-between',
-    padding: 16,
+  heroScrim: {
+    ...StyleSheet.absoluteFillObject,
   },
-  badges: {
+  heroTopRow: {
+    position: 'absolute',
+    top: 14,
+    left: 14,
+    right: 14,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
   },
-  rightBadges: {
+  heroRight: {
     alignItems: 'flex-end',
-    gap: 6,
+    gap: 8,
   },
-  savingsBadge: {
-    backgroundColor: 'rgba(16,185,129,0.92)',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 14,
+  pillGreen: {
+    backgroundColor: 'rgba(52, 211, 153, 0.95)',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
   },
-  savingsBadgeText: {
+  pillGreenText: {
     color: '#052E1A',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '800',
   },
-  urgencyBadge: {
-    backgroundColor: 'rgba(251,146,60,0.95)',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 14,
-  },
-  urgencyBadgeText: {
-    color: '#3B1A00',
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  reportBadge: {
-    backgroundColor: 'rgba(29, 35, 44, 0.88)',
+  reportPill: {
+    backgroundColor: 'rgba(15, 23, 42, 0.88)',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#374151',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
+    borderColor: 'rgba(148, 163, 184, 0.35)',
   },
-  reportBadgeText: {
+  reportPillText: {
     color: '#FCA5A5',
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
-  cardFooter: {
-    gap: 8,
+  heroCaption: {
+    position: 'absolute',
+    left: 14,
+    right: 14,
+    bottom: 14,
   },
-  dishName: {
+  heroDishName: {
     color: '#FFFFFF',
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: '800',
-    lineHeight: 34,
+    lineHeight: 32,
+    textShadowColor: 'rgba(0,0,0,0.45)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 8,
   },
-  splitPrice: {
-    color: '#6EE7B7',
-    fontSize: 20,
-    fontWeight: '800',
+  panel: {
+    flex: 2,
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    paddingBottom: 14,
+    backgroundColor: '#0E131B',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.06)',
+    gap: 12,
+    justifyContent: 'space-between',
   },
-  metaRow: {
+  priceRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
   },
-  metaText: {
-    color: '#E5E7EB',
+  priceLabel: {
+    color: '#94A3B8',
     fontSize: 13,
     fontWeight: '600',
   },
-  metaDot: {
-    color: '#9CA3AF',
-    fontSize: 13,
+  priceValue: {
+    color: '#6EE7B7',
+    fontSize: 22,
+    fontWeight: '800',
   },
-  socialRow: {
-    marginTop: 4,
+  statsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#151B26',
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  statItem: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
   },
-  avatarStack: {
+  statDivider: {
+    width: 1,
+    height: 36,
+    backgroundColor: 'rgba(148, 163, 184, 0.2)',
+    marginHorizontal: 6,
+  },
+  statLabel: {
+    color: '#64748B',
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  statValue: {
+    color: '#F1F5F9',
+    fontSize: 16,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  joinedCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    backgroundColor: 'rgba(30, 41, 59, 0.5)',
+  },
+  avatarRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   avatar: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     borderWidth: 2,
-    borderColor: '#0B0D10',
+    borderColor: '#0E131B',
   },
-  socialText: {
-    color: '#F3F4F6',
+  joinedTextCol: {
+    flex: 1,
+  },
+  joinedTitle: {
+    color: '#F8FAFC',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  joinedSub: {
+    color: '#FDBA74',
     fontSize: 13,
     fontWeight: '700',
+    marginTop: 2,
   },
-  socialSubText: {
-    color: '#FDBA74',
+  urgencyFoot: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingTop: 2,
+  },
+  urgencyFootText: {
+    flex: 1,
+    color: '#94A3B8',
     fontSize: 12,
-    fontWeight: '700',
-    marginTop: 1,
+    fontWeight: '600',
   },
 });

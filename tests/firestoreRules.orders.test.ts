@@ -42,6 +42,7 @@ describe('firestore rules: orders create + join safety', () => {
         peopleJoined: 1,
         maxPeople: 3,
         usersJoined: ['u1'],
+        users: [{ uid: 'u1', displayName: 'U1' }],
         createdBy: 'u1',
         createdAt: serverTimestamp(),
       }),
@@ -60,6 +61,7 @@ describe('firestore rules: orders create + join safety', () => {
         peopleJoined: 1,
         maxPeople: 3,
         usersJoined: ['u2'],
+        users: [{ uid: 'u2', displayName: 'U2' }],
         createdBy: 'u1',
         createdAt: serverTimestamp(),
       }),
@@ -77,6 +79,7 @@ describe('firestore rules: orders create + join safety', () => {
         peopleJoined: 1,
         maxPeople: 2,
         usersJoined: ['u1'],
+        users: [{ uid: 'u1', displayName: 'U1' }],
         createdBy: 'u1',
         createdAt: serverTimestamp(),
       });
@@ -87,6 +90,10 @@ describe('firestore rules: orders create + join safety', () => {
       updateDoc(doc(dbU2, 'orders', 'o1'), {
         peopleJoined: 2,
         usersJoined: ['u1', 'u2'],
+        users: [
+          { uid: 'u1', displayName: 'U1' },
+          { uid: 'u2', displayName: 'U2' },
+        ],
       }),
     );
   });
@@ -102,6 +109,7 @@ describe('firestore rules: orders create + join safety', () => {
         peopleJoined: 1,
         maxPeople: 3,
         usersJoined: ['u1'],
+        users: [{ uid: 'u1', displayName: 'U1' }],
         createdBy: 'u1',
         createdAt: serverTimestamp(),
       });
@@ -112,6 +120,10 @@ describe('firestore rules: orders create + join safety', () => {
       updateDoc(doc(dbU1, 'orders', 'o1'), {
         peopleJoined: 2,
         usersJoined: ['u1', 'u1'],
+        users: [
+          { uid: 'u1', displayName: 'U1' },
+          { uid: 'u1', displayName: 'U1' },
+        ],
       }),
     );
   });
@@ -127,6 +139,10 @@ describe('firestore rules: orders create + join safety', () => {
         peopleJoined: 2,
         maxPeople: 2,
         usersJoined: ['u1', 'u2'],
+        users: [
+          { uid: 'u1', displayName: 'U1' },
+          { uid: 'u2', displayName: 'U2' },
+        ],
         createdBy: 'u1',
         createdAt: serverTimestamp(),
       });
@@ -137,6 +153,11 @@ describe('firestore rules: orders create + join safety', () => {
       updateDoc(doc(dbU3, 'orders', 'o1'), {
         peopleJoined: 3,
         usersJoined: ['u1', 'u2', 'u3'],
+        users: [
+          { uid: 'u1', displayName: 'U1' },
+          { uid: 'u2', displayName: 'U2' },
+          { uid: 'u3', displayName: 'U3' },
+        ],
       }),
     );
   });
@@ -152,6 +173,7 @@ describe('firestore rules: orders create + join safety', () => {
         peopleJoined: 1,
         maxPeople: 3,
         usersJoined: ['u1'],
+        users: [{ uid: 'u1', displayName: 'U1' }],
         createdBy: 'u1',
         createdAt: serverTimestamp(),
       });
@@ -162,6 +184,10 @@ describe('firestore rules: orders create + join safety', () => {
       updateDoc(doc(dbU2, 'orders', 'o1'), {
         peopleJoined: 2,
         usersJoined: ['u1', 'u2'],
+        users: [
+          { uid: 'u1', displayName: 'U1' },
+          { uid: 'u2', displayName: 'U2' },
+        ],
         foodName: 'Changed',
       }),
     );
@@ -178,6 +204,7 @@ describe('firestore rules: orders create + join safety', () => {
         peopleJoined: 1,
         maxPeople: 3,
         usersJoined: ['u1'],
+        users: [{ uid: 'u1', displayName: 'U1' }],
         createdBy: 'u1',
         createdAt: serverTimestamp(),
       });

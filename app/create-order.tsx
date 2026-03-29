@@ -70,6 +70,10 @@ export default function CreateOrderScreen() {
     runTapScale(buttonScale);
     setSaving(true);
     try {
+      const displayName =
+        auth.currentUser?.displayName ||
+        auth.currentUser?.email?.split('@')[0] ||
+        'User';
       const orderPayload = {
         foodName: foodName.trim(),
         image: imageUrl.trim(),
@@ -78,6 +82,14 @@ export default function CreateOrderScreen() {
         peopleJoined: 1,
         maxPeople: people,
         usersJoined: [uid],
+        users: [
+          {
+            uid,
+            displayName,
+            photoURL: auth.currentUser?.photoURL ?? null,
+            joinedAt: serverTimestamp(),
+          },
+        ],
         createdBy: uid,
         createdAt: serverTimestamp(),
       };

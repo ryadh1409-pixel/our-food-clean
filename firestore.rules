@@ -47,6 +47,10 @@ service cloud.firestore {
         && request.resource.data.usersJoined is list
         && request.resource.data.usersJoined.size() == 1
         && request.auth.uid in request.resource.data.usersJoined
+        && request.resource.data.users is list
+        && request.resource.data.users.size() == 1
+        && request.resource.data.users[0].uid is string
+        && request.resource.data.users[0].uid == request.auth.uid
         && request.resource.data.foodName is string
         && request.resource.data.image is string
         && request.resource.data.pricePerPerson is number
@@ -57,7 +61,7 @@ service cloud.firestore {
     function isSafeJoinUpdate() {
       return isSignedIn()
         && !isCurrentUserRestricted()
-        && request.resource.data.diff(resource.data).changedKeys().hasOnly(['peopleJoined', 'usersJoined'])
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly(['peopleJoined', 'usersJoined', 'users'])
         && request.resource.data.peopleJoined is number
         && resource.data.peopleJoined is number
         && request.resource.data.peopleJoined == resource.data.peopleJoined + 1
@@ -67,14 +71,17 @@ service cloud.firestore {
         && resource.data.usersJoined is list
         && request.resource.data.usersJoined.size() == resource.data.usersJoined.size() + 1
         && request.auth.uid in request.resource.data.usersJoined
-        && !(request.auth.uid in resource.data.usersJoined);
+        && !(request.auth.uid in resource.data.usersJoined)
+        && request.resource.data.users is list
+        && request.resource.data.users.size() == resource.data.usersJoined.size() + 1
+        && request.resource.data.users.size() == request.resource.data.usersJoined.size();
     }
 
     function isCreatorOnlyNonJoinUpdate() {
       return isSignedIn()
         && !isCurrentUserRestricted()
         && resource.data.createdBy == request.auth.uid
-        && !request.resource.data.diff(resource.data).changedKeys().hasAny(['peopleJoined', 'usersJoined'])
+        && !request.resource.data.diff(resource.data).changedKeys().hasAny(['peopleJoined', 'usersJoined', 'users'])
         && (
           // completed orders cannot be cancelled/changed back
           resource.data.status != 'completed'

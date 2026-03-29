@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  Dimensions,
   ScrollView,
   StyleSheet,
   Text,
@@ -14,14 +15,7 @@ import {
 } from 'react-native';
 import Swiper from 'react-native-deck-swiper';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import {
-  collection,
-  doc,
-  onSnapshot,
-  runTransaction,
-  serverTimestamp,
-  setDoc,
-} from 'firebase/firestore';
+import { collection, onSnapshot } from 'firebase/firestore';
 
 import { SwipeOrderCard } from '@/components/SwipeOrderCard';
 import { ScreenFadeIn } from '@/components/ScreenFadeIn';
@@ -29,11 +23,15 @@ import { ShimmerSkeleton } from '@/components/ShimmerSkeleton';
 import { SWIPE_FILTERS } from '@/constants/swipeOrders';
 import { shadows, theme } from '@/constants/theme';
 import { useBlockedUserIds } from '@/hooks/useBlockedUserIds';
-import { hasBlockBetween } from '@/services/blocks';
 import { submitReport, type ReportReason } from '@/services/reports';
 import { auth, db } from '@/services/firebase';
+import { joinOrder } from '@/services/joinOrder';
 import { runPulse, runTapScale } from '@/utils/motion';
 import type { SwipeFilter, SwipeOrder } from '@/types/swipeOrder';
+import { mockNumericFromId } from '@/types/swipeOrder';
+
+const { height: SCREEN_H } = Dimensions.get('window');
+const DECK_MIN_H = Math.min(520, Math.max(400, SCREEN_H * 0.52));
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -94,6 +92,9 @@ export default function HomeScreen() {
             const createdBy = String(
               data?.createdBy ?? data?.creatorId ?? data?.hostId ?? '',
             );
+            const distanceKm = mockNumericFromId(d.id, 'dist', 0.35, 4.2, 1);
+            const etaMin = mockNumericFromId(d.id, 'eta', 14, 42, 0);
+            const closingInMin = mockNumericFromId(d.id, 'close', 5, 28, 0);
             return {
               id: d.id,
               createdBy,
@@ -116,12 +117,16 @@ export default function HomeScreen() {
                       ),
                     )
                   : 50,
-              distanceKm: Math.max(Number(data?.distance ?? 0.5), 0.1),
-              etaMin: Math.max(Number(data?.timeRemaining ?? 20), 1),
-              closingInMin: Math.max(Number(data?.timeRemaining ?? 20), 1),
+              distanceKm,
+              etaMin,
+              closingInMin,
               joinedCount: Math.min(peopleJoined, maxPeople),
               maxPeople,
-              joinedAvatarUrls: ['https://i.pravatar.cc/100?img=31'],
+              joinedAvatarUrls: [
+                'https://i.pravatar.cc/100?img=12',
+                'https://i.pravatar.cc/100?img=45',
+                'https://i.pravatar.cc/100?img=33',
+              ],
             } as SwipeOrder;
           })
           .filter((order) => {
@@ -166,41 +171,7 @@ export default function HomeScreen() {
       return;
     }
 
-    const orderRef = doc(db, 'orders', orderId);
-    const maybeOrder = filteredOrders.find((o) => o.id === orderId);
-    const ownerId = maybeOrder?.createdBy ?? '';
-    if (ownerId && (await hasBlockBetween(uid, ownerId))) {
-      throw new Error('You cannot join this order due to a block.');
-    }
-    await runTransaction(db, async (tx) => {
-      const snap = await tx.get(orderRef);
-      if (!snap.exists()) throw new Error('Order not found.');
-      const data = snap.data();
-      const peopleJoined = Number(data?.peopleJoined ?? 1);
-      const maxPeople = Number(data?.maxPeople ?? 2);
-      const usersJoined = Array.isArray(data?.usersJoined) ? data.usersJoined : [];
-
-      if (usersJoined.includes(uid)) {
-        throw new Error('You already joined this order.');
-      }
-      if (peopleJoined >= maxPeople) {
-        throw new Error('Order is already full.');
-      }
-      tx.update(orderRef, {
-        peopleJoined: peopleJoined + 1,
-        usersJoined: [...usersJoined, uid],
-      });
-    });
-
-    // Optional audit for joins, useful for later analytics/chat integration.
-    await setDoc(
-      doc(db, 'orders', orderId, 'joins', uid),
-      {
-        userId: uid,
-        joinedAt: serverTimestamp(),
-      },
-      { merge: true },
-    ).catch(() => {});
+    await joinOrder(orderId);
     router.push(`/order/${orderId}` as const);
   };
 
@@ -211,6 +182,7 @@ export default function HomeScreen() {
     if (swipedCard) {
       void handleJoinOrder(swipedCard.id).catch((e) => {
         const msg = e instanceof Error ? e.message : 'Failed to join order.';
+        console.error('[joinOrder] swipe join failed', swipedCard.id, e);
         Alert.alert('Join failed', msg);
       });
     }
@@ -313,8 +285,9 @@ export default function HomeScreen() {
               ref={swiperRef}
               cards={filteredOrders}
               cardIndex={0}
-              stackSize={3}
-              stackSeparation={14}
+              stackSize={2}
+              stackSeparation={10}
+              stackScale={4}
               animateCardOpacity
               animateOverlayLabelsOpacity
               backgroundColor="transparent"
@@ -389,7 +362,10 @@ export default function HomeScreen() {
             activeOpacity={0.85}
             disabled={!hasCards}
           >
-            <MaterialIcons name="close" size={26} color="#F87171" />
+            <Text style={styles.actionEmoji} accessibilityLabel="Reject order">
+              ❌
+            </Text>
+            <Text style={styles.actionLabel}>Pass</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.actionButton, styles.likeButton]}
@@ -397,7 +373,10 @@ export default function HomeScreen() {
             activeOpacity={0.85}
             disabled={!hasCards}
           >
-            <MaterialIcons name="favorite" size={24} color="#34D399" />
+            <Text style={styles.actionEmoji} accessibilityLabel="Join order">
+              ❤️
+            </Text>
+            <Text style={styles.actionLabelLike}>Join</Text>
           </TouchableOpacity>
         </View>
 
@@ -470,7 +449,7 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     paddingHorizontal: theme.spacing.screen,
-    paddingBottom: 24,
+    paddingBottom: 12,
   },
   header: {
     marginTop: 4,
@@ -526,11 +505,13 @@ const styles = StyleSheet.create({
     color: '#ECFDF5',
   },
   deck: {
-    height: 500,
-    marginTop: 8,
-    marginBottom: 20,
+    flex: 1,
+    minHeight: DECK_MIN_H,
+    marginTop: 6,
+    marginBottom: 12,
     justifyContent: 'center',
     alignItems: 'center',
+    maxHeight: SCREEN_H * 0.62,
   },
   cardShell: {
     width: '100%',
@@ -594,25 +575,45 @@ const styles = StyleSheet.create({
   actionsRow: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 22,
-    marginBottom: 12,
+    alignItems: 'flex-end',
+    gap: 28,
+    marginBottom: 10,
   },
   actionButton: {
-    width: 62,
-    height: 62,
-    borderRadius: 31,
+    width: 76,
+    height: 76,
+    borderRadius: 38,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
+    borderWidth: 2,
     borderColor: '#232A35',
     backgroundColor: '#141922',
     ...shadows.card,
+    paddingTop: 6,
+  },
+  actionEmoji: {
+    fontSize: 28,
+    lineHeight: 34,
+  },
+  actionLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#F87171',
+    marginTop: 2,
+  },
+  actionLabelLike: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#34D399',
+    marginTop: 2,
   },
   skipButton: {
-    backgroundColor: '#17161C',
+    backgroundColor: '#1A1518',
+    borderColor: 'rgba(248, 113, 113, 0.35)',
   },
   likeButton: {
-    backgroundColor: '#10241D',
+    backgroundColor: '#0D2419',
+    borderColor: 'rgba(52, 211, 153, 0.45)',
   },
   statsRow: {
     flexDirection: 'row',

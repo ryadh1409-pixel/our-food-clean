@@ -39,6 +39,9 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 
+# local seed script output
+scripts/.seed-output/
+
 app-example
 
 # generated native folders

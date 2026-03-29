@@ -22,7 +22,26 @@ export type SwipeOrder = {
 };
 
 export function formatSplitPrice(cents: number): string {
-  return `$${(cents / 100).toFixed(0)} each`;
+  return `$${(cents / 100).toFixed(2)} / person`;
+}
+
+/** Stable pseudo-random in [min, max] from a string (for mock distance / ETA). */
+export function mockNumericFromId(
+  id: string,
+  salt: string,
+  min: number,
+  max: number,
+  decimals: number = 1,
+): number {
+  const s = `${id}:${salt}`;
+  let h = 0;
+  for (let i = 0; i < s.length; i += 1) {
+    h = (h * 31 + s.charCodeAt(i)) | 0;
+  }
+  const t = (Math.abs(h) % 10000) / 10000;
+  const v = min + t * (max - min);
+  const p = 10 ** decimals;
+  return Math.round(v * p) / p;
 }
 
 export function buildSpotLeftLabel(order: SwipeOrder): string {

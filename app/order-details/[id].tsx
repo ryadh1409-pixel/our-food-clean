@@ -1,12 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import {
-  doc,
-  onSnapshot,
-  runTransaction,
-  serverTimestamp,
-  setDoc,
-} from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -25,6 +19,7 @@ import { ScreenFadeIn } from '@/components/ScreenFadeIn';
 import { ShimmerSkeleton } from '@/components/ShimmerSkeleton';
 import { blockUser, hasBlockBetween } from '@/services/blocks';
 import { auth, db } from '@/services/firebase';
+import { joinOrder } from '@/services/joinOrder';
 
 type OrderDetails = {
   id: string;
@@ -142,39 +137,7 @@ export default function OrderDetailsScreen() {
     }
     setJoining(true);
     try {
-      if (order.createdBy && (await hasBlockBetween(uid, order.createdBy))) {
-        throw new Error('You cannot join this order due to a block.');
-      }
-      const orderRef = doc(db, 'orders', order.id);
-      await runTransaction(db, async (tx) => {
-        const snap = await tx.get(orderRef);
-        if (!snap.exists()) throw new Error('Order no longer exists.');
-        const d = snap.data();
-        const peopleJoined = Number(d?.peopleJoined ?? 1);
-        const maxPeople = Number(d?.maxPeople ?? 2);
-        const usersJoined = Array.isArray(d?.usersJoined) ? d.usersJoined : [];
-
-        if (usersJoined.includes(uid)) {
-          throw new Error('You already joined this order.');
-        }
-        if (peopleJoined >= maxPeople) {
-          throw new Error('Order is already full.');
-        }
-        tx.update(orderRef, {
-          peopleJoined: peopleJoined + 1,
-          usersJoined: [...usersJoined, uid],
-        });
-      });
-      await setDoc(
-        doc(db, 'orders', order.id, 'joins', uid),
-        { userId: uid, joinedAt: serverTimestamp() },
-        { merge: true },
-      );
-      await setDoc(
-        doc(db, 'users', uid, 'joinedOrders', order.id),
-        { orderId: order.id, joinedAt: serverTimestamp() },
-        { merge: true },
-      ).catch(() => {});
+      await joinOrder(order.id);
       Alert.alert('Joined', 'You joined this order.');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       router.push({
@@ -183,6 +146,7 @@ export default function OrderDetailsScreen() {
       } as never);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to join order.';
+      console.error('[joinOrder]', msg, e);
       Alert.alert('Join failed', msg);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
     } finally {
