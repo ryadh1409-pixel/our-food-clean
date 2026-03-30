@@ -53,6 +53,7 @@ async function ensureUserDocument(
   displayName: string | null,
   email: string | null,
   phoneNumber: string | null,
+  photoURL: string | null = null,
 ): Promise<void> {
   const userRef = doc(db, 'users', uid);
   const snap = await getDoc(userRef);
@@ -61,6 +62,13 @@ async function ensureUserDocument(
     const updates: Record<string, unknown> = {};
     if (typeof data?.displayName !== 'string') updates.displayName = displayName ?? '';
     if (data?.email == null) updates.email = email ?? null;
+    if (
+      (data?.photoURL == null || data?.photoURL === '') &&
+      photoURL &&
+      photoURL.trim()
+    ) {
+      updates.photoURL = photoURL.trim();
+    }
     if (data?.uid === undefined) updates.uid = uid;
     if (data?.activeOrderId === undefined) updates.activeOrderId = null;
     if (data?.credits === undefined) updates.credits = 0;
@@ -106,6 +114,7 @@ async function ensureUserDocument(
     displayName: displayName ?? '',
     email: email ?? null,
     phoneNumber: phoneNumber ?? null,
+    photoURL: photoURL?.trim() || null,
     createdAt: serverTimestamp(),
     activeOrderId: null,
     credits: referredBy ? REFERRAL_CREDIT : 0,
@@ -190,6 +199,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             firebaseUser.displayName ?? null,
             firebaseUser.email ?? null,
             firebaseUser.phoneNumber ?? null,
+            firebaseUser.photoURL ?? null,
           );
         } catch {
           // non-fatal
@@ -244,6 +254,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           userCredential.user.displayName ?? null,
           userCredential.user.email ?? null,
           userCredential.user.phoneNumber ?? null,
+          userCredential.user.photoURL ?? null,
         );
       } catch (e) {
         console.warn('ensureUserDocument failed (non-fatal):', e);
@@ -263,6 +274,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             cred.user.displayName ?? null,
             cred.user.email ?? null,
             cred.user.phoneNumber ?? null,
+            cred.user.photoURL ?? null,
           );
         } catch (e) {
           logError(e);
@@ -324,6 +336,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         cred.user.displayName ?? null,
         cred.user.email ?? null,
         cred.user.phoneNumber ?? null,
+        cred.user.photoURL ?? null,
       );
     } catch (err: unknown) {
       const code =

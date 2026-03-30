@@ -15,7 +15,17 @@ import {
 } from '@/services/blocks';
 import { submitReport, type ReportReason } from '@/services/reports';
 import { auth, db } from '@/services/firebase';
-import { doc, onSnapshot, setDoc, type DocumentData } from 'firebase/firestore';
+import { uploadProfilePhoto } from '@/services/profilePhoto';
+import {
+  doc,
+  getDoc,
+  onSnapshot,
+  setDoc,
+  updateDoc,
+  type DocumentData,
+} from 'firebase/firestore';
+import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
@@ -72,22 +82,40 @@ function pickRatingCount(data: DocumentData): number {
   return 0;
 }
 
+function resolvePhotoURL(
+  data: DocumentData | undefined,
+  authUser: User | null,
+): string | null {
+  const docUrl = data?.photoURL;
+  if (typeof docUrl === 'string' && docUrl.trim().length > 0) {
+    return docUrl.trim();
+  }
+  const authUrl = authUser?.photoURL;
+  if (typeof authUrl === 'string' && authUrl.trim().length > 0) {
+    return authUrl.trim();
+  }
+  return null;
+}
+
 function mapUsersCollectionToProfile(
   data: DocumentData | undefined,
   authUser: User | null,
 ): {
   displayName: string;
   emailFromDoc: string | null;
+  photoURL: string | null;
   notificationsEnabled: boolean;
   ordersCount: number;
   averageRating: number;
   totalRatings: number;
 } {
   const authDisplay = authUser?.displayName?.trim() ?? '';
+  const photoURL = resolvePhotoURL(data, authUser);
   if (!data) {
     return {
       displayName: authDisplay,
       emailFromDoc: null,
+      photoURL,
       notificationsEnabled: true,
       ordersCount: 0,
       averageRating: 0,
@@ -111,6 +139,7 @@ function mapUsersCollectionToProfile(
   return {
     displayName: fromDoc || authDisplay,
     emailFromDoc,
+    photoURL,
     notificationsEnabled: data.notificationsEnabled !== false,
     ordersCount: orders,
     averageRating: pickRatingAverage(data),
@@ -178,6 +207,8 @@ export default function ProfileScreen() {
   const [emailFromFirestore, setEmailFromFirestore] = useState<string | null>(
     null,
   );
+  const [photoURL, setPhotoURL] = useState<string | null>(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [reportUserId, setReportUserId] = useState('');
   const [reportReason, setReportReason] = useState<ReportReason>('spam');
@@ -195,6 +226,7 @@ export default function ProfileScreen() {
   useEffect(() => {
     if (!uid) {
       setEmailFromFirestore(null);
+      setPhotoURL(null);
       setProfileLoading(false);
       return;
     }
@@ -215,6 +247,7 @@ export default function ProfileScreen() {
         setAverageRating(mapped.averageRating);
         setTotalRatings(mapped.totalRatings);
         setEmailFromFirestore(mapped.emailFromDoc);
+        setPhotoURL(mapped.photoURL);
 
         setProfileLoading(false);
       },
@@ -228,6 +261,7 @@ export default function ProfileScreen() {
         setAverageRating(mapped.averageRating);
         setTotalRatings(mapped.totalRatings);
         setEmailFromFirestore(mapped.emailFromDoc);
+        setPhotoURL(mapped.photoURL);
         setProfileLoading(false);
       },
     );
@@ -266,7 +300,9 @@ export default function ProfileScreen() {
     if (!uid) return;
     const currentUser = auth.currentUser;
     if (!currentUser) {
-      setNameErrorMessage('Something went wrong, try again');
+      const msg = 'Not signed in. Please sign in again.';
+      setNameErrorMessage(msg);
+      Alert.alert('Could not save', msg);
       return;
     }
     if (!trimmed) {
@@ -301,13 +337,66 @@ export default function ProfileScreen() {
       }, 2000);
     } catch (err) {
       logError(err, { alert: false });
-      setNameErrorMessage('Something went wrong, try again');
+      const msg =
+        err instanceof Error ? err.message : 'Something went wrong, try again';
+      setNameErrorMessage(msg);
+      Alert.alert('Could not save', msg);
       nameFeedbackClearRef.current = setTimeout(() => {
         setNameErrorMessage('');
         nameFeedbackClearRef.current = null;
-      }, 2000);
+      }, 4000);
     } finally {
       setSavingName(false);
+    }
+  };
+
+  const handlePickProfilePhoto = async () => {
+    if (!uid || uploadingPhoto) return;
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      Alert.alert('Could not save', 'Not signed in.');
+      return;
+    }
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert(
+        'Permission needed',
+        'Allow photo library access to set a profile picture.',
+      );
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.85,
+    });
+    if (result.canceled || !result.assets?.[0]?.uri) return;
+
+    const imageUri = result.assets[0].uri;
+    setUploadingPhoto(true);
+    try {
+      const downloadURL = await uploadProfilePhoto(uid, imageUri);
+      await updateProfile(currentUser, { photoURL: downloadURL });
+
+      const userRef = doc(db, 'users', uid);
+      const userSnap = await getDoc(userRef);
+      if (userSnap.exists()) {
+        await updateDoc(userRef, { photoURL: downloadURL });
+      } else {
+        await setDoc(userRef, { photoURL: downloadURL }, { merge: true });
+      }
+
+      setPhotoURL(downloadURL);
+      Alert.alert('Photo updated', 'Your profile picture has been saved.');
+    } catch (e) {
+      logError(e, { alert: false });
+      console.error('[Profile] photo upload failed:', e);
+      const msg =
+        e instanceof Error ? e.message : 'Could not upload image. Try again.';
+      Alert.alert('Upload failed', msg);
+    } finally {
+      setUploadingPhoto(false);
     }
   };
 
@@ -540,9 +629,27 @@ export default function ProfileScreen() {
           </View>
 
           <View style={dynamicStyles.hero}>
-            <View style={dynamicStyles.avatarRing}>
-              <Text style={dynamicStyles.avatarLetter}>{initialLetter}</Text>
-            </View>
+            <TouchableOpacity
+              style={dynamicStyles.avatarRing}
+              onPress={handlePickProfilePhoto}
+              activeOpacity={0.85}
+              disabled={uploadingPhoto}
+              accessibilityLabel="Change profile photo"
+            >
+              {uploadingPhoto ? (
+                <ActivityIndicator size="large" color={pal.primary} />
+              ) : photoURL ? (
+                <Image
+                  source={{ uri: photoURL }}
+                  style={dynamicStyles.avatarImage}
+                  contentFit="cover"
+                  transition={200}
+                />
+              ) : (
+                <Text style={dynamicStyles.avatarLetter}>{initialLetter}</Text>
+              )}
+            </TouchableOpacity>
+            <Text style={dynamicStyles.photoHint}>Tap photo to change</Text>
             <Text style={dynamicStyles.heroName} numberOfLines={1}>
               {displayName}
             </Text>
@@ -598,9 +705,17 @@ export default function ProfileScreen() {
                 !canSaveName && !nameSaved && dynamicStyles.buttonDisabled,
               ]}
               disabled={!canSaveName}
-              onPress={handleSaveDisplayName}
+              onPress={() => {
+                void handleSaveDisplayName();
+              }}
             >
-              <Text style={dynamicStyles.primaryButtonText}>{saveButtonLabel}</Text>
+              {savingName ? (
+                <ActivityIndicator size="small" color={pal.onPrimary} />
+              ) : (
+                <Text style={dynamicStyles.primaryButtonText}>
+                  {saveButtonLabel}
+                </Text>
+              )}
             </TouchableOpacity>
             {nameSuccessMessage ? (
               <Text style={dynamicStyles.feedbackOk}>{nameSuccessMessage}</Text>
@@ -874,13 +989,25 @@ function createDynamicStyles(pal: Palette, isDarkMode: boolean) {
       borderColor: pal.primary,
       justifyContent: 'center',
       alignItems: 'center',
-      marginBottom: 12,
+      marginBottom: 6,
+      overflow: 'hidden',
       ...shadows.card,
+    },
+    avatarImage: {
+      width: 86,
+      height: 86,
+      borderRadius: 43,
     },
     avatarLetter: {
       fontSize: 36,
       fontWeight: '800',
       color: pal.text,
+    },
+    photoHint: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: pal.textTertiary,
+      marginBottom: 8,
     },
     heroName: {
       fontSize: 22,

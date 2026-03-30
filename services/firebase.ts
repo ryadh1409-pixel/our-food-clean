@@ -21,7 +21,8 @@ const firebaseConfig = {
   apiKey: 'AIzaSyDbXyGYAVJU818J7mpiJXOOexAbOQuLJvo',
   authDomain: 'halforfer.firebaseapp.com',
   projectId: 'halforfer',
-  storageBucket: 'halforfer.firebasestorage.app',
+  // Default bucket name (fixes storage/unknown when *.firebasestorage.app mismatches console).
+  storageBucket: 'halforfer.appspot.com',
   messagingSenderId: '297728229596',
   appId: '1:297728229596:web:1921b79403d9e2d11db419',
   measurementId: 'G-JC37LM61J6',
@@ -80,4 +81,5 @@ const app = getOrCreateApp();
 
 export const auth = getOrCreateAuth(app);
 export const db = getFirestore(app);
+/** Cloud Storage — uses `storageBucket` from firebaseConfig above. */
 export const storage = getStorage(app);
