@@ -1,38 +1,27 @@
 import { Tabs } from 'expo-router';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { onAuthStateChanged } from '@firebase/auth';
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 
 import { HapticTab } from '@/components/haptic-tab';
-import { Colors, theme } from '@/constants/theme';
-import { auth } from '@/services/firebase';
 
 const TAB_ICON_SIZE = 24;
-const ACTIVE_COLOR = Colors.light.tabIconSelected;
-const INACTIVE_COLOR = Colors.light.tabIconDefault;
-const { colors: tabColors } = theme;
+const TAB_ACTIVE = '#34D399';
+const TAB_INACTIVE = 'rgba(255,255,255,0.45)';
+
+const tabBarDark = {
+  backgroundColor: '#0B0E14',
+  borderTopColor: 'rgba(255,255,255,0.08)',
+  paddingTop: 6,
+  height: 58,
+};
 
 export default function TabLayout() {
-  const [isAuthenticated, setIsAuthenticated] = useState(!!auth.currentUser);
-
-  useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (user) =>
-      setIsAuthenticated(!!user),
-    );
-    return () => unsub();
-  }, []);
-
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: ACTIVE_COLOR,
-        tabBarInactiveTintColor: INACTIVE_COLOR,
-        tabBarStyle: {
-          backgroundColor: tabColors.background,
-          borderTopColor: tabColors.border,
-          paddingTop: 6,
-          height: 58,
-        },
+        tabBarActiveTintColor: TAB_ACTIVE,
+        tabBarInactiveTintColor: TAB_INACTIVE,
+        tabBarStyle: tabBarDark,
         headerShown: false,
         tabBarButton: HapticTab,
       }}
@@ -40,12 +29,21 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
-          tabBarIcon: ({ focused }) => (
+          title: 'Swipe',
+          tabBarIcon: ({ color }) => (
+            <MaterialIcons name="style" size={TAB_ICON_SIZE} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="browse"
+        options={{
+          title: 'Browse',
+          tabBarIcon: ({ color }) => (
             <MaterialIcons
-              name="home"
+              name="grid-view"
               size={TAB_ICON_SIZE}
-              color={focused ? ACTIVE_COLOR : INACTIVE_COLOR}
+              color={color}
             />
           ),
         }}
@@ -54,24 +52,24 @@ export default function TabLayout() {
         name="orders"
         options={{
           title: 'Orders',
-          tabBarIcon: ({ focused }) => (
+          tabBarIcon: ({ color }) => (
             <MaterialIcons
               name="receipt-long"
               size={TAB_ICON_SIZE}
-              color={focused ? ACTIVE_COLOR : INACTIVE_COLOR}
+              color={color}
             />
           ),
         }}
       />
       <Tabs.Screen
-        name="deals"
+        name="chat"
         options={{
-          title: 'Deals',
-          tabBarIcon: ({ focused }) => (
+          title: 'Chat',
+          tabBarIcon: ({ color }) => (
             <MaterialIcons
-              name="local-offer"
+              name="chat-bubble-outline"
               size={TAB_ICON_SIZE}
-              color={focused ? ACTIVE_COLOR : INACTIVE_COLOR}
+              color={color}
             />
           ),
         }}
@@ -80,18 +78,17 @@ export default function TabLayout() {
         name="profile"
         options={{
           title: 'Profile',
-          tabBarIcon: ({ focused }) => (
+          tabBarIcon: ({ color }) => (
             <MaterialIcons
-              name="person"
+              name="person-outline"
               size={TAB_ICON_SIZE}
-              color={focused ? ACTIVE_COLOR : INACTIVE_COLOR}
+              color={color}
             />
           ),
         }}
       />
       <Tabs.Screen name="create" options={{ href: null }} />
       <Tabs.Screen name="join" options={{ href: null }} />
-      <Tabs.Screen name="explore" options={{ href: null }} />
     </Tabs>
   );
 }

@@ -7,6 +7,7 @@ export type SwipeFilter =
 
 export type SwipeOrder = {
   id: string;
+  /** Host uid when present; swipe-only seeded orders may omit a creator. */
   createdBy: string;
   category: Exclude<SwipeFilter, 'For You'>;
   dishName: string;

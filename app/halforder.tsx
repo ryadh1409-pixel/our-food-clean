@@ -1,7 +1,6 @@
-import React from 'react';
+import { Redirect } from 'expo-router';
 
-import { HalfOrderAppScreen } from '@/screens/HalfOrderAppScreen';
-
-export default function HalfOrderRoute() {
-  return <HalfOrderAppScreen />;
+/** Legacy entry: main app uses `/(tabs)` only. */
+export default function HalfOrderLegacyRedirect() {
+  return <Redirect href="/(tabs)" />;
 }

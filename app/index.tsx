@@ -7,6 +7,7 @@ import AppLogo from '@/components/AppLogo';
 
 const ONBOARDING_COMPLETE_KEY = 'onboardingComplete';
 
+/** App entry: onboarding gate → `/(tabs)` (not a tab screen; tabs use `(tabs)/index`). */
 export default function Index() {
   const [done, setDone] = useState<boolean | null>(null);
 

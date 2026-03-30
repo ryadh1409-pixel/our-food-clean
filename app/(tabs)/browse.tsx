@@ -2,7 +2,7 @@ import AppLogo from '@/components/AppLogo';
 import MatchAlert from '@/components/MatchAlert';
 import { ScreenFadeIn } from '@/components/ScreenFadeIn';
 import { ShimmerSkeleton } from '@/components/ShimmerSkeleton';
-import { shadows, theme } from '@/constants/theme';
+import { theme } from '@/constants/theme';
 import { useHiddenUserIds } from '@/hooks/useHiddenUserIds';
 import { haversineDistanceKm } from '@/lib/haversine';
 import { getTimeAgo } from '@/lib/time-ago';
@@ -18,6 +18,7 @@ import { getOrCreateChat } from '@/services/chat';
 import { auth, db } from '@/services/firebase';
 import { getUserLocation } from '@/services/location';
 import { useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import * as Haptics from 'expo-haptics';
 import {
   addDoc,
@@ -44,7 +45,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-type ExploreOrder = {
+type BrowseOrder = {
   id: string;
   restaurantName: string;
   creatorId: string;
@@ -55,9 +56,19 @@ type ExploreOrder = {
   distanceKm: number | null;
 };
 
-export default function ExploreScreen() {
+const ACCENT = '#34D399';
+const D = {
+  bg: '#06080C',
+  card: '#11161F',
+  border: 'rgba(255,255,255,0.1)',
+  text: '#F8FAFC',
+  muted: 'rgba(248,250,252,0.55)',
+  panel: '#141A22',
+};
+
+export default function BrowseScreen() {
   const router = useRouter();
-  const [orders, setOrders] = useState<ExploreOrder[]>([]);
+  const [orders, setOrders] = useState<BrowseOrder[]>([]);
   const [userLocation, setUserLocation] = useState<{
     latitude: number;
     longitude: number;
@@ -214,10 +225,21 @@ export default function ExploreScreen() {
     const unsubscribe = onSnapshot(
       q,
       (snap) => {
-        const list: ExploreOrder[] = snap.docs.map((d) => {
+        const list: BrowseOrder[] = snap.docs.map((d) => {
           const data = d.data();
-          const created =
-            data?.createdAt?.toMillis?.() ?? data?.createdAt ?? null;
+          const rawCreated = data?.createdAt;
+          let created: number | null = null;
+          if (
+            rawCreated &&
+            typeof rawCreated === 'object' &&
+            'toMillis' in rawCreated &&
+            typeof (rawCreated as { toMillis: () => number }).toMillis ===
+              'function'
+          ) {
+            created = (rawCreated as { toMillis: () => number }).toMillis();
+          } else if (typeof rawCreated === 'number') {
+            created = rawCreated;
+          }
           const lat =
             typeof data?.latitude === 'number'
               ? data.latitude
@@ -295,7 +317,7 @@ export default function ExploreScreen() {
   const handleJoinOrder = async (orderId: string) => {
     const uid = auth.currentUser?.uid;
     if (!uid) {
-      router.push('/(auth)/login?redirectTo=/(tabs)/explore');
+      router.push('/(auth)/login?redirectTo=/(tabs)/browse');
       return;
     }
     if (await isUserBanned(uid)) {
@@ -372,6 +394,7 @@ export default function ExploreScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
+      <StatusBar style="light" />
       <ScreenFadeIn style={{ flex: 1 }}>
         <MatchAlert
           visible={matchAlertOrder != null}
@@ -402,7 +425,7 @@ export default function ExploreScreen() {
           <ShimmerSkeleton width="100%" height={150} borderRadius={16} style={styles.skeletonItem} />
           <ShimmerSkeleton width="100%" height={150} borderRadius={16} style={styles.skeletonItem} />
           <ShimmerSkeleton width="100%" height={150} borderRadius={16} />
-          <ActivityIndicator size="small" color={theme.colors.primary} style={{ marginTop: 14 }} />
+          <ActivityIndicator size="small" color={ACCENT} style={{ marginTop: 14 }} />
         </View>
       ) : (
         <ScrollView
@@ -447,10 +470,7 @@ export default function ExploreScreen() {
                     disabled={isJoining}
                   >
                     {isJoining ? (
-                      <ActivityIndicator
-                        size="small"
-                        color={theme.colors.textOnPrimary}
-                      />
+                      <ActivityIndicator size="small" color="#FFFFFF" />
                     ) : (
                       <Text style={styles.joinButtonText}>Join Order</Text>
                     )}
@@ -471,7 +491,7 @@ export default function ExploreScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.colors.background },
+  container: { flex: 1, backgroundColor: D.bg },
   header: {
     paddingHorizontal: theme.spacing.screen,
     paddingBottom: 16,
@@ -480,32 +500,36 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 20,
     fontWeight: '700',
-    color: theme.colors.text,
+    color: D.text,
     marginTop: 8,
   },
   messageBox: {
     marginHorizontal: theme.spacing.screen,
     padding: 16,
-    backgroundColor: theme.colors.backgroundDark,
+    backgroundColor: D.panel,
     borderRadius: theme.radius.card,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: D.border,
   },
   messageText: {
     fontSize: 14,
-    color: theme.colors.textMuted,
+    color: D.muted,
     marginBottom: 12,
   },
   retryButton: {
-    backgroundColor: theme.colors.primary,
+    backgroundColor: 'rgba(52, 211, 153, 0.22)',
     paddingVertical: 14,
     paddingHorizontal: theme.spacing.section,
     borderRadius: theme.radius.button,
     minHeight: theme.spacing.touchMin,
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(52, 211, 153, 0.45)',
   },
   retryButtonText: {
-    color: theme.colors.textOnPrimary,
+    color: '#A7F3D0',
     fontWeight: '600',
     fontSize: 14,
   },
@@ -518,52 +542,51 @@ const styles = StyleSheet.create({
   emptyEmoji: { fontSize: 28, marginBottom: 8 },
   emptyText: {
     fontSize: 16,
-    color: theme.colors.textMuted,
+    color: D.muted,
     textAlign: 'center',
   },
   emptyCreateButton: {
     marginTop: 14,
     minHeight: 42,
     borderRadius: 12,
-    backgroundColor: '#10241D',
+    backgroundColor: 'rgba(52, 211, 153, 0.15)',
     borderWidth: 1,
-    borderColor: '#1E3A2F',
+    borderColor: 'rgba(52, 211, 153, 0.35)',
     paddingHorizontal: 14,
     justifyContent: 'center',
     alignItems: 'center',
   },
   emptyCreateButtonText: {
-    color: '#6EE7B7',
+    color: '#A7F3D0',
     fontWeight: '700',
     fontSize: 13,
   },
   card: {
-    backgroundColor: theme.colors.surface,
+    backgroundColor: D.card,
     borderWidth: 1,
-    borderColor: theme.colors.border,
+    borderColor: D.border,
     borderRadius: theme.radius.lg,
     padding: theme.spacing.md,
     marginBottom: theme.spacing.tight,
-    ...shadows.card,
   },
   cardRestaurant: {
     fontSize: 18,
     fontWeight: '700',
-    color: theme.colors.text,
+    color: D.text,
     marginBottom: 6,
   },
   cardDistance: {
     fontSize: 14,
-    color: theme.colors.textMuted,
+    color: D.muted,
     marginBottom: 4,
   },
   cardTime: {
     fontSize: 13,
-    color: theme.colors.textMuted,
+    color: D.muted,
     marginBottom: 12,
   },
   joinButton: {
-    backgroundColor: theme.colors.primary,
+    backgroundColor: 'rgba(52, 211, 153, 0.9)',
     paddingVertical: 14,
     borderRadius: theme.radius.button,
     alignItems: 'center',
@@ -572,8 +595,8 @@ const styles = StyleSheet.create({
   },
   joinButtonDisabled: { opacity: 0.7 },
   joinButtonText: {
-    color: theme.colors.textOnPrimary,
-    fontWeight: '600',
+    color: '#042F24',
+    fontWeight: '700',
     fontSize: 16,
   },
   createButton: {
@@ -581,16 +604,18 @@ const styles = StyleSheet.create({
     bottom: theme.spacing.lg,
     left: theme.spacing.screen,
     right: theme.spacing.screen,
-    backgroundColor: theme.colors.primary,
+    backgroundColor: 'rgba(52, 211, 153, 0.22)',
     paddingVertical: 16,
     borderRadius: theme.radius.button,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: theme.spacing.touchMin,
+    borderWidth: 1,
+    borderColor: 'rgba(52, 211, 153, 0.45)',
   },
   createButtonText: {
-    color: theme.colors.textOnPrimary,
-    fontWeight: '600',
+    color: '#A7F3D0',
+    fontWeight: '700',
     fontSize: 16,
   },
 });

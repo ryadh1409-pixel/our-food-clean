@@ -13,6 +13,10 @@ import {
 
 import 'react-native-reanimated';
 
+/**
+ * Root Stack: auth, onboarding, modals, and `/(tabs)` (the only Tab navigator).
+ * Main app chrome lives in `app/(tabs)/_layout.tsx`.
+ */
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { theme } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -41,6 +45,7 @@ export const linking = {
     screens: {
       'order/[id]': 'order/:id',
       'match/[orderId]': 'match/:orderId',
+      'food-match/[matchId]': 'food-match/:matchId',
       'join/[orderId]': 'join/:orderId',
     },
   },
@@ -171,6 +176,10 @@ function RootLayoutNav() {
           options={{ title: 'Order Details' }}
         />
         <Stack.Screen name="match/[orderId]" options={{ headerShown: false }} />
+        <Stack.Screen
+          name="food-match/[matchId]"
+          options={{ headerShown: false, title: 'Match' }}
+        />
         <Stack.Screen name="join/[orderId]" options={{ headerShown: false }} />
         <Stack.Screen
           name="nearby-orders"
@@ -199,6 +208,10 @@ function RootLayoutNav() {
         <Stack.Screen
           name="inbox"
           options={{ title: 'Inbox', headerShown: false }}
+        />
+        <Stack.Screen
+          name="explore"
+          options={{ title: 'Browse', headerShown: false }}
         />
         <Stack.Screen
           name="chat/[orderId]"

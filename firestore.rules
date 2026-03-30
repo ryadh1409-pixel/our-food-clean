@@ -34,7 +34,46 @@ service cloud.firestore {
     }
 
     function orderParticipants(orderData) {
-      return orderData.get('usersJoined', orderData.get('participantIds', []));
+      return orderData.get('usersJoined', []).size() > 0
+        ? orderData.get('usersJoined', [])
+        : orderData.get('usersAccepted', orderData.get('participantIds', []));
+    }
+
+    /** Tinder-style like: only `usersAccepted` changes, +1 size, cap by maxPeople. */
+    function isSwipeAcceptUpdate() {
+      return isSignedIn()
+        && !isCurrentUserRestricted()
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly(['usersAccepted'])
+        && request.resource.data.usersAccepted is list
+        && request.auth.uid in request.resource.data.usersAccepted
+        && !(request.auth.uid in resource.data.get('usersAccepted', []))
+        && request.resource.data.usersAccepted.size()
+          == resource.data.get('usersAccepted', []).size() + 1
+        && request.resource.data.usersAccepted.size()
+          <= resource.data.get('maxPeople', 2);
+    }
+
+    function orderSwipeAcceptList(orderId) {
+      return get(/databases/$(database)/documents/orders/$(orderId)).data.get('usersAccepted', []);
+    }
+
+    function isValidFoodMatchCreate(matchDocId) {
+      return isSignedIn()
+        && !isCurrentUserRestricted()
+        && request.resource.data.orderId is string
+        && request.resource.data.users is list
+        && request.resource.data.users.size() == 2
+        && request.resource.data.status == 'matched'
+        && request.resource.data.createdAt != null
+        && request.auth.uid in request.resource.data.users
+        && request.resource.data.users[0] < request.resource.data.users[1]
+        && matchDocId
+          == request.resource.data.orderId + '_' + request.resource.data.users[0] + '_' + request.resource.data.users[1]
+        && orderSwipeAcceptList(request.resource.data.orderId).size() >= 2
+        && request.resource.data.users[0]
+          in orderSwipeAcceptList(request.resource.data.orderId)
+        && request.resource.data.users[1]
+          in orderSwipeAcceptList(request.resource.data.orderId);
     }
 
     function isValidOrderCreate() {
@@ -81,7 +120,7 @@ service cloud.firestore {
       return isSignedIn()
         && !isCurrentUserRestricted()
         && resource.data.createdBy == request.auth.uid
-        && !request.resource.data.diff(resource.data).changedKeys().hasAny(['peopleJoined', 'usersJoined', 'users'])
+        && !request.resource.data.diff(resource.data).changedKeys().hasAny(['peopleJoined', 'usersJoined', 'users', 'usersAccepted'])
         && (
           // completed orders cannot be cancelled/changed back
           resource.data.status != 'completed'
@@ -191,11 +230,17 @@ service cloud.firestore {
       allow delete: if request.auth != null
         && (resource.data.blockerId == request.auth.uid || resource.data.blockedUserId == request.auth.uid);
     }
+    match /matches/{matchId} {
+      allow read: if isSignedIn()
+        && request.auth.uid in resource.data.users;
+      allow create: if isValidFoodMatchCreate(matchId);
+      allow update, delete: if false;
+    }
     match /orders/{orderId} {
       allow read: if isSignedIn();
       allow create: if isValidOrderCreate();
       // Join is backend-validated here: auth required, no duplicate join, no over-capacity.
-      allow update: if isSafeJoinUpdate() || isCreatorOnlyNonJoinUpdate();
+      allow update: if isSafeJoinUpdate() || isCreatorOnlyNonJoinUpdate() || isSwipeAcceptUpdate();
       allow delete: if request.auth != null
         && resource.data.createdBy == request.auth.uid;
 

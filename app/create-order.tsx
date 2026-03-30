@@ -81,6 +81,7 @@ export default function CreateOrderScreen() {
         totalPrice: Number(total.toFixed(2)),
         peopleJoined: 1,
         maxPeople: people,
+        usersAccepted: [] as string[],
         usersJoined: [uid],
         users: [
           {

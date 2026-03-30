@@ -6,7 +6,14 @@ import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { doc, getDoc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
+import {
+  arrayUnion,
+  doc,
+  getDoc,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+} from 'firebase/firestore';
 
 let testEnv: RulesTestEnvironment;
 
@@ -213,5 +220,73 @@ describe('firestore rules: orders create + join safety', () => {
     await assertSucceeds(updateDoc(doc(dbU1, 'orders', 'o1'), { image: 'https://example.com/new.jpg' }));
     const snap = await getDoc(doc(dbU1, 'orders', 'o1'));
     expect(snap.data()?.image).toBe('https://example.com/new.jpg');
+  });
+});
+
+describe('firestore rules: swipe usersAccepted + food matches', () => {
+  it('allows a signed-in user to add themselves once to usersAccepted', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'orders', 'sw1'), {
+        foodName: 'Swipe Pizza',
+        image: 'https://example.com/p.jpg',
+        totalPrice: 24,
+        maxPeople: 2,
+        usersAccepted: [],
+        createdAt: serverTimestamp(),
+      });
+    });
+
+    const dbU1 = testEnv.authenticatedContext('u1').firestore();
+    await assertSucceeds(
+      updateDoc(doc(dbU1, 'orders', 'sw1'), {
+        usersAccepted: arrayUnion('u1'),
+      }),
+    );
+  });
+
+  it('allows a second user to like, then either user can create a match doc', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'orders', 'sw1'), {
+        foodName: 'Swipe Pizza',
+        image: 'https://example.com/p.jpg',
+        totalPrice: 24,
+        maxPeople: 2,
+        usersAccepted: ['u1', 'u2'],
+        createdAt: serverTimestamp(),
+      });
+    });
+
+    const dbU1 = testEnv.authenticatedContext('u1').firestore();
+    await assertSucceeds(
+      setDoc(doc(dbU1, 'matches', 'sw1_u1_u2'), {
+        orderId: 'sw1',
+        users: ['u1', 'u2'],
+        status: 'matched',
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('denies match create when match id does not match canonical pattern', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'orders', 'sw1'), {
+        foodName: 'Swipe Pizza',
+        image: 'https://example.com/p.jpg',
+        totalPrice: 24,
+        maxPeople: 2,
+        usersAccepted: ['u1', 'u2'],
+        createdAt: serverTimestamp(),
+      });
+    });
+
+    const dbU1 = testEnv.authenticatedContext('u1').firestore();
+    await assertFails(
+      setDoc(doc(dbU1, 'matches', 'wrong-id'), {
+        orderId: 'sw1',
+        users: ['u1', 'u2'],
+        status: 'matched',
+        createdAt: serverTimestamp(),
+      }),
+    );
   });
 });

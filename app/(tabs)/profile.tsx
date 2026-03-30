@@ -17,9 +17,10 @@ import { submitReport, type ReportReason } from '@/services/reports';
 import { auth, db } from '@/services/firebase';
 import { doc, onSnapshot, setDoc, type DocumentData } from 'firebase/firestore';
 import { useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import React, { useEffect, useRef, useState } from 'react';
-import { updateProfile } from '@firebase/auth';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { updateProfile, type User } from '@firebase/auth';
 import {
   ActivityIndicator,
   Alert,
@@ -39,10 +40,147 @@ import { shadows, theme } from '@/constants/theme';
 const SUPPORT_EMAIL = 'support@halforder.app';
 const ADMIN_EMAIL = 'support@halforder.app';
 
-const c = theme.colors;
+const tc = theme.colors;
+
+/** Reads `users/{uid}` fields with the same aliases as `getTrustScoreProfile`. */
+function pickRatingAverage(data: DocumentData): number {
+  if (
+    typeof data.ratingAverage === 'number' &&
+    Number.isFinite(data.ratingAverage)
+  ) {
+    return data.ratingAverage;
+  }
+  if (
+    typeof data.averageRating === 'number' &&
+    Number.isFinite(data.averageRating)
+  ) {
+    return data.averageRating;
+  }
+  return 0;
+}
+
+function pickRatingCount(data: DocumentData): number {
+  if (typeof data.ratingCount === 'number' && Number.isFinite(data.ratingCount)) {
+    return Math.max(0, Math.round(data.ratingCount));
+  }
+  if (
+    typeof data.totalRatings === 'number' &&
+    Number.isFinite(data.totalRatings)
+  ) {
+    return Math.max(0, Math.round(data.totalRatings));
+  }
+  return 0;
+}
+
+function mapUsersCollectionToProfile(
+  data: DocumentData | undefined,
+  authUser: User | null,
+): {
+  displayName: string;
+  emailFromDoc: string | null;
+  notificationsEnabled: boolean;
+  ordersCount: number;
+  averageRating: number;
+  totalRatings: number;
+} {
+  const authDisplay = authUser?.displayName?.trim() ?? '';
+  if (!data) {
+    return {
+      displayName: authDisplay,
+      emailFromDoc: null,
+      notificationsEnabled: true,
+      ordersCount: 0,
+      averageRating: 0,
+      totalRatings: 0,
+    };
+  }
+
+  const fromDoc =
+    typeof data.displayName === 'string' ? data.displayName.trim() : '';
+  const emailRaw = data.email;
+  const emailFromDoc =
+    typeof emailRaw === 'string' && emailRaw.trim().length > 0
+      ? emailRaw.trim()
+      : null;
+
+  const orders =
+    typeof data.ordersCount === 'number' && Number.isFinite(data.ordersCount)
+      ? data.ordersCount
+      : 0;
+
+  return {
+    displayName: fromDoc || authDisplay,
+    emailFromDoc,
+    notificationsEnabled: data.notificationsEnabled !== false,
+    ordersCount: orders,
+    averageRating: pickRatingAverage(data),
+    totalRatings: pickRatingCount(data),
+  };
+}
+
+type Palette = {
+  bg: string;
+  surface: string;
+  surfaceMuted: string;
+  text: string;
+  textSecondary: string;
+  textTertiary: string;
+  border: string;
+  inputBg: string;
+  chipBg: string;
+  primary: string;
+  onPrimary: string;
+  danger: string;
+  success: string;
+  star: string;
+};
+
+function useProfilePalette(): Palette {
+  const scheme = useColorScheme();
+  const isDark = scheme === 'dark';
+  return useMemo(
+    () =>
+      isDark
+        ? {
+            bg: '#0B0D10',
+            surface: '#141A22',
+            surfaceMuted: '#1B222C',
+            text: '#F8FAFC',
+            textSecondary: 'rgba(248,250,252,0.68)',
+            textTertiary: 'rgba(248,250,252,0.45)',
+            border: 'rgba(255,255,255,0.1)',
+            inputBg: '#0F1319',
+            chipBg: 'rgba(255,255,255,0.06)',
+            primary: '#FF7A00',
+            onPrimary: '#FFFFFF',
+            danger: '#F87171',
+            success: '#34D399',
+            star: '#FBBF24',
+          }
+        : {
+            bg: tc.background,
+            surface: tc.background,
+            surfaceMuted: tc.chromeWash,
+            text: tc.text,
+            textSecondary: tc.textMuted,
+            textTertiary: tc.textSlate,
+            border: tc.border,
+            inputBg: tc.background,
+            chipBg: tc.lightGray,
+            primary: tc.primary,
+            onPrimary: tc.textOnPrimary,
+            danger: tc.danger,
+            success: tc.success,
+            star: tc.warning,
+          },
+    [isDark],
+  );
+}
 
 export default function ProfileScreen() {
   const router = useRouter();
+  const pal = useProfilePalette();
+  const isDark = true;
   const { user, signOutUser } = useAuth();
   const [displayNameInput, setDisplayNameInput] = useState('');
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
@@ -53,6 +191,12 @@ export default function ProfileScreen() {
   const [nameErrorMessage, setNameErrorMessage] = useState('');
   const [initialDisplayName, setInitialDisplayName] = useState('');
   const [ordersCount, setOrdersCount] = useState<number>(0);
+  const [averageRating, setAverageRating] = useState(0);
+  const [totalRatings, setTotalRatings] = useState(0);
+  /** `users/{uid}.email` when set; UI falls back to Auth email. */
+  const [emailFromFirestore, setEmailFromFirestore] = useState<string | null>(
+    null,
+  );
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [reportUserId, setReportUserId] = useState('');
   const [reportReason, setReportReason] = useState<ReportReason>('spam');
@@ -69,6 +213,7 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     if (!uid) {
+      setEmailFromFirestore(null);
       setProfileLoading(false);
       return;
     }
@@ -76,30 +221,32 @@ export default function ProfileScreen() {
     const unsubscribe = onSnapshot(
       userRef,
       (snap) => {
-        if (!snap.exists()) {
-          setDisplayNameInput('');
-          setInitialDisplayName('');
-          setNotificationsEnabled(false);
-          setOrdersCount(0);
-        } else {
-          const data = snap.data() as DocumentData;
-          const nextDisplayName =
-            typeof data.displayName === 'string' ? data.displayName : '';
-          setDisplayNameInput(
-            nextDisplayName,
-          );
-          setInitialDisplayName(nextDisplayName);
-          setNotificationsEnabled(data.notificationsEnabled !== false);
-          setOrdersCount(
-            typeof data.ordersCount === 'number' ? data.ordersCount : 0,
-          );
-        }
+        const authUser = auth.currentUser;
+        const mapped = mapUsersCollectionToProfile(
+          snap.exists() ? (snap.data() as DocumentData) : undefined,
+          authUser,
+        );
+
+        setDisplayNameInput(mapped.displayName);
+        setInitialDisplayName(mapped.displayName);
+        setNotificationsEnabled(mapped.notificationsEnabled);
+        setOrdersCount(mapped.ordersCount);
+        setAverageRating(mapped.averageRating);
+        setTotalRatings(mapped.totalRatings);
+        setEmailFromFirestore(mapped.emailFromDoc);
+
         setProfileLoading(false);
       },
       () => {
-        setDisplayNameInput('');
-        setInitialDisplayName('');
-        setNotificationsEnabled(false);
+        const authUser = auth.currentUser;
+        const mapped = mapUsersCollectionToProfile(undefined, authUser);
+        setDisplayNameInput(mapped.displayName);
+        setInitialDisplayName(mapped.displayName);
+        setNotificationsEnabled(mapped.notificationsEnabled);
+        setOrdersCount(mapped.ordersCount);
+        setAverageRating(mapped.averageRating);
+        setTotalRatings(mapped.totalRatings);
+        setEmailFromFirestore(mapped.emailFromDoc);
         setProfileLoading(false);
       },
     );
@@ -319,639 +466,747 @@ export default function ProfileScreen() {
     }
   };
 
+  const emailLabel =
+    emailFromFirestore ?? user?.email ?? 'Not set';
+  const displayName = displayNameInput.trim() || 'User';
+  const canSaveName =
+    !savingName &&
+    displayNameInput.trim().length > 0 &&
+    displayNameInput.trim() !== initialDisplayName.trim();
+  const saveButtonLabel = savingName ? 'Saving…' : nameSaved ? 'Saved ✓' : 'Save name';
+  const initialLetter = displayName.slice(0, 1).toUpperCase() || '?';
+
+  const ratingValue =
+    totalRatings > 0
+      ? averageRating
+      : trustScore && trustScore.count > 0
+        ? trustScore.average
+        : null;
+  const reviewCount =
+    totalRatings > 0 ? totalRatings : trustScore?.count ?? 0;
+
+  const dynamicStyles = useMemo(
+    () => createDynamicStyles(pal, isDark),
+    [pal, isDark],
+  );
+
   if (profileLoading && uid) {
     return (
-      <SafeAreaView style={[styles.container, styles.centered]}>
-        <ActivityIndicator size="large" color={c.primary} />
+      <SafeAreaView style={[dynamicStyles.container, dynamicStyles.centered]}>
+        <StatusBar style={isDark ? 'light' : 'dark'} />
+        <ActivityIndicator size="large" color={pal.primary} />
       </SafeAreaView>
     );
   }
 
   if (!uid) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={dynamicStyles.container}>
+        <StatusBar style={isDark ? 'light' : 'dark'} />
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
           <ScreenHeader title="My Account" logo="inline" />
           <View style={styles.profileBody}>
-          <View style={styles.card}>
-            <Text style={styles.cardHint}>
-              Sign in to manage your account and settings.
-            </Text>
-            <TouchableOpacity
-              style={styles.primaryButton}
-              onPress={() => router.push('/(auth)/login')}
-            >
-              <Text style={styles.primaryButtonText}>Sign In</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.footer}>
-            <Text style={styles.footerText}>❤️ Made with love in Toronto</Text>
-            <Text style={styles.versionText}>v1.0</Text>
-            <View style={styles.legalRow}>
-              <TouchableOpacity onPress={() => router.push('/terms')}>
-                <Text style={styles.legalLink}>Terms</Text>
-              </TouchableOpacity>
-              <Text style={styles.legalSpacer}> </Text>
-              <TouchableOpacity onPress={() => router.push('/privacy')}>
-                <Text style={styles.legalLink}>Privacy</Text>
+            <View style={[dynamicStyles.card, { marginTop: 8 }]}>
+              <Text style={[dynamicStyles.bodyMuted]}>
+                Sign in to manage your account and settings.
+              </Text>
+              <TouchableOpacity
+                style={dynamicStyles.primaryButton}
+                onPress={() => router.push('/(auth)/login')}
+              >
+                <Text style={dynamicStyles.primaryButtonText}>Sign In</Text>
               </TouchableOpacity>
             </View>
-          </View>
+            <View style={styles.footer}>
+              <Text style={dynamicStyles.footerMuted}>❤️ Made with love in Toronto</Text>
+              <Text style={dynamicStyles.footerMuted}>v1.0</Text>
+              <View style={styles.legalRow}>
+                <TouchableOpacity onPress={() => router.push('/terms')}>
+                  <Text style={dynamicStyles.legalLink}>Terms</Text>
+                </TouchableOpacity>
+                <Text style={styles.legalSpacer}> </Text>
+                <TouchableOpacity onPress={() => router.push('/privacy')}>
+                  <Text style={dynamicStyles.legalLink}>Privacy</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
           </View>
         </ScrollView>
       </SafeAreaView>
     );
   }
 
-  const emailLabel = user?.email ?? 'Not set';
-  const displayName = displayNameInput || 'User';
-  const canSaveName =
-    !savingName &&
-    displayNameInput.trim().length > 0 &&
-    displayNameInput.trim() !== initialDisplayName.trim();
-  const saveButtonLabel = savingName ? 'Saving...' : nameSaved ? 'Saved ✓' : 'Save';
-
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={dynamicStyles.container} edges={['top']}>
+      <StatusBar style={isDark ? 'light' : 'dark'} />
       <KeyboardToolbar focusedIndex={focusedInputIndex} totalInputs={1} />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <ScreenHeader title="Profile" logo="inline" />
         <View style={styles.profileBody}>
-        {/* Profile header: logo, name, rating */}
-        <View style={styles.profileHeader}>
-          <View style={styles.profileLogoRing}>
-            <AppLogo size={72} marginTop={0} />
-          </View>
-          <Text style={styles.profileName} numberOfLines={1}>
-            {displayName}
-          </Text>
-          {trustScore && trustScore.count > 0 ? (
-            <View style={styles.profileRatingBadge}>
-              <Text style={styles.profileStar}>★</Text>
-              <Text style={styles.profileRatingText}>
-                {trustScore.average.toFixed(1)} rating
-              </Text>
-              <Text style={styles.profileReviewsText}>
-                ({trustScore.count} review{trustScore.count === 1 ? '' : 's'})
+          <View style={dynamicStyles.headerRow}>
+            <View>
+              <Text style={dynamicStyles.screenTitle}>Profile</Text>
+              <Text style={dynamicStyles.headerSubtitle} numberOfLines={1}>
+                {emailLabel}
               </Text>
             </View>
-          ) : null}
-          {trustScore ? (
-            <Text style={styles.profileTrustTierText}>{trustScore.label}</Text>
-          ) : null}
-        </View>
+            <AppLogo size={40} marginTop={0} />
+          </View>
 
-        {/* Help */}
-        <View style={styles.actionRow}>
-          <TouchableOpacity
-            style={styles.actionCard}
-            onPress={() => router.push('/help')}
-            activeOpacity={0.8}
-          >
-            <MaterialIcons
-              name="help-outline"
-              size={28}
-              color={c.primary}
-            />
-            <Text style={styles.actionCardTitle}>Help</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Account section */}
-        <Text style={styles.sectionTitle}>Account</Text>
-        <View style={styles.card}>
-          <Text style={styles.sectionLabel}>Display name</Text>
-          <TextInput
-            ref={displayNameInputRef}
-            style={styles.input}
-            value={displayNameInput}
-            onChangeText={setDisplayNameInput}
-            placeholder="Add your name"
-            placeholderTextColor={c.iconInactive}
-            editable={!savingName}
-            inputAccessoryViewID={
-              Platform.OS === 'ios' ? KEYBOARD_TOOLBAR_NATIVE_ID : undefined
-            }
-            onFocus={() => setFocusedInputIndex(0)}
-          />
-          <TouchableOpacity
-            style={[
-              styles.primaryButton,
-              nameSaved && styles.primaryButtonSaved,
-              !canSaveName && !nameSaved && styles.buttonDisabled,
-            ]}
-            disabled={!canSaveName}
-            onPress={handleSaveDisplayName}
-          >
-            <Text style={styles.primaryButtonText}>{saveButtonLabel}</Text>
-          </TouchableOpacity>
-          {nameSuccessMessage ? (
-            <Text style={styles.successMessage}>{nameSuccessMessage}</Text>
-          ) : null}
-          {nameErrorMessage ? (
-            <Text style={styles.errorMessage}>{nameErrorMessage}</Text>
-          ) : null}
-
-          <Text style={styles.sectionLabel}>Email</Text>
-          <Text style={styles.readOnlyValue}>{emailLabel}</Text>
-
-          <View style={{ marginTop: 12 }}>
-            <Text style={styles.sectionLabel}>Tax Gifts Earned</Text>
-            <Text style={styles.taxGiftsStat}>
-              🎁 Tax Gifts Earned: {Math.floor(ordersCount / 3)}
+          <View style={dynamicStyles.hero}>
+            <View style={dynamicStyles.avatarRing}>
+              <Text style={dynamicStyles.avatarLetter}>{initialLetter}</Text>
+            </View>
+            <Text style={dynamicStyles.heroName} numberOfLines={1}>
+              {displayName}
             </Text>
-          </View>
 
-          <View style={styles.cardRow}>
-            <Text style={styles.sectionLabel}>Enable Notifications</Text>
-            <Switch
-              value={notificationsEnabled}
-              onValueChange={handleNotificationsToggle}
-              trackColor={{ false: c.border, true: c.primaryLight }}
-              thumbColor={c.white}
-            />
-          </View>
-
-          <Text style={[styles.sectionLabel, { marginTop: 12 }]}>Language</Text>
-          <Text style={styles.readOnlyValue}>English</Text>
-
-          <Text style={[styles.sectionLabel, { marginTop: 12 }]}>
-            Customer Support
-          </Text>
-          <TouchableOpacity onPress={openSupportEmail} activeOpacity={0.7}>
-            <Text style={styles.linkText}>{SUPPORT_EMAIL}</Text>
-          </TouchableOpacity>
-          <Text style={[styles.sectionLabel, { marginTop: 12 }]}>Legal</Text>
-          <View style={styles.legalButtonsRow}>
-            <TouchableOpacity
-              style={styles.legalActionButton}
-              onPress={() => router.push('/terms')}
-              activeOpacity={0.75}
-            >
-              <Text style={styles.legalActionText}>Terms of Use</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.legalActionButton}
-              onPress={() => router.push('/privacy')}
-              activeOpacity={0.75}
-            >
-              <Text style={styles.legalActionText}>Privacy Policy</Text>
-            </TouchableOpacity>
-          </View>
-          <TouchableOpacity
-            style={[styles.primaryButton, { marginTop: 12 }]}
-            onPress={() => router.push('/complaint')}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.primaryButtonText}>
-              Submit complaint or inquiry
-            </Text>
-          </TouchableOpacity>
-
-          <Text style={[styles.sectionLabel, { marginTop: 10 }]}>Report User</Text>
-          <TextInput
-            value={reportUserId}
-            onChangeText={setReportUserId}
-            placeholder="Reported user ID"
-            placeholderTextColor={c.textMuted}
-            style={styles.input}
-          />
-          <View style={styles.reasonRow}>
-            {(['spam', 'inappropriate', 'scam', 'other'] as ReportReason[]).map((reason) => {
-              const active = reason === reportReason;
-              return (
-                <TouchableOpacity
-                  key={reason}
-                  style={[styles.reasonChip, active && styles.reasonChipActive]}
-                  onPress={() => setReportReason(reason)}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[styles.reasonChipText, active && styles.reasonChipTextActive]}>
-                    {reason}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-          <TextInput
-            value={reportMessage}
-            onChangeText={setReportMessage}
-            placeholder="Message"
-            placeholderTextColor={c.textMuted}
-            style={[styles.input, styles.inputMultiline]}
-            multiline
-          />
-          <TouchableOpacity
-            style={[styles.primaryButton, submittingReport && styles.buttonDisabled]}
-            onPress={handleSubmitProfileReport}
-            disabled={submittingReport}
-            activeOpacity={0.8}
-          >
-            {submittingReport ? (
-              <ActivityIndicator size="small" color={c.textOnPrimary} />
-            ) : (
-              <Text style={styles.primaryButtonText}>Submit Report</Text>
-            )}
-          </TouchableOpacity>
-
-          <Text style={[styles.sectionLabel, { marginTop: 16 }]}>Blocked Users</Text>
-          {blockedUsers.length === 0 ? (
-            <Text style={styles.readOnlyValue}>No blocked users</Text>
-          ) : (
-            blockedUsers.map((id) => (
-              <View key={id} style={styles.blockedRow}>
-                <Text style={styles.blockedUserId}>{id}</Text>
-                <TouchableOpacity
-                  style={styles.unblockBtn}
-                  onPress={() => handleUnblockUser(id)}
-                  disabled={unblockingId === id}
-                  activeOpacity={0.8}
-                >
-                  {unblockingId === id ? (
-                    <ActivityIndicator size="small" color={c.textOnPrimary} />
-                  ) : (
-                    <Text style={styles.unblockBtnText}>Unblock</Text>
-                  )}
-                </TouchableOpacity>
+            <View style={dynamicStyles.ratingRow}>
+              <MaterialIcons name="star" size={22} color={pal.star} />
+              <Text style={dynamicStyles.ratingNumber}>
+                {ratingValue != null ? ratingValue.toFixed(1) : '—'}
+              </Text>
+              <Text style={dynamicStyles.reviewCount}>
+                {reviewCount > 0
+                  ? `· ${reviewCount} review${reviewCount === 1 ? '' : 's'}`
+                  : '· No reviews yet'}
+              </Text>
+            </View>
+            {trustScore ? (
+              <View style={dynamicStyles.trustChip}>
+                <Text style={dynamicStyles.trustChipText}>{trustScore.label}</Text>
               </View>
-            ))
-          )}
+            ) : null}
+          </View>
 
-          <Text style={[styles.sectionLabel, { marginTop: 24 }]}>Settings</Text>
-          <Text style={styles.settingsHint}>
-            To report or block someone: open your shared order (chat bar or
-            Safety section), use Help for completed orders, or Report host /
-            Block host on Join. See Terms for how we handle reports.
-          </Text>
           <TouchableOpacity
-            style={[
-              styles.dangerButton,
-              deletingAccount && styles.buttonDisabled,
-            ]}
-            onPress={handleDeleteAccount}
-            disabled={deletingAccount}
+            style={dynamicStyles.quickAction}
+            onPress={() => router.push('/help')}
             activeOpacity={0.85}
           >
-            {deletingAccount ? (
-              <ActivityIndicator size="small" color={c.textOnPrimary} />
-            ) : (
-              <Text style={styles.dangerButtonText}>Delete Account</Text>
-            )}
+            <MaterialIcons name="help-outline" size={24} color={pal.primary} />
+            <Text style={dynamicStyles.quickActionText}>Help & support guides</Text>
+            <MaterialIcons name="chevron-right" size={22} color={pal.textTertiary} />
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.signOutButton}
-            onPress={handleSignOut}
-          >
-            <Text style={styles.signOutText}>Sign Out</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Admin Panel */}
-        {user?.email === ADMIN_EMAIL ? (
-          <View style={styles.card}>
-            <Text style={styles.sectionLabel}>Admin</Text>
+          <Text style={dynamicStyles.sectionHeading}>Account</Text>
+          <View style={dynamicStyles.card}>
+            <Text style={dynamicStyles.label}>Display name</Text>
+            <TextInput
+              ref={displayNameInputRef}
+              style={dynamicStyles.input}
+              value={displayNameInput}
+              onChangeText={setDisplayNameInput}
+              placeholder="Your name"
+              placeholderTextColor={pal.textTertiary}
+              editable={!savingName}
+              inputAccessoryViewID={
+                Platform.OS === 'ios' ? KEYBOARD_TOOLBAR_NATIVE_ID : undefined
+              }
+              onFocus={() => setFocusedInputIndex(0)}
+            />
             <TouchableOpacity
-              style={styles.primaryButton}
-              onPress={() => router.push('/admin')}
-              activeOpacity={0.7}
+              style={[
+                dynamicStyles.primaryButton,
+                nameSaved && { backgroundColor: pal.success },
+                !canSaveName && !nameSaved && dynamicStyles.buttonDisabled,
+              ]}
+              disabled={!canSaveName}
+              onPress={handleSaveDisplayName}
             >
-              <Text style={styles.primaryButtonText}>Open Admin Panel</Text>
+              <Text style={dynamicStyles.primaryButtonText}>{saveButtonLabel}</Text>
             </TouchableOpacity>
-          </View>
-        ) : null}
+            {nameSuccessMessage ? (
+              <Text style={dynamicStyles.feedbackOk}>{nameSuccessMessage}</Text>
+            ) : null}
+            {nameErrorMessage ? (
+              <Text style={dynamicStyles.feedbackErr}>{nameErrorMessage}</Text>
+            ) : null}
 
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>❤️ Made with love in Toronto</Text>
-          <Text style={styles.versionText}>v1.0</Text>
-          <View style={styles.legalRow}>
-            <TouchableOpacity onPress={() => router.push('/terms')}>
-              <Text style={styles.legalLink}>Terms</Text>
+            <View style={dynamicStyles.divider} />
+
+            <View style={dynamicStyles.readonlyRow}>
+              <View style={dynamicStyles.readonlyIcon}>
+                <MaterialIcons name="mail-outline" size={20} color={pal.textSecondary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={dynamicStyles.label}>Email</Text>
+                <Text style={dynamicStyles.readOnlyValue}>{emailLabel}</Text>
+                <View style={dynamicStyles.readonlyHintRow}>
+                  <MaterialIcons name="lock" size={14} color={pal.textTertiary} />
+                  <Text style={dynamicStyles.hint}>Read-only — managed by your login</Text>
+                </View>
+              </View>
+            </View>
+
+            <View style={dynamicStyles.divider} />
+
+            <Text style={dynamicStyles.label}>Tax gifts earned</Text>
+            <Text style={dynamicStyles.statLine}>
+              🎁 {Math.floor(ordersCount / 3)} (every 3 completed orders)
+            </Text>
+          </View>
+
+          <Text style={dynamicStyles.sectionHeading}>Notifications</Text>
+          <View style={dynamicStyles.card}>
+            <View style={dynamicStyles.rowBetween}>
+              <View style={{ flex: 1, paddingRight: 12 }}>
+                <Text style={dynamicStyles.cardTitle}>Push & updates</Text>
+                <Text style={dynamicStyles.bodyMuted}>
+                  Order updates and reminders from HalfOrder
+                </Text>
+              </View>
+              <Switch
+                value={notificationsEnabled}
+                onValueChange={handleNotificationsToggle}
+                trackColor={{
+                  false: isDark ? '#3F3F46' : tc.border,
+                  true: isDark ? 'rgba(255,122,0,0.45)' : tc.primaryLight,
+                }}
+                thumbColor={notificationsEnabled ? pal.primary : pal.inputBg}
+              />
+            </View>
+          </View>
+
+          <Text style={dynamicStyles.sectionHeading}>Preferences</Text>
+          <View style={dynamicStyles.card}>
+            <Text style={dynamicStyles.label}>Language</Text>
+            <Text style={dynamicStyles.readOnlyValue}>
+              {Platform.OS === 'ios'
+                ? 'Follows iOS settings'
+                : 'Follows system language'}
+            </Text>
+          </View>
+
+          <Text style={dynamicStyles.sectionHeading}>Support & legal</Text>
+          <View style={dynamicStyles.card}>
+            <TouchableOpacity onPress={openSupportEmail} activeOpacity={0.75}>
+              <Text style={dynamicStyles.label}>Customer support</Text>
+              <Text style={dynamicStyles.link}>{SUPPORT_EMAIL}</Text>
             </TouchableOpacity>
-            <Text style={styles.legalSpacer}> </Text>
-            <TouchableOpacity onPress={() => router.push('/privacy')}>
-              <Text style={styles.legalLink}>Privacy</Text>
+            <View style={dynamicStyles.divider} />
+            <View style={dynamicStyles.legalGrid}>
+              <TouchableOpacity
+                style={dynamicStyles.outlineBtn}
+                onPress={() => router.push('/terms')}
+              >
+                <Text style={dynamicStyles.outlineBtnText}>Terms of Use</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={dynamicStyles.outlineBtn}
+                onPress={() => router.push('/privacy')}
+              >
+                <Text style={dynamicStyles.outlineBtnText}>Privacy Policy</Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity
+              style={[dynamicStyles.primaryButton, { marginTop: 14 }]}
+              onPress={() => router.push('/complaint')}
+            >
+              <Text style={dynamicStyles.primaryButtonText}>
+                Submit complaint or inquiry
+              </Text>
             </TouchableOpacity>
           </View>
-        </View>
+
+          <Text style={dynamicStyles.sectionHeading}>Report a user</Text>
+          <View style={dynamicStyles.card}>
+            <TextInput
+              value={reportUserId}
+              onChangeText={setReportUserId}
+              placeholder="Reported user ID"
+              placeholderTextColor={pal.textTertiary}
+              style={dynamicStyles.input}
+            />
+            <View style={styles.reasonRow}>
+              {(['spam', 'inappropriate', 'scam', 'other'] as ReportReason[]).map(
+                (reason) => {
+                  const active = reason === reportReason;
+                  return (
+                    <TouchableOpacity
+                      key={reason}
+                      style={[
+                        dynamicStyles.chip,
+                        active && dynamicStyles.chipActive,
+                      ]}
+                      onPress={() => setReportReason(reason)}
+                    >
+                      <Text
+                        style={[
+                          dynamicStyles.chipText,
+                          active && dynamicStyles.chipTextActive,
+                        ]}
+                      >
+                        {reason}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                },
+              )}
+            </View>
+            <TextInput
+              value={reportMessage}
+              onChangeText={setReportMessage}
+              placeholder="Details (optional)"
+              placeholderTextColor={pal.textTertiary}
+              style={[dynamicStyles.input, styles.inputMultiline]}
+              multiline
+            />
+            <TouchableOpacity
+              style={[
+                dynamicStyles.primaryButton,
+                submittingReport && dynamicStyles.buttonDisabled,
+              ]}
+              onPress={handleSubmitProfileReport}
+              disabled={submittingReport}
+            >
+              {submittingReport ? (
+                <ActivityIndicator size="small" color={pal.onPrimary} />
+              ) : (
+                <Text style={dynamicStyles.primaryButtonText}>Submit report</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          <Text style={dynamicStyles.sectionHeading}>Blocked users</Text>
+          <View style={dynamicStyles.card}>
+            {blockedUsers.length === 0 ? (
+              <Text style={dynamicStyles.bodyMuted}>No blocked users</Text>
+            ) : (
+              blockedUsers.map((id) => (
+                <View key={id} style={dynamicStyles.blockedRow}>
+                  <Text style={dynamicStyles.blockedId} numberOfLines={1}>
+                    {id}
+                  </Text>
+                  <TouchableOpacity
+                    style={dynamicStyles.smallPrimaryBtn}
+                    onPress={() => handleUnblockUser(id)}
+                    disabled={unblockingId === id}
+                  >
+                    {unblockingId === id ? (
+                      <ActivityIndicator size="small" color={pal.onPrimary} />
+                    ) : (
+                      <Text style={dynamicStyles.smallPrimaryBtnText}>Unblock</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              ))
+            )}
+          </View>
+
+          <View style={dynamicStyles.card}>
+            <Text style={dynamicStyles.bodyMuted}>
+              To report or block from an order, open the chat or Safety section on
+              Join. See Terms for how we handle reports.
+            </Text>
+            <TouchableOpacity
+              style={[dynamicStyles.dangerButton, deletingAccount && dynamicStyles.buttonDisabled]}
+              onPress={handleDeleteAccount}
+              disabled={deletingAccount}
+            >
+              {deletingAccount ? (
+                <ActivityIndicator size="small" color={pal.onPrimary} />
+              ) : (
+                <Text style={dynamicStyles.dangerButtonText}>Delete account</Text>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity style={dynamicStyles.signOutRow} onPress={handleSignOut}>
+              <Text style={dynamicStyles.signOutText}>Sign out</Text>
+            </TouchableOpacity>
+          </View>
+
+          {user?.email === ADMIN_EMAIL ? (
+            <View style={dynamicStyles.card}>
+              <Text style={dynamicStyles.label}>Admin</Text>
+              <TouchableOpacity
+                style={dynamicStyles.primaryButton}
+                onPress={() => router.push('/admin')}
+              >
+                <Text style={dynamicStyles.primaryButtonText}>Open admin panel</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
+          <View style={styles.footer}>
+            <Text style={dynamicStyles.footerMuted}>❤️ Made with love in Toronto</Text>
+            <Text style={dynamicStyles.footerMuted}>v1.0</Text>
+            <View style={styles.legalRow}>
+              <TouchableOpacity onPress={() => router.push('/terms')}>
+                <Text style={dynamicStyles.legalLink}>Terms</Text>
+              </TouchableOpacity>
+              <Text style={styles.legalSpacer}> </Text>
+              <TouchableOpacity onPress={() => router.push('/privacy')}>
+                <Text style={dynamicStyles.legalLink}>Privacy</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
+function createDynamicStyles(pal: Palette, isDarkMode: boolean) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: pal.bg,
+    },
+    centered: {
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    screenTitle: {
+      fontSize: 28,
+      fontWeight: '800',
+      color: pal.text,
+      letterSpacing: -0.5,
+    },
+    headerSubtitle: {
+      marginTop: 4,
+      fontSize: 14,
+      color: pal.textSecondary,
+      maxWidth: '88%',
+    },
+    headerRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'flex-start',
+      marginBottom: 20,
+    },
+    hero: {
+      alignItems: 'center',
+      marginBottom: 18,
+      paddingVertical: 8,
+    },
+    avatarRing: {
+      width: 92,
+      height: 92,
+      borderRadius: 46,
+      backgroundColor: pal.surfaceMuted,
+      borderWidth: 2,
+      borderColor: pal.primary,
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginBottom: 12,
+      ...shadows.card,
+    },
+    avatarLetter: {
+      fontSize: 36,
+      fontWeight: '800',
+      color: pal.text,
+    },
+    heroName: {
+      fontSize: 22,
+      fontWeight: '800',
+      color: pal.text,
+      marginBottom: 8,
+    },
+    ratingRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      flexWrap: 'wrap',
+      justifyContent: 'center',
+    },
+    ratingNumber: {
+      fontSize: 18,
+      fontWeight: '800',
+      color: pal.text,
+    },
+    reviewCount: {
+      fontSize: 15,
+      color: pal.textSecondary,
+      fontWeight: '600',
+    },
+    trustChip: {
+      marginTop: 10,
+      paddingHorizontal: 14,
+      paddingVertical: 6,
+      borderRadius: 999,
+      backgroundColor: pal.chipBg,
+      borderWidth: 1,
+      borderColor: pal.border,
+    },
+    trustChipText: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: pal.text,
+    },
+    quickAction: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      padding: 16,
+      borderRadius: theme.radius.lg,
+      backgroundColor: pal.surface,
+      borderWidth: 1,
+      borderColor: pal.border,
+      marginBottom: 22,
+      ...shadows.card,
+    },
+    quickActionText: {
+      flex: 1,
+      fontSize: 16,
+      fontWeight: '600',
+      color: pal.text,
+    },
+    sectionHeading: {
+      fontSize: 13,
+      fontWeight: '800',
+      color: pal.textTertiary,
+      textTransform: 'uppercase',
+      letterSpacing: 0.6,
+      marginBottom: 8,
+      marginTop: 4,
+    },
+    card: {
+      backgroundColor: pal.surface,
+      borderRadius: theme.radius.lg,
+      borderWidth: 1,
+      borderColor: pal.border,
+      padding: theme.spacing.section,
+      marginBottom: theme.spacing.md,
+      ...shadows.card,
+    },
+    label: {
+      fontSize: 14,
+      fontWeight: '700',
+      color: pal.textSecondary,
+      marginBottom: 8,
+    },
+    cardTitle: {
+      fontSize: 16,
+      fontWeight: '700',
+      color: pal.text,
+      marginBottom: 4,
+    },
+    bodyMuted: {
+      fontSize: 14,
+      color: pal.textSecondary,
+      lineHeight: 20,
+    },
+    input: {
+      borderWidth: 1,
+      borderColor: pal.border,
+      borderRadius: theme.radius.input,
+      padding: 14,
+      fontSize: 16,
+      color: pal.text,
+      backgroundColor: pal.inputBg,
+      marginBottom: 12,
+    },
+    primaryButton: {
+      backgroundColor: pal.primary,
+      borderRadius: theme.radius.button,
+      paddingVertical: 14,
+      alignItems: 'center',
+      marginBottom: 8,
+    },
+    primaryButtonText: {
+      color: pal.onPrimary,
+      fontSize: 16,
+      fontWeight: '700',
+    },
+    buttonDisabled: {
+      opacity: 0.55,
+    },
+    feedbackOk: {
+      fontSize: 13,
+      color: pal.success,
+      marginBottom: 8,
+      fontWeight: '600',
+    },
+    feedbackErr: {
+      fontSize: 13,
+      color: pal.danger,
+      marginBottom: 8,
+      fontWeight: '600',
+    },
+    divider: {
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: pal.border,
+      marginVertical: 16,
+    },
+    readonlyRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 12,
+    },
+    readonlyIcon: {
+      marginTop: 22,
+    },
+    readOnlyValue: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: pal.text,
+    },
+    readonlyHintRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      marginTop: 6,
+    },
+    hint: {
+      fontSize: 12,
+      color: pal.textTertiary,
+      fontWeight: '500',
+    },
+    statLine: {
+      fontSize: 15,
+      fontWeight: '600',
+      color: pal.text,
+    },
+    rowBetween: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    link: {
+      fontSize: 16,
+      color: tc.accentBlue,
+      fontWeight: '600',
+      textDecorationLine: 'underline',
+    },
+    legalGrid: {
+      gap: 10,
+    },
+    outlineBtn: {
+      borderWidth: 1,
+      borderColor: pal.border,
+      borderRadius: theme.radius.button,
+      paddingVertical: 12,
+      alignItems: 'center',
+      backgroundColor: pal.inputBg,
+    },
+    outlineBtnText: {
+      fontSize: 15,
+      fontWeight: '700',
+      color: pal.text,
+    },
+    chip: {
+      borderWidth: 1,
+      borderColor: pal.border,
+      borderRadius: 999,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      backgroundColor: pal.inputBg,
+    },
+    chipActive: {
+      borderColor: pal.primary,
+      backgroundColor: isDarkMode ? 'rgba(255,122,0,0.15)' : tc.primaryLight,
+    },
+    chipText: {
+      color: pal.textSecondary,
+      fontSize: 12,
+      fontWeight: '600',
+      textTransform: 'capitalize',
+    },
+    chipTextActive: {
+      color: pal.text,
+    },
+    blockedRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      borderWidth: 1,
+      borderColor: pal.border,
+      borderRadius: 12,
+      padding: 10,
+      marginTop: 8,
+      backgroundColor: pal.inputBg,
+    },
+    blockedId: {
+      flex: 1,
+      fontSize: 13,
+      color: pal.text,
+      marginRight: 10,
+      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    },
+    smallPrimaryBtn: {
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 10,
+      backgroundColor: pal.primary,
+      minWidth: 80,
+      alignItems: 'center',
+    },
+    smallPrimaryBtnText: {
+      color: pal.onPrimary,
+      fontWeight: '800',
+      fontSize: 12,
+    },
+    dangerButton: {
+      backgroundColor: pal.danger,
+      paddingVertical: 14,
+      borderRadius: 12,
+      alignItems: 'center',
+      marginTop: 10,
+    },
+    dangerButtonText: {
+      color: pal.onPrimary,
+      fontSize: 16,
+      fontWeight: '700',
+    },
+    signOutRow: {
+      paddingVertical: 16,
+      alignItems: 'center',
+      marginTop: 4,
+      borderTopWidth: 1,
+      borderTopColor: pal.border,
+    },
+    signOutText: {
+      color: pal.text,
+      fontWeight: '700',
+      fontSize: 16,
+    },
+    footerMuted: {
+      fontSize: 13,
+      color: pal.textTertiary,
+    },
+    legalLink: {
+      fontSize: 12,
+      color: pal.textSecondary,
+      textDecorationLine: 'underline',
+    },
+  });
+}
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: c.background,
-  },
-  centered: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   scrollContent: {
-    paddingBottom: 32,
+    paddingBottom: 40,
+    flexGrow: 1,
   },
   profileBody: {
-    paddingHorizontal: 16,
+    paddingHorizontal: theme.spacing.section,
+    paddingTop: 8,
   },
-  profileHeader: {
+  footer: {
     alignItems: 'center',
-    marginBottom: theme.spacing.lg,
-  },
-  profileLogoRing: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    backgroundColor: c.chromeWash,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: theme.spacing.sm + 4,
-    borderWidth: 1,
-    borderColor: c.borderSubtle,
-    ...shadows.card,
-  },
-  profileName: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: c.text,
-    marginBottom: 4,
-  },
-  profileRatingBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    marginTop: 12,
+    marginBottom: 28,
     gap: 4,
   },
-  profileStar: {
-    color: c.warning,
-    fontSize: 16,
-  },
-  profileRatingText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: c.text,
-  },
-  profileReviewsText: {
-    fontSize: 14,
-    color: c.textMuted,
-  },
-  profileTrustTierText: {
-    marginTop: 6,
-    fontSize: 13,
-    fontWeight: '600',
-    color: c.text,
-  },
-  actionRow: {
-    marginBottom: theme.spacing.lg,
-  },
-  actionCard: {
-    width: '100%',
-    backgroundColor: c.surface,
-    borderRadius: theme.radius.lg,
-    paddingVertical: theme.spacing.md,
-    paddingHorizontal: theme.spacing.section,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: theme.spacing.touchMin + 28,
-    borderWidth: 1,
-    borderColor: c.border,
-    ...shadows.card,
-  },
-  actionCardTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: c.text,
-    marginTop: theme.spacing.sm,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: c.text,
-    marginBottom: theme.spacing.tight,
-  },
-  card: {
-    backgroundColor: c.background,
-    borderWidth: 1,
-    borderColor: c.border,
-    borderRadius: theme.radius.lg,
-    padding: theme.spacing.section,
-    marginBottom: theme.spacing.md,
-    ...shadows.card,
-  },
-  cardRow: {
+  legalRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: theme.spacing.tight,
-  },
-  sectionLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: c.textSlateDark,
-    marginBottom: 8,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: c.borderStrong,
-    borderRadius: 12,
-    padding: 12,
-    fontSize: 16,
-    color: c.text,
-    marginBottom: 12,
-  },
-  readOnlyValue: {
-    fontSize: 16,
-    color: c.textMuted,
-    marginBottom: 16,
-  },
-  taxGiftsStat: {
-    fontSize: 13,
-    color: c.textMuted,
-    marginTop: 4,
-  },
-  primaryButton: {
-    backgroundColor: c.primary,
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  primaryButtonSaved: {
-    backgroundColor: c.success,
-  },
-  primaryButtonText: {
-    color: c.textOnPrimary,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  buttonDisabled: {
-    opacity: 0.7,
-  },
-  successMessage: {
-    fontSize: 13,
-    color: c.textMuted,
-    marginBottom: 12,
-  },
-  errorMessage: {
-    fontSize: 13,
-    color: c.dangerText,
-    marginBottom: 12,
-  },
-  settingsHint: {
-    fontSize: 13,
-    color: c.textMuted,
-    lineHeight: 18,
-    marginBottom: 16,
-  },
-  dangerButton: {
-    backgroundColor: c.danger,
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  dangerButtonText: {
-    color: c.textOnPrimary,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  signOutButton: {
-    paddingVertical: 12,
-    alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: c.border,
     marginTop: 8,
   },
-  signOutText: {
-    color: c.text,
-    fontWeight: '600',
-    fontSize: 16,
-  },
-  linkText: {
-    fontSize: 16,
-    color: c.accentBlue,
-    textDecorationLine: 'underline',
-  },
-  legalButtonsRow: {
-    marginBottom: 12,
-    gap: theme.spacing.sm,
-  },
-  legalActionButton: {
-    borderWidth: 1,
-    borderColor: c.border,
-    borderRadius: theme.radius.button,
-    minHeight: theme.spacing.touchMin,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: c.background,
-  },
-  legalActionText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: c.textSlateDark,
+  legalSpacer: {
+    width: 12,
   },
   reasonRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
-    marginTop: 2,
-    marginBottom: 8,
-  },
-  reasonChip: {
-    borderWidth: 1,
-    borderColor: c.border,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: c.background,
-  },
-  reasonChipActive: {
-    borderColor: c.primary,
-    backgroundColor: c.primaryLight,
-  },
-  reasonChipText: {
-    color: c.textMuted,
-    fontSize: 12,
-    fontWeight: '600',
-    textTransform: 'capitalize',
-  },
-  reasonChipTextActive: {
-    color: c.text,
+    marginBottom: 12,
   },
   inputMultiline: {
-    minHeight: 82,
+    minHeight: 88,
     textAlignVertical: 'top',
-    paddingTop: 10,
-  },
-  blockedRow: {
-    marginTop: 8,
-    borderWidth: 1,
-    borderColor: c.border,
-    borderRadius: 12,
-    padding: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: c.background,
-  },
-  blockedUserId: {
-    color: c.text,
-    fontSize: 13,
-    flex: 1,
-    marginRight: 10,
-  },
-  unblockBtn: {
-    minHeight: 34,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    backgroundColor: c.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  unblockBtnText: {
-    color: c.textOnPrimary,
-    fontWeight: '700',
-    fontSize: 12,
-  },
-  cardHint: {
-    fontSize: 14,
-    color: c.textMuted,
-    marginBottom: 16,
-  },
-  footer: {
-    paddingTop: 24,
-    alignItems: 'center',
-  },
-  footerText: {
-    fontSize: 14,
-    color: c.textMuted,
-    marginBottom: 4,
-  },
-  versionText: {
-    fontSize: 13,
-    color: c.textMuted,
-  },
-  legalRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 20,
-  },
-  legalLink: {
-    fontSize: 12,
-    color: c.textMuted,
-    textDecorationLine: 'underline',
-  },
-  legalSpacer: {
-    fontSize: 12,
-    color: c.textMuted,
   },
 });
