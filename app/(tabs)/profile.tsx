@@ -135,45 +135,26 @@ type Palette = {
   star: string;
 };
 
+/** Single dark palette — matches tab shell; avoids `useColorScheme` (was missing import → runtime crash). */
 function useProfilePalette(): Palette {
-  const scheme = useColorScheme();
-  const isDark = scheme === 'dark';
   return useMemo(
-    () =>
-      isDark
-        ? {
-            bg: '#0B0D10',
-            surface: '#141A22',
-            surfaceMuted: '#1B222C',
-            text: '#F8FAFC',
-            textSecondary: 'rgba(248,250,252,0.68)',
-            textTertiary: 'rgba(248,250,252,0.45)',
-            border: 'rgba(255,255,255,0.1)',
-            inputBg: '#0F1319',
-            chipBg: 'rgba(255,255,255,0.06)',
-            primary: '#FF7A00',
-            onPrimary: '#FFFFFF',
-            danger: '#F87171',
-            success: '#34D399',
-            star: '#FBBF24',
-          }
-        : {
-            bg: tc.background,
-            surface: tc.background,
-            surfaceMuted: tc.chromeWash,
-            text: tc.text,
-            textSecondary: tc.textMuted,
-            textTertiary: tc.textSlate,
-            border: tc.border,
-            inputBg: tc.background,
-            chipBg: tc.lightGray,
-            primary: tc.primary,
-            onPrimary: tc.textOnPrimary,
-            danger: tc.danger,
-            success: tc.success,
-            star: tc.warning,
-          },
-    [isDark],
+    () => ({
+      bg: '#0B0D10',
+      surface: '#141A22',
+      surfaceMuted: '#1B222C',
+      text: '#F8FAFC',
+      textSecondary: 'rgba(248,250,252,0.68)',
+      textTertiary: 'rgba(248,250,252,0.45)',
+      border: 'rgba(255,255,255,0.1)',
+      inputBg: '#0F1319',
+      chipBg: 'rgba(255,255,255,0.06)',
+      primary: '#FF7A00',
+      onPrimary: '#FFFFFF',
+      danger: '#F87171',
+      success: '#34D399',
+      star: '#FBBF24',
+    }),
+    [],
   );
 }
 
