@@ -32,6 +32,7 @@ import {
   collection,
   getDocs,
   limit,
+  onSnapshot,
   orderBy,
   query,
   serverTimestamp,
@@ -74,6 +75,8 @@ function RootLayoutNav() {
     status: string;
     items: string;
   } | null>(null);
+  const orderStateCacheRef = useRef<Record<string, { status: string; participants: number }>>({});
+  const tidioOrderEventSentRef = useRef<Set<string>>(new Set());
 
   const seg0 = segments[0] as string | undefined;
 
@@ -138,6 +141,93 @@ function RootLayoutNav() {
   }, [user?.uid]);
 
   useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    if (typeof window === 'undefined') return;
+    const uid = user?.uid;
+    if (!uid) return;
+
+    type TidioApi = {
+      messageFromOperator?: (message: string) => void;
+      showMessage?: (message: string | { message: string }) => void;
+      sendMessage?: (message: string | { message: string }) => void;
+      addMessage?: (message: string | { message: string }) => void;
+    };
+    type TidioWindow = Window & { tidioChatApi?: TidioApi };
+
+    const sendTidioOrderNotification = (message: string) => {
+      const api = (window as TidioWindow).tidioChatApi;
+      if (!api) return;
+      try {
+        if (typeof api.messageFromOperator === 'function') {
+          api.messageFromOperator(message);
+          return;
+        }
+        if (typeof api.showMessage === 'function') {
+          api.showMessage({ message });
+          return;
+        }
+        if (typeof api.sendMessage === 'function') {
+          api.sendMessage({ message });
+          return;
+        }
+        if (typeof api.addMessage === 'function') {
+          api.addMessage({ message });
+        }
+      } catch (error) {
+        console.warn('[Tidio] order notification send failed:', error);
+      }
+    };
+
+    const q = query(collection(db, 'orders'), where('userId', '==', uid));
+    const unsub = onSnapshot(
+      q,
+      (snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+          if (change.type === 'removed') return;
+          const orderId = change.doc.id;
+          const data = (change.doc.data() ?? {}) as DocumentData;
+          const status =
+            typeof data.status === 'string' ? data.status.toLowerCase() : 'unknown';
+          const participantsCount = Array.isArray(data.participantIds)
+            ? data.participantIds.length
+            : 0;
+
+          const prev = orderStateCacheRef.current[orderId];
+          orderStateCacheRef.current[orderId] = {
+            status,
+            participants: participantsCount,
+          };
+          if (!prev) return;
+
+          const emitOnce = (key: string, text: string) => {
+            if (tidioOrderEventSentRef.current.has(key)) return;
+            tidioOrderEventSentRef.current.add(key);
+            sendTidioOrderNotification(text);
+            console.log('[Tidio] order event notification:', { orderId, key, text });
+          };
+
+          if (prev.status !== 'matched' && status === 'matched') {
+            emitOnce(`${orderId}:matched`, '🎉 Your order has been matched! Someone joined your order!');
+          }
+          if (prev.status !== 'completed' && status === 'completed') {
+            emitOnce(`${orderId}:completed`, '✅ Your order is completed 🍕');
+          }
+          if (participantsCount > prev.participants && status === 'pending') {
+            emitOnce(`${orderId}:join-request`, '👀 Someone wants to join your order');
+          }
+        });
+      },
+      (error) => {
+        console.warn('[Tidio] order listener failed:', error);
+      },
+    );
+
+    return () => {
+      unsub();
+    };
+  }, [user?.uid]);
+
+  useEffect(() => {
     ensureAuthReady().catch((error) => {
       console.warn('Anonymous auth bootstrap failed:', error);
     });
@@ -182,6 +272,7 @@ function RootLayoutNav() {
       tidioChatApi?: TidioApi;
       __tidioTrackingBound?: boolean;
       __tidioAwaitingOrderId?: boolean;
+      __tidioAiPaused?: boolean;
     };
 
     let cleanupHandler: (() => void) | null = null;
@@ -229,6 +320,26 @@ function RootLayoutNav() {
       'How it works',
       'Refund request',
     ] as const;
+    const AI_ENDPOINT =
+      process.env.EXPO_PUBLIC_SUPPORT_AI_ENDPOINT || 'http://localhost:3000/ai-support-reply';
+    const requestAiReply = async (message: string): Promise<string | null> => {
+      try {
+        const response = await fetch(AI_ENDPOINT, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message }),
+        });
+        if (!response.ok) return null;
+        const json = (await response.json()) as { aiResponse?: unknown };
+        if (typeof json.aiResponse === 'string' && json.aiResponse.trim()) {
+          return json.aiResponse.trim();
+        }
+        return null;
+      } catch (error) {
+        console.warn('[Tidio] AI reply request failed:', error);
+        return null;
+      }
+    };
 
     const attachTracking = (): boolean => {
       const tidioWindow = window as TidioWindow;
@@ -274,6 +385,28 @@ function RootLayoutNav() {
           });
 
           const normalized = message.toLowerCase();
+          if (normalized.includes('agent')) {
+            tidioWindow.__tidioAiPaused = true;
+            sendSupportMessage(
+              api,
+              'Understood — I am pausing auto-replies and routing you to a human support agent.',
+            );
+            await notifyNewTidioMessage(
+              'AI paused by user request (agent handoff).',
+              'received',
+            );
+            return;
+          }
+
+          if (!tidioWindow.__tidioAiPaused) {
+            const aiReply = await requestAiReply(message);
+            if (aiReply) {
+              sendSupportMessage(api, aiReply);
+              await notifyNewTidioMessage('AI response sent.', 'received');
+              return;
+            }
+          }
+
           const hasOrderIntent =
             normalized.includes('order') ||
             normalized.includes('join') ||

@@ -1,5 +1,6 @@
 const express = require('express');
 const admin = require('firebase-admin');
+const OpenAI = require('openai');
 
 const PORT = Number(process.env.PORT || 3000);
 
@@ -44,6 +45,45 @@ const db = admin.firestore();
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
+
+const SUPPORT_PROMPT = `You are a support agent for OurFood app.
+The app allows users to share meals and split cost.
+
+Answer briefly and clearly.
+If user asks about:
+- orders -> guide them
+- problems -> ask for orderId
+- refund -> explain process`;
+
+app.post('/ai-support-reply', async (req, res) => {
+  const { message } = req.body ?? {};
+  if (typeof message !== 'string' || !message.trim()) {
+    return res.status(400).json({ ok: false, error: 'message_required' });
+  }
+  if (!process.env.OPENAI_API_KEY) {
+    return res.status(500).json({ ok: false, error: 'openai_key_missing' });
+  }
+
+  try {
+    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    const completion = await client.chat.completions.create({
+      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+      temperature: 0.2,
+      max_tokens: 120,
+      messages: [
+        { role: 'system', content: SUPPORT_PROMPT },
+        { role: 'user', content: message.trim() },
+      ],
+    });
+    const aiResponse =
+      completion.choices?.[0]?.message?.content?.trim() ||
+      'Thanks for your message. A support specialist will follow up shortly.';
+    return res.status(200).json({ ok: true, aiResponse });
+  } catch (error) {
+    console.error('[AI support] OpenAI request failed:', error);
+    return res.status(500).json({ ok: false, error: 'ai_request_failed' });
+  }
+});
 
 app.post('/tidio-webhook', async (req, res) => {
   console.log('Webhook received');
