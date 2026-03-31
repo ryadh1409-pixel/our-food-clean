@@ -27,7 +27,17 @@ import {
     updateLastActive,
     updateUserLocationInFirestore,
 } from '@/services/radarAndPush';
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import {
+  addDoc,
+  collection,
+  getDocs,
+  limit,
+  orderBy,
+  query,
+  serverTimestamp,
+  where,
+  type DocumentData,
+} from 'firebase/firestore';
 
 const NEARBY_MATCH_DATA_TYPE = 'nearby_match';
 
@@ -59,12 +69,73 @@ function RootLayoutNav() {
   const router = useRouter();
   const segments = useSegments();
   const currentUserRef = useRef(user);
+  const latestOrderRef = useRef<{
+    orderId: string | null;
+    status: string;
+    items: string;
+  } | null>(null);
 
   const seg0 = segments[0] as string | undefined;
 
   useEffect(() => {
     currentUserRef.current = user;
   }, [user]);
+
+  useEffect(() => {
+    const uid = user?.uid;
+    if (!uid) {
+      latestOrderRef.current = null;
+      return;
+    }
+
+    const loadLatestOrder = async () => {
+      try {
+        const baseRef = collection(db, 'orders');
+        const q = query(
+          baseRef,
+          where('userId', '==', uid),
+          orderBy('createdAt', 'desc'),
+          limit(1),
+        );
+        let snapshot = await getDocs(q);
+
+        // Fallback when a composite index is not available yet.
+        if (snapshot.empty) {
+          snapshot = await getDocs(query(baseRef, where('userId', '==', uid), limit(10)));
+        }
+
+        if (snapshot.empty) {
+          latestOrderRef.current = null;
+          return;
+        }
+
+        const docSnap = snapshot.docs[0];
+        const data = (docSnap.data() ?? {}) as DocumentData;
+        const status =
+          typeof data.status === 'string' && data.status.trim()
+            ? data.status.trim()
+            : 'unknown';
+        const itemsSource =
+          typeof data.itemsSummary === 'string'
+            ? data.itemsSummary
+            : typeof data.restaurantName === 'string'
+              ? data.restaurantName
+              : typeof data.mealType === 'string'
+                ? data.mealType
+                : '';
+        latestOrderRef.current = {
+          orderId: docSnap.id,
+          status,
+          items: itemsSource.trim() || 'meal item',
+        };
+      } catch (error) {
+        console.warn('[Tidio] failed loading latest order:', error);
+        latestOrderRef.current = null;
+      }
+    };
+
+    loadLatestOrder().catch(() => {});
+  }, [user?.uid]);
 
   useEffect(() => {
     ensureAuthReady().catch((error) => {
@@ -153,10 +224,10 @@ function RootLayoutNav() {
     const AUTO_REPLY_TEXT =
       'Hey 👋 Welcome to OurFood!\nWe help you share meals and save money 🍕\n\nIf you need help, just type your issue.\nWe usually reply within a few minutes.';
     const QUICK_REPLY_OPTIONS = [
-      'I have an issue with my order',
-      'How does sharing work?',
-      'I want a refund',
-      'Report a user',
+      'My current order',
+      'Report a problem',
+      'How it works',
+      'Refund request',
     ] as const;
 
     const attachTracking = (): boolean => {
@@ -206,17 +277,24 @@ function RootLayoutNav() {
           const hasOrderIntent =
             normalized.includes('order') ||
             normalized.includes('join') ||
-            normalized.includes('create');
+            normalized.includes('create') ||
+            normalized.includes('my current order');
           const hasIssueIntent =
             normalized.includes('issue') ||
             normalized.includes('problem') ||
             normalized.includes('wrong') ||
             normalized.includes('not working');
+          const hasRefundIntent =
+            normalized.includes('refund') ||
+            normalized.includes('money back') ||
+            normalized.includes('chargeback');
           const isNewUserIntent =
+            normalized.includes('how') ||
             normalized.includes('new') ||
             normalized.includes('first time') ||
             normalized.includes('how sharing works') ||
-            normalized.includes('how does sharing work');
+            normalized.includes('how does sharing work') ||
+            normalized.includes('how it works');
 
           const orderIdMatch = message.match(/[A-Za-z0-9_-]{8,40}/);
           if (tidioWindow.__tidioAwaitingOrderId && orderIdMatch?.[0]) {
@@ -235,9 +313,13 @@ function RootLayoutNav() {
 
           if (hasIssueIntent) {
             tidioWindow.__tidioAwaitingOrderId = true;
+            const latestOrderId = latestOrderRef.current?.orderId;
+            const suggestion = latestOrderId
+              ? ` Latest order I found: ${latestOrderId}.`
+              : '';
             sendSupportMessage(
               api,
-              'I can help with that. Please share your order ID so we can locate the order and resolve the issue quickly.',
+              `I can help with that. Please share your order ID so we can locate the order and resolve the issue quickly.${suggestion}`,
             );
             await notifyNewTidioMessage(
               'Issue flow started: requested orderId.',
@@ -246,10 +328,24 @@ function RootLayoutNav() {
             return;
           }
 
-          if (hasOrderIntent) {
+          if (hasRefundIntent) {
             sendSupportMessage(
               api,
-              "You can start by tapping 'Create Order' to post your meal, or 'Join' to match with an existing order near you. If you tell me what you're trying to do, I can guide you step-by-step.",
+              'Refund steps: 1) Share your order ID, 2) Describe the issue and what went wrong, 3) Our support team reviews and confirms eligibility, 4) If approved, the refund is processed to your original payment method.',
+            );
+            await notifyNewTidioMessage('Refund steps sent.', 'received');
+            return;
+          }
+
+          if (hasOrderIntent) {
+            const latestOrder = latestOrderRef.current;
+            const latestLine =
+              latestOrder?.orderId
+                ? ` Your current order: #${latestOrder.orderId}, status: ${latestOrder.status}, items: ${latestOrder.items}.`
+                : '';
+            sendSupportMessage(
+              api,
+              `You can start by tapping 'Create Order' to post your meal, or 'Join' to match with an existing order near you.${latestLine} If you tell me what you're trying to do, I can guide you step-by-step.`,
             );
             await notifyNewTidioMessage(
               'Order guidance flow response sent.',
@@ -316,8 +412,13 @@ function RootLayoutNav() {
           dynamicApi.sendMessage ??
           dynamicApi.addMessage;
         if (typeof sender === 'function') {
+          const latestOrder = latestOrderRef.current;
+          const latestOrderLine =
+            latestOrder?.orderId
+              ? `\n\nUser current order: #${latestOrder.orderId}, status: ${latestOrder.status}, items: ${latestOrder.items}`
+              : '\n\nUser current order: not found yet.';
           const quickReplyPayload = {
-            message: AUTO_REPLY_TEXT,
+            message: `${AUTO_REPLY_TEXT}${latestOrderLine}`,
             quickReplies: QUICK_REPLY_OPTIONS.map((label) => ({
               label,
               value: label,
@@ -328,7 +429,7 @@ function RootLayoutNav() {
             })),
           };
           const fallbackMenu =
-            `${AUTO_REPLY_TEXT}\n\nQuick options:\n` +
+            `${AUTO_REPLY_TEXT}${latestOrderLine}\n\nQuick options:\n` +
             QUICK_REPLY_OPTIONS.map((label, index) => `${index + 1}) ${label}`).join('\n');
           try {
             // Best effort: some Tidio builds support quickReplies/buttons payloads.
@@ -422,13 +523,11 @@ function RootLayoutNav() {
       if (!api?.setVisitorData) return false;
 
       const sessionUser = currentUserRef.current;
-      if (!sessionUser?.uid) return false;
-
       api.setVisitorData({
-        distinct_id: sessionUser.uid,
-        userId: sessionUser.uid,
-        email: sessionUser.email ?? '',
-        name: sessionUser.displayName ?? '',
+        distinct_id: sessionUser?.uid ?? 'guest',
+        userId: sessionUser?.uid ?? 'guest',
+        email: sessionUser?.email ?? 'noemail@example.com',
+        name: sessionUser?.displayName ?? 'User',
       });
 
       console.log('[Tidio] visitor data set', {
