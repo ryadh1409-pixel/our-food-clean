@@ -110,6 +110,7 @@ function RootLayoutNav() {
     type TidioWindow = Window & {
       tidioChatApi?: TidioApi;
       __tidioTrackingBound?: boolean;
+      __tidioAwaitingOrderId?: boolean;
     };
 
     let cleanupHandler: (() => void) | null = null;
@@ -128,8 +129,35 @@ function RootLayoutNav() {
         timestamp: new Date().toISOString(),
       });
     };
+    const sendSupportMessage = (
+      api: TidioApi,
+      text: string,
+    ) => {
+      const dynamicApi = api as unknown as Record<
+        string,
+        ((message: string | { message: string }) => void) | undefined
+      >;
+      const sender =
+        dynamicApi.showMessage ?? dynamicApi.sendMessage ?? dynamicApi.addMessage;
+      if (typeof sender !== 'function') return;
+      try {
+        sender({ message: text });
+      } catch {
+        try {
+          sender(text);
+        } catch {
+          // Keep chat stable if this Tidio API variant does not support client-side messages.
+        }
+      }
+    };
     const AUTO_REPLY_TEXT =
       'Hey 👋 Welcome to OurFood!\nWe help you share meals and save money 🍕\n\nIf you need help, just type your issue.\nWe usually reply within a few minutes.';
+    const QUICK_REPLY_OPTIONS = [
+      'I have an issue with my order',
+      'How does sharing work?',
+      'I want a refund',
+      'Report a user',
+    ] as const;
 
     const attachTracking = (): boolean => {
       const tidioWindow = window as TidioWindow;
@@ -137,6 +165,7 @@ function RootLayoutNav() {
       if (!api?.on || tidioWindow.__tidioTrackingBound) return false;
 
       const onVisitorMessage = async (payload?: unknown) => {
+        const tidioWindow = window as TidioWindow;
         const data =
           payload && typeof payload === 'object'
             ? (payload as Record<string, unknown>)
@@ -172,6 +201,73 @@ function RootLayoutNav() {
             userId,
             timestamp: new Date().toISOString(),
           });
+
+          const normalized = message.toLowerCase();
+          const hasOrderIntent =
+            normalized.includes('order') ||
+            normalized.includes('join') ||
+            normalized.includes('create');
+          const hasIssueIntent =
+            normalized.includes('issue') ||
+            normalized.includes('problem') ||
+            normalized.includes('wrong') ||
+            normalized.includes('not working');
+          const isNewUserIntent =
+            normalized.includes('new') ||
+            normalized.includes('first time') ||
+            normalized.includes('how sharing works') ||
+            normalized.includes('how does sharing work');
+
+          const orderIdMatch = message.match(/[A-Za-z0-9_-]{8,40}/);
+          if (tidioWindow.__tidioAwaitingOrderId && orderIdMatch?.[0]) {
+            tidioWindow.__tidioAwaitingOrderId = false;
+            const orderId = orderIdMatch[0];
+            sendSupportMessage(
+              api,
+              `Thanks — I captured order ID ${orderId}. Our support team will review this issue and follow up shortly.`,
+            );
+            await notifyNewTidioMessage(
+              `Captured issue orderId: ${orderId}`,
+              'received',
+            );
+            return;
+          }
+
+          if (hasIssueIntent) {
+            tidioWindow.__tidioAwaitingOrderId = true;
+            sendSupportMessage(
+              api,
+              'I can help with that. Please share your order ID so we can locate the order and resolve the issue quickly.',
+            );
+            await notifyNewTidioMessage(
+              'Issue flow started: requested orderId.',
+              'received',
+            );
+            return;
+          }
+
+          if (hasOrderIntent) {
+            sendSupportMessage(
+              api,
+              "You can start by tapping 'Create Order' to post your meal, or 'Join' to match with an existing order near you. If you tell me what you're trying to do, I can guide you step-by-step.",
+            );
+            await notifyNewTidioMessage(
+              'Order guidance flow response sent.',
+              'received',
+            );
+            return;
+          }
+
+          if (isNewUserIntent) {
+            sendSupportMessage(
+              api,
+              'OurFood lets you split meal costs with nearby users by creating or joining shared orders. You choose a meal, match with others, and each person pays their share directly in the app flow.',
+            );
+            await notifyNewTidioMessage(
+              'New user sharing explanation sent.',
+              'received',
+            );
+          }
         } catch (error) {
           console.error('[Tidio] failed to store message:', error);
         }
@@ -205,18 +301,41 @@ function RootLayoutNav() {
 
         const dynamicApi = api as unknown as Record<
           string,
-          ((message: string | { message: string }) => void) | undefined
+          ((
+            message:
+              | string
+              | {
+                  message: string;
+                  quickReplies?: Array<{ label: string; value: string }>;
+                  buttons?: Array<{ text: string; value: string }>;
+                },
+          ) => void) | undefined
         >;
         const sender =
           dynamicApi.showMessage ??
           dynamicApi.sendMessage ??
           dynamicApi.addMessage;
         if (typeof sender === 'function') {
+          const quickReplyPayload = {
+            message: AUTO_REPLY_TEXT,
+            quickReplies: QUICK_REPLY_OPTIONS.map((label) => ({
+              label,
+              value: label,
+            })),
+            buttons: QUICK_REPLY_OPTIONS.map((label) => ({
+              text: label,
+              value: label,
+            })),
+          };
+          const fallbackMenu =
+            `${AUTO_REPLY_TEXT}\n\nQuick options:\n` +
+            QUICK_REPLY_OPTIONS.map((label, index) => `${index + 1}) ${label}`).join('\n');
           try {
-            sender({ message: AUTO_REPLY_TEXT });
+            // Best effort: some Tidio builds support quickReplies/buttons payloads.
+            sender(quickReplyPayload);
           } catch {
             try {
-              sender(AUTO_REPLY_TEXT);
+              sender(fallbackMenu);
             } catch {
               // Keep flow safe if this Tidio build doesn't support sending from client API.
             }
