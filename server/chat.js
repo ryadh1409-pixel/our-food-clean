@@ -2,6 +2,10 @@ const express = require('express');
 const router = express.Router();
 const OpenAI = require('openai');
 
+if (!process.env.OPENAI_API_KEY) {
+  throw new Error('Missing OPENAI_API_KEY in .env');
+}
+
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
