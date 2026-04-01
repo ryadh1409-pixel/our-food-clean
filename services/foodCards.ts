@@ -6,6 +6,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  limit,
   onSnapshot,
   query,
   runTransaction,
@@ -93,45 +94,99 @@ export async function joinFoodCard(cardId: string): Promise<{
       user2: self,
       status: 'matched',
     });
-    return {
-      matched: true as const,
-      otherUser: data.user1,
-    };
+    return { matched: true as const };
   });
 
   if (!txResult.matched) {
     return { matched: false };
   }
 
-  const other = txResult.otherUser;
+  const refreshedSnap = await getDoc(cardRef);
+  if (!refreshedSnap.exists()) {
+    return { matched: false };
+  }
+  const refreshed = refreshedSnap.data() as Omit<FoodCard, 'id'>;
+  const user1 = refreshed.user1 ?? null;
+  const user2 = refreshed.user2 ?? null;
+  if (!user1?.uid || !user2?.uid) {
+    return { matched: false };
+  }
+
+  const other = user1.uid === uid ? user2 : user1;
   const ids = [other.uid, uid].sort();
   const chatId = cardId;
+  const now = Date.now();
   await setDoc(
     doc(db, 'chats', chatId),
     {
       users: ids,
       participants: ids,
       usersData: [other, self],
+      user1,
+      user2,
       orderId: cardId,
       type: 'food_card',
       lastMessage: 'Match created',
-      lastMessageAt: serverTimestamp(),
-      createdAt: serverTimestamp(),
+      lastMessageAt: now,
+      createdAt: now,
       typing: null,
       unreadCount: 0,
     },
     { merge: true },
   );
 
-  await addDoc(collection(db, 'chats', chatId, 'messages'), {
-    text: `Matched on ${cardId}. Say hi!`,
-    senderId: 'system',
-    userName: 'System',
-    createdAt: serverTimestamp(),
-    delivered: true,
-    seen: false,
-    system: true,
-  }).catch(() => {});
+  const existingMessages = await getDocs(
+    query(collection(db, 'chats', chatId, 'messages'), limit(1)),
+  );
+  if (existingMessages.empty) {
+    const firstMessage = 'You both joined this order 🍕';
+    await addDoc(collection(db, 'chats', chatId, 'messages'), {
+      text: firstMessage,
+      senderId: 'system',
+      sender: 'system',
+      userName: 'System',
+      createdAt: now,
+      delivered: true,
+      seen: false,
+      system: true,
+    }).catch(() => {});
+    await updateDoc(doc(db, 'chats', chatId), {
+      lastMessage: firstMessage,
+      lastMessageAt: Date.now(),
+    }).catch(() => {});
+
+    try {
+      const res = await fetch('http://localhost:3000/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: firstMessage,
+          user: { uid, name: userName },
+          chatId,
+        }),
+      });
+      const data = (await res.json()) as { response?: string; reply?: string };
+      const aiReply = (data.reply ?? data.response ?? '').trim();
+      if (aiReply) {
+        await addDoc(collection(db, 'chats', chatId, 'messages'), {
+          text: aiReply,
+          senderId: 'ai',
+          sender: 'ai',
+          userName: 'AI Assistant',
+          createdAt: Date.now(),
+          delivered: true,
+          seen: false,
+          system: true,
+        });
+        await updateDoc(doc(db, 'chats', chatId), {
+          lastMessage: aiReply,
+          lastMessageAt: Date.now(),
+        }).catch(() => {});
+      }
+    } catch {
+      // Keep match flow resilient if AI endpoint is unavailable.
+    }
+  }
 
   return { matched: true, chatId, otherUser: other };
 }

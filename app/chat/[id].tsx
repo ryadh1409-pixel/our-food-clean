@@ -6,7 +6,6 @@ import {
   onSnapshot,
   orderBy,
   query,
-  serverTimestamp,
   updateDoc,
 } from 'firebase/firestore';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -36,6 +35,19 @@ type ChatMessage = {
 function paramToId(raw: string | string[] | undefined): string {
   if (raw == null) return '';
   return String(Array.isArray(raw) ? raw[0] : raw);
+}
+
+function readCreatedAtMs(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (
+    value &&
+    typeof value === 'object' &&
+    'toMillis' in value &&
+    typeof (value as { toMillis: () => number }).toMillis === 'function'
+  ) {
+    return (value as { toMillis: () => number }).toMillis();
+  }
+  return Date.now();
 }
 
 export default function ChatByIdScreen() {
@@ -101,7 +113,7 @@ export default function ChatByIdScreen() {
             text: String(data?.text ?? ''),
             senderId: String(data?.senderId ?? ''),
             userName: String(data?.userName ?? 'User'),
-            createdAtMs: Number(data?.createdAt?.toMillis?.() ?? Date.now()),
+            createdAtMs: readCreatedAtMs(data?.createdAt),
           };
         });
         setMessages(rows);
@@ -124,19 +136,20 @@ export default function ChatByIdScreen() {
     bootstrapAttemptedRef.current = true;
     (async () => {
       try {
-        const welcome = 'Hey! You both joined the same food 🍕';
+        const welcome = 'You both joined this order 🍕';
         await addDoc(collection(db, 'chats', chatId, 'messages'), {
           text: welcome,
           senderId: 'system',
+          sender: 'system',
           userName: 'System',
-          createdAt: serverTimestamp(),
+          createdAt: Date.now(),
           delivered: true,
           seen: false,
           system: true,
         });
         await updateDoc(doc(db, 'chats', chatId), {
           lastMessage: welcome,
-          lastMessageAt: serverTimestamp(),
+          lastMessageAt: Date.now(),
         }).catch(() => {});
         if (!aiBootstrapAttemptedRef.current) {
           aiBootstrapAttemptedRef.current = true;
@@ -159,15 +172,16 @@ export default function ChatByIdScreen() {
               await addDoc(collection(db, 'chats', chatId, 'messages'), {
                 text: aiReply,
                 senderId: 'ai',
+                sender: 'ai',
                 userName: 'AI Assistant',
-                createdAt: serverTimestamp(),
+                createdAt: Date.now(),
                 delivered: true,
                 seen: false,
                 system: true,
               });
               await updateDoc(doc(db, 'chats', chatId), {
                 lastMessage: aiReply,
-                lastMessageAt: serverTimestamp(),
+                lastMessageAt: Date.now(),
               }).catch(() => {});
             }
           } catch {
@@ -198,11 +212,11 @@ export default function ChatByIdScreen() {
         text: payload,
         senderId: uid,
         userName: auth.currentUser?.displayName || auth.currentUser?.email?.split('@')[0] || 'User',
-        createdAt: serverTimestamp(),
+        createdAt: Date.now(),
       });
       await updateDoc(doc(db, 'chats', chatId), {
         lastMessage: payload,
-        lastMessageAt: serverTimestamp(),
+        lastMessageAt: Date.now(),
       }).catch(() => {});
       setText('');
     } finally {
