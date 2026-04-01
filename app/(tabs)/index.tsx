@@ -36,6 +36,7 @@ export default function SwipeScreen() {
 
   useEffect(() => {
     const unsub = subscribeWaitingFoodCards((rows) => {
+      console.log('[swipe] cards from food_cards:', rows);
       setCards(rows);
       setLoading(false);
     });

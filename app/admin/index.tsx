@@ -9,7 +9,6 @@ import {
   collection,
   getDocs,
   query,
-  serverTimestamp,
   where,
 } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
@@ -236,7 +235,7 @@ export default function AdminScreen() {
         price: total,
         splitPrice: split,
         location: location.trim() || null,
-        createdAt: serverTimestamp(),
+        createdAt: now,
         expiresAt: now + 45 * 60 * 1000,
         status: 'waiting',
         user1: null,

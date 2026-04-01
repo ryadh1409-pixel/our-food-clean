@@ -14,8 +14,6 @@ import {
   Timestamp,
   updateDoc,
   where,
-  limit,
-  orderBy,
 } from 'firebase/firestore';
 
 export type FoodCard = {
@@ -42,8 +40,6 @@ export function subscribeWaitingFoodCards(
   const q = query(
     collection(db, FOOD_CARDS),
     where('status', '==', 'waiting'),
-    orderBy('expiresAt', 'asc'),
-    limit(50),
   );
   return onSnapshot(
     q,
@@ -52,6 +48,7 @@ export function subscribeWaitingFoodCards(
       const cards = snap.docs
         .map((d) => ({ id: d.id, ...(d.data() as Omit<FoodCard, 'id'>) }))
         .filter((card) => (card.expiresAt ?? 0) > now);
+      console.log('[food_cards] fetched cards:', cards);
       onData(cards);
     },
     () => onData([]),
