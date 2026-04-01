@@ -65,7 +65,7 @@ export default function JoinOrderScreen() {
   }, []);
 
   const handleCreateOrder = () => {
-    router.push('/order/create');
+    router.push('/(tabs)/index');
   };
 
   const handleJoin = async (orderId: string) => {
@@ -134,7 +134,7 @@ export default function JoinOrderScreen() {
         onPress={handleCreateOrder}
         activeOpacity={0.85}
       >
-        <Text style={styles.createButtonText}>Create Order</Text>
+        <Text style={styles.createButtonText}>Go to Swipe</Text>
       </TouchableOpacity>
       <FlatList
         data={orders}

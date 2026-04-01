@@ -61,9 +61,9 @@ export default function MapScreenWeb() {
       )}
       <TouchableOpacity
         style={styles.fab}
-        onPress={() => router.push('/order/create')}
+        onPress={() => router.push('/(tabs)/index')}
       >
-        <Text style={styles.fabText}>Create Order</Text>
+        <Text style={styles.fabText}>Go to Swipe</Text>
       </TouchableOpacity>
     </SafeAreaView>
   );

@@ -43,9 +43,9 @@ export default function MapScreenNative() {
       <DemandMap onJoinOrder={handleJoinOrder} style={styles.demandMap} />
       <TouchableOpacity
         style={styles.fab}
-        onPress={() => router.push('/order/create')}
+        onPress={() => router.push('/(tabs)/index')}
       >
-        <Text style={styles.fabText}>Create Order</Text>
+        <Text style={styles.fabText}>Go to Swipe</Text>
       </TouchableOpacity>
     </SafeAreaView>
   );

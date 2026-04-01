@@ -256,7 +256,7 @@ export default function AdminScreen() {
         <View style={styles.navSection}>
           <TouchableOpacity
             style={styles.navButton}
-            onPress={() => router.push('/admin/food-cards')}
+            onPress={() => router.push('/admin')}
             activeOpacity={0.85}
           >
             <Text style={styles.navButtonText}>Manage Food Cards</Text>

@@ -217,6 +217,71 @@ async function requestChatCompletion(appSystemMessage, userContext, userMessage,
   }
 }
 
+async function duplicateFoodCardDoc(sourceDoc, reason) {
+  const db = getFirestoreDb();
+  const data = sourceDoc.data() || {};
+  const now = Date.now();
+  await db.collection('food_cards').add({
+    title: data.title ?? 'Food',
+    image: data.image ?? '',
+    restaurantName: data.restaurantName ?? '',
+    price: Number(data.price) || 0,
+    splitPrice: Number(data.splitPrice) || 0,
+    location: data.location ?? null,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    expiresAt: now + 45 * 60 * 1000,
+    status: 'waiting',
+    user1: null,
+    user2: null,
+    regeneratedFrom: sourceDoc.id,
+    regeneratedReason: reason,
+  });
+}
+
+router.post('/match-event', async (req, res) => {
+  try {
+    const cardId = typeof req.body?.cardId === 'string' ? req.body.cardId : '';
+    if (!cardId) return res.status(400).json({ ok: false, error: 'cardId required' });
+    const db = getFirestoreDb();
+    const docRef = db.collection('food_cards').doc(cardId);
+    const snap = await docRef.get();
+    if (!snap.exists) return res.status(404).json({ ok: false, error: 'Card not found' });
+    await duplicateFoodCardDoc(snap, 'matched');
+    await docRef.set(
+      {
+        aiMatchDuplicatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+    console.log(`Match completed for ${String(snap.data()?.title ?? 'card')}`);
+    return res.json({ ok: true });
+  } catch (error) {
+    console.error('match-event error:', error);
+    return res.status(500).json({ ok: false });
+  }
+});
+
+router.post('/refresh-food-cards', async (_req, res) => {
+  try {
+    const db = getFirestoreDb();
+    const now = Date.now();
+    const expiredSnap = await db
+      .collection('food_cards')
+      .where('expiresAt', '<=', now)
+      .get();
+    const jobs = expiredSnap.docs.map(async (d) => {
+      await duplicateFoodCardDoc(d, 'expired');
+      await db.collection('food_cards').doc(d.id).delete();
+      console.log(`Expired card regenerated: ${String(d.data()?.title ?? d.id)}`);
+    });
+    await Promise.allSettled(jobs);
+    return res.json({ ok: true, regenerated: expiredSnap.size });
+  } catch (error) {
+    console.error('refresh-food-cards error:', error);
+    return res.status(500).json({ ok: false });
+  }
+});
+
 router.post('/', async (req, res) => {
   try {
     const { message, user } = req.body;

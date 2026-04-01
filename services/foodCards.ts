@@ -8,11 +8,14 @@ import {
   getDocs,
   onSnapshot,
   query,
+  runTransaction,
   serverTimestamp,
+  setDoc,
   Timestamp,
   updateDoc,
   where,
   limit,
+  orderBy,
 } from 'firebase/firestore';
 
 export type FoodCard = {
@@ -39,6 +42,7 @@ export function subscribeWaitingFoodCards(
   const q = query(
     collection(db, FOOD_CARDS),
     where('status', '==', 'waiting'),
+    orderBy('expiresAt', 'asc'),
     limit(50),
   );
   return onSnapshot(
@@ -54,7 +58,11 @@ export function subscribeWaitingFoodCards(
   );
 }
 
-export async function joinFoodCard(cardId: string): Promise<{ matched: boolean }> {
+export async function joinFoodCard(cardId: string): Promise<{
+  matched: boolean;
+  chatId?: string;
+  otherUser?: { uid: string; name: string; photo: string | null };
+}> {
   const uid = auth.currentUser?.uid;
   if (!uid) throw new Error('Sign in required');
   const userName =
@@ -62,54 +70,73 @@ export async function joinFoodCard(cardId: string): Promise<{ matched: boolean }
     auth.currentUser?.email?.split('@')[0] ||
     'User';
   const userPhoto = auth.currentUser?.photoURL ?? null;
-  const ref = doc(db, FOOD_CARDS, cardId);
-  const snap = await getDoc(ref);
-  if (!snap.exists()) throw new Error('Card not found');
-  const data = snap.data() as Omit<FoodCard, 'id'>;
-  if (data.status !== 'waiting') throw new Error('Card no longer available');
+  const cardRef = doc(db, FOOD_CARDS, cardId);
+  const self = { uid, name: userName, photo: userPhoto };
 
-  if (!data.user1?.uid) {
-    await updateDoc(ref, {
-      user1: { uid, name: userName, photo: userPhoto },
-      createdAt: serverTimestamp(),
+  const txResult = await runTransaction(db, async (tx) => {
+    const snap = await tx.get(cardRef);
+    if (!snap.exists()) throw new Error('Card not found');
+    const data = snap.data() as Omit<FoodCard, 'id'>;
+    if (data.status !== 'waiting') throw new Error('Card no longer available');
+
+    if (!data.user1?.uid) {
+      tx.update(cardRef, {
+        user1: self,
+      });
+      return { matched: false as const };
+    }
+    if (data.user1.uid === uid) {
+      return { matched: false as const };
+    }
+    if (data.user2?.uid) {
+      throw new Error('Card already matched');
+    }
+
+    tx.update(cardRef, {
+      user2: self,
+      status: 'matched',
     });
-    return { matched: false };
-  }
-  if (data.user1.uid === uid) return { matched: false };
-  if (data.user2?.uid) throw new Error('Card already matched');
-
-  await updateDoc(ref, {
-    user2: { uid, name: userName, photo: userPhoto },
-    status: 'matched',
+    return {
+      matched: true as const,
+      otherUser: data.user1,
+    };
   });
 
-  const chatId = `${cardId}_${data.user1.uid}_${uid}`;
-  await updateDoc(doc(db, 'chats', chatId), {
-    users: [data.user1.uid, uid],
-    participants: [data.user1.uid, uid],
-    usersData: [
-      data.user1,
-      { uid, name: userName, photo: userPhoto },
-    ],
-    orderId: cardId,
-    type: 'food_card',
-    lastMessage: 'Match created',
-    lastMessageAt: serverTimestamp(),
-    createdAt: serverTimestamp(),
-  }).catch(async () => {
-    await addDoc(collection(db, 'chats'), {
-      users: [data.user1?.uid, uid],
-      participants: [data.user1?.uid, uid],
-      usersData: [data.user1, { uid, name: userName, photo: userPhoto }],
+  if (!txResult.matched) {
+    return { matched: false };
+  }
+
+  const other = txResult.otherUser;
+  const ids = [other.uid, uid].sort();
+  const chatId = `food_${cardId}_${ids[0]}_${ids[1]}`;
+  await setDoc(
+    doc(db, 'chats', chatId),
+    {
+      users: ids,
+      participants: ids,
+      usersData: [other, self],
       orderId: cardId,
       type: 'food_card',
       lastMessage: 'Match created',
       lastMessageAt: serverTimestamp(),
       createdAt: serverTimestamp(),
-    });
-  });
+      typing: null,
+      unreadCount: 0,
+    },
+    { merge: true },
+  );
 
-  return { matched: true };
+  await addDoc(collection(db, 'chats', chatId, 'messages'), {
+    text: `Matched on ${cardId}. Say hi!`,
+    senderId: 'system',
+    userName: 'System',
+    createdAt: serverTimestamp(),
+    delivered: true,
+    seen: false,
+    system: true,
+  }).catch(() => {});
+
+  return { matched: true, chatId, otherUser: other };
 }
 
 export async function createFoodCard(input: {
@@ -199,6 +226,10 @@ export async function runFoodCardAutomationOnce(): Promise<void> {
     }
   });
   if (tasks.length) await Promise.allSettled(tasks);
+}
+
+export async function skipFoodCard(_cardId: string): Promise<void> {
+  // Skip is local-only for feed UX. No write needed.
 }
 
 export function startFoodCardAutomation(): () => void {

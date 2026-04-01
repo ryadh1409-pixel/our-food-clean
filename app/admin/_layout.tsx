@@ -16,7 +16,6 @@ export default function AdminLayout() {
         name="test-order-flow"
         options={{ title: 'Order Flow Test' }}
       />
-      <Stack.Screen name="food-cards" options={{ title: 'Food Cards' }} />
     </Stack>
   );
 }

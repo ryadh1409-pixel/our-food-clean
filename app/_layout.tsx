@@ -525,7 +525,7 @@ function RootLayoutNav() {
                 : '';
             sendSupportMessage(
               api,
-              `You can start by tapping 'Create Order' to post your meal, or 'Join' to match with an existing order near you.${latestLine} If you tell me what you're trying to do, I can guide you step-by-step.`,
+              `You can swipe cards to join food matches near you.${latestLine} If you tell me what you want to eat, I can guide you.`,
             );
             await notifyNewTidioMessage(
               'Order guidance flow response sent.',
@@ -789,7 +789,7 @@ function RootLayoutNav() {
           () => {},
         );
         if (data?.type === NEARBY_MATCH_DATA_TYPE) {
-          router.push('/order/create');
+          router.push('/(tabs)');
         }
       },
     );
@@ -804,7 +804,7 @@ function RootLayoutNav() {
         logNotificationOpened(notificationId).catch(() => {});
       }
       if (data?.type === NEARBY_MATCH_DATA_TYPE) {
-        setTimeout(() => router.push('/order/create'), 300);
+        setTimeout(() => router.push('/(tabs)'), 300);
       }
     });
     return () => {
@@ -850,8 +850,9 @@ function RootLayoutNav() {
         <Stack.Screen name="onboarding" options={{ headerShown: false }} />
         <Stack.Screen
           name="create-order"
-          options={{ title: 'Create Order' }}
+          options={{ title: 'Create Order (Disabled)' }}
         />
+        <Stack.Screen name="admin" options={{ title: 'Admin' }} />
         <Stack.Screen name="support" options={{ title: 'Support' }} />
         <Stack.Screen
           name="admin-support"
