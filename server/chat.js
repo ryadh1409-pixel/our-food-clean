@@ -225,7 +225,13 @@ router.post('/', async (req, res) => {
         ? message.trim()
         : '';
     if (!prompt) {
-      return res.json({ ok: false, response: 'Message is required' });
+      return res.json({
+        ok: true,
+        reply: 'Please type a message so I can help.',
+        action: 'none',
+        data: {},
+        response: 'Please type a message so I can help.',
+      });
     }
     const uid = user && typeof user === 'object' && typeof user.uid === 'string'
       ? user.uid
@@ -257,14 +263,15 @@ router.post('/', async (req, res) => {
             .join('\n')
         : 'No nearby active orders found';
     const appSystemMessage =
-      'You are an AI inside a food-sharing app called OurFood. ' +
-      'You MUST sometimes return actions in JSON. ' +
-      'If user wants to join, return action: join_order. ' +
-      'If user wants new food, return action: create_order. ' +
-      'Always respond in English. ' +
-      'Keep tone friendly, food-focused, and short (max 2 sentences). ' +
-      'Output strictly valid JSON with shape: ' +
-      '{"reply":"string","action":"join_order|create_order|none","data":{"orderId":"string(optional)","items":["string(optional)"]}}.';
+      'You are an AI assistant inside a food-sharing app called OurFood. ' +
+      'Always respond ONLY in English. ' +
+      'Keep responses short (max 2 sentences). ' +
+      'You MUST return JSON in this format: ' +
+      '{"reply":"text for user","action":"join_order|create_order|none","data":{}}. ' +
+      'Rules: If user wants food -> suggest or create_order. ' +
+      'If matching order exists -> join_order. ' +
+      'If unclear -> action = none. ' +
+      'Friendly tone. Food-focused.';
     const userContext =
       `User: ${name || 'User'}\n` +
       `UID: ${uid || 'unknown'}\n` +
@@ -290,7 +297,13 @@ router.post('/', async (req, res) => {
         'message' in payload.error
           ? String(payload.error.message)
           : `OpenAI API error (${response.status})`;
-      return res.json({ ok: false, response: apiError });
+      return res.json({
+        ok: true,
+        reply: apiError,
+        action: 'none',
+        data: {},
+        response: apiError,
+      });
     }
 
     const aiText =
@@ -340,6 +353,11 @@ router.post('/', async (req, res) => {
       items: Array.isArray(dataRaw.items)
         ? dataRaw.items.filter((item) => typeof item === 'string').map((item) => item.trim()).filter(Boolean)
         : undefined,
+      nearbyOrders: nearbyActiveOrders.map((order) => ({
+        orderId: order.orderId,
+        items: order.items,
+        status: order.status,
+      })),
     };
 
     res.json({
@@ -372,7 +390,10 @@ router.post('/', async (req, res) => {
         ? 'Network DNS issue reaching api.openai.com'
         : message || 'Unknown error';
     res.json({
-      ok: false,
+      ok: true,
+      reply: friendly,
+      action: 'none',
+      data: {},
       response: friendly,
     });
   }

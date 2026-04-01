@@ -95,8 +95,8 @@ export default function ChatScreen() {
           data.data?.items && data.data.items.length > 0
             ? encodeURIComponent(data.data.items.join(','))
             : '';
-        const href = itemsParam ? `/order/create?items=${itemsParam}` : '/order/create';
-        router.push(href as '/order/create');
+        const href = itemsParam ? `/create?items=${itemsParam}` : '/create';
+        router.push(href as '/create');
       }
     } catch {
       const errorMessage: Message = {
