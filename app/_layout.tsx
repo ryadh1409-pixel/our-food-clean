@@ -62,6 +62,7 @@ export const linking = {
       'match/[orderId]': 'match/:orderId',
       'food-match/[matchId]': 'food-match/:matchId',
       'join/[orderId]': 'join/:orderId',
+      'chat/[id]': 'chat/:id',
     },
   },
 };
@@ -904,7 +905,7 @@ function RootLayoutNav() {
           options={{ title: 'Browse', headerShown: false }}
         />
         <Stack.Screen
-          name="chat/[orderId]"
+          name="chat/[id]"
           options={{ title: 'Chat', headerShown: false }}
         />
         <Stack.Screen

@@ -27,12 +27,14 @@ function formatTimer(expiresAt: number): string {
 }
 
 export default function SwipeScreen() {
+  const SWIPE_TRIGGER = 90;
   const router = useRouter();
   const [cards, setCards] = useState<FoodCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [tick, setTick] = useState(0);
   const [joining, setJoining] = useState(false);
   const pan = useRef(new Animated.ValueXY()).current;
+  const swipeInFlightRef = useRef(false);
 
   useEffect(() => {
     const unsub = subscribeWaitingFoodCards((rows) => {
@@ -53,19 +55,18 @@ export default function SwipeScreen() {
 
   const removeTop = () => setCards((prev) => prev.slice(1));
 
-  const onLike = async () => {
-    if (!topCard || joining) return;
+  const onLike = async (cardId?: string) => {
+    const targetId = cardId ?? topCard?.id;
+    if (!targetId || joining) return;
     setJoining(true);
     try {
-      const result = await joinFoodCard(topCard.id);
-      if (result.matched && result.chatId) {
-        const otherName = result.otherUser?.name || 'Match';
-        const photo = result.otherUser?.photo || '';
+      const result = await joinFoodCard(targetId);
+      if (result.matched) {
         removeTop();
         router.push({
-          pathname: '/chat/[orderId]',
-          params: { orderId: result.chatId, name: otherName, photo },
-        });
+          pathname: '/chat/[id]',
+          params: { id: String(targetId) },
+        } as never);
       } else {
         removeTop();
       }
@@ -74,24 +75,26 @@ export default function SwipeScreen() {
     }
   };
 
-  const onSkip = async () => {
-    if (!topCard) return;
-    await skipFoodCard(topCard.id);
+  const onSkip = async (cardId?: string) => {
+    const targetId = cardId ?? topCard?.id;
+    if (!targetId) return;
+    await skipFoodCard(targetId);
     removeTop();
   };
 
-  const swipe = (dx: number) => {
+  const swipe = (dx: number, cardId: string) => {
+    if (swipeInFlightRef.current) return;
+    swipeInFlightRef.current = true;
     Animated.timing(pan, {
       toValue: { x: dx > 0 ? 420 : -420, y: 0 },
       duration: 180,
       useNativeDriver: false,
     }).start(() => {
       pan.setValue({ x: 0, y: 0 });
-      if (dx > 0) {
-        onLike();
-      } else {
-        onSkip();
-      }
+      const action = dx > 0 ? onLike(cardId) : onSkip(cardId);
+      Promise.resolve(action).finally(() => {
+        swipeInFlightRef.current = false;
+      });
     });
   };
 
@@ -102,8 +105,15 @@ export default function SwipeScreen() {
         onMoveShouldSetPanResponder: () => true,
         onPanResponderMove: (_, g) => pan.setValue({ x: g.dx, y: g.dy }),
         onPanResponderRelease: (_, g) => {
-          if (g.dx > 90) swipe(1);
-          else if (g.dx < -90) swipe(-1);
+          if (!topCard || joining || swipeInFlightRef.current) {
+            Animated.spring(pan, {
+              toValue: { x: 0, y: 0 },
+              useNativeDriver: false,
+            }).start();
+            return;
+          }
+          if (g.dx > SWIPE_TRIGGER) swipe(1, topCard.id);
+          else if (g.dx < -SWIPE_TRIGGER) swipe(-1, topCard.id);
           else {
             Animated.spring(pan, {
               toValue: { x: 0, y: 0 },
@@ -120,7 +130,7 @@ export default function SwipeScreen() {
     outputRange: ['-12deg', '0deg', '12deg'],
   });
   const topStyle = { transform: [...pan.getTranslateTransform(), { rotate }] };
-  const likeOpacity = pan.x.interpolate({
+  const joinOpacity = pan.x.interpolate({
     inputRange: [20, 120],
     outputRange: [0, 1],
     extrapolate: 'clamp',
@@ -155,10 +165,10 @@ export default function SwipeScreen() {
           <Animated.View style={[styles.card, topStyle]} {...panResponder.panHandlers}>
             <Image source={{ uri: topCard.image }} style={styles.image} />
             <Animated.View style={[styles.swipeBadgeLeft, { opacity: nopeOpacity }]}>
-              <Text style={styles.swipeBadgeTextLeft}>NOPE</Text>
+              <Text style={styles.swipeBadgeTextLeft}>NOPE ❌</Text>
             </Animated.View>
-            <Animated.View style={[styles.swipeBadgeRight, { opacity: likeOpacity }]}>
-              <Text style={styles.swipeBadgeTextRight}>JOIN</Text>
+            <Animated.View style={[styles.swipeBadgeRight, { opacity: joinOpacity }]}>
+              <Text style={styles.swipeBadgeTextRight}>JOIN ❤️</Text>
             </Animated.View>
             <View style={styles.info}>
               <Text style={styles.cardTitle}>{topCard.title}</Text>
@@ -185,10 +195,10 @@ export default function SwipeScreen() {
         </View>
       )}
       <View style={styles.actions}>
-        <TouchableOpacity onPress={onSkip} style={[styles.btn, styles.skipBtn]}>
+        <TouchableOpacity onPress={() => onSkip()} style={[styles.btn, styles.skipBtn]}>
           <Text style={styles.skipText}>❌ Skip</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={onLike} style={[styles.btn, styles.likeBtn]}>
+        <TouchableOpacity onPress={() => onLike()} style={[styles.btn, styles.likeBtn]}>
           <Text style={styles.likeText}>{joining ? '...' : '❤️ Join'}</Text>
         </TouchableOpacity>
       </View>

@@ -141,8 +141,8 @@ export default function OrderDetailsScreen() {
       Alert.alert('Joined', 'You joined this order.');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       router.push({
-        pathname: '/chat/[orderId]',
-        params: { orderId: order.id },
+        pathname: '/chat/[id]',
+        params: { id: order.id },
       } as never);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to join order.';

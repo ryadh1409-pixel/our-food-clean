@@ -62,19 +62,6 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="chat"
-        options={{
-          title: 'Chat',
-          tabBarIcon: ({ color }) => (
-            <MaterialIcons
-              name="chat-bubble-outline"
-              size={TAB_ICON_SIZE}
-              color={color}
-            />
-          ),
-        }}
-      />
-      <Tabs.Screen
         name="profile"
         options={{
           title: 'Profile',

@@ -105,7 +105,7 @@ export async function joinFoodCard(cardId: string): Promise<{
 
   const other = txResult.otherUser;
   const ids = [other.uid, uid].sort();
-  const chatId = `food_${cardId}_${ids[0]}_${ids[1]}`;
+  const chatId = cardId;
   await setDoc(
     doc(db, 'chats', chatId),
     {
