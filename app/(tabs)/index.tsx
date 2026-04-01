@@ -47,16 +47,6 @@ export default function SwipeScreen() {
     return () => clearInterval(id);
   }, []);
 
-  useEffect(() => {
-    const id = setInterval(() => {
-      fetch('http://localhost:3000/chat/refresh-food-cards', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      }).catch(() => {});
-    }, 60 * 1000);
-    return () => clearInterval(id);
-  }, []);
-
   const topCard = cards[0] ?? null;
   const secondCard = cards[1] ?? null;
 
@@ -70,11 +60,6 @@ export default function SwipeScreen() {
       if (result.matched && result.chatId) {
         const otherName = result.otherUser?.name || 'Match';
         const photo = result.otherUser?.photo || '';
-        await fetch('http://localhost:3000/chat/match-event', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cardId: topCard.id }),
-        }).catch(() => {});
         removeTop();
         router.push({
           pathname: '/chat/[orderId]',
@@ -134,6 +119,16 @@ export default function SwipeScreen() {
     outputRange: ['-12deg', '0deg', '12deg'],
   });
   const topStyle = { transform: [...pan.getTranslateTransform(), { rotate }] };
+  const likeOpacity = pan.x.interpolate({
+    inputRange: [20, 120],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
+  const nopeOpacity = pan.x.interpolate({
+    inputRange: [-120, -20],
+    outputRange: [1, 0],
+    extrapolate: 'clamp',
+  });
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -158,6 +153,12 @@ export default function SwipeScreen() {
           ) : null}
           <Animated.View style={[styles.card, topStyle]} {...panResponder.panHandlers}>
             <Image source={{ uri: topCard.image }} style={styles.image} />
+            <Animated.View style={[styles.swipeBadgeLeft, { opacity: nopeOpacity }]}>
+              <Text style={styles.swipeBadgeTextLeft}>NOPE</Text>
+            </Animated.View>
+            <Animated.View style={[styles.swipeBadgeRight, { opacity: likeOpacity }]}>
+              <Text style={styles.swipeBadgeTextRight}>JOIN</Text>
+            </Animated.View>
             <View style={styles.info}>
               <Text style={styles.cardTitle}>{topCard.title}</Text>
               <Text style={styles.meta}>${topCard.splitPrice.toFixed(2)} each</Text>
@@ -175,7 +176,9 @@ export default function SwipeScreen() {
                   )}
                   <Text style={styles.hostName}>{topCard.user1.name}</Text>
                 </View>
-              ) : null}
+              ) : (
+                <Text style={styles.waitingText}>Waiting for someone...</Text>
+              )}
             </View>
           </Animated.View>
         </View>
@@ -217,6 +220,31 @@ const styles = StyleSheet.create({
   avatar: { width: 26, height: 26, borderRadius: 13, backgroundColor: '#1f2937' },
   avatarPlaceholder: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)' },
   hostName: { color: '#D1FAE5', fontWeight: '700' },
+  waitingText: { color: 'rgba(248,250,252,0.72)', marginTop: 8, fontWeight: '600' },
+  swipeBadgeLeft: {
+    position: 'absolute',
+    left: 18,
+    top: 18,
+    borderWidth: 2,
+    borderColor: '#f87171',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    zIndex: 10,
+  },
+  swipeBadgeRight: {
+    position: 'absolute',
+    right: 18,
+    top: 18,
+    borderWidth: 2,
+    borderColor: '#34D399',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    zIndex: 10,
+  },
+  swipeBadgeTextLeft: { color: '#fda4af', fontWeight: '900', letterSpacing: 1.2 },
+  swipeBadgeTextRight: { color: '#6ee7b7', fontWeight: '900', letterSpacing: 1.2 },
   actions: { flexDirection: 'row', gap: 12, padding: 16 },
   btn: {
     flex: 1,

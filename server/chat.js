@@ -217,11 +217,9 @@ async function requestChatCompletion(appSystemMessage, userContext, userMessage,
   }
 }
 
-async function duplicateFoodCardDoc(sourceDoc, reason) {
-  const db = getFirestoreDb();
-  const data = sourceDoc.data() || {};
+function getFoodCardClonePayload(data, sourceId, reason) {
   const now = Date.now();
-  await db.collection('food_cards').add({
+  return {
     title: data.title ?? 'Food',
     image: data.image ?? '',
     restaurantName: data.restaurantName ?? '',
@@ -233,9 +231,58 @@ async function duplicateFoodCardDoc(sourceDoc, reason) {
     status: 'waiting',
     user1: null,
     user2: null,
-    regeneratedFrom: sourceDoc.id,
+    regeneratedFrom: sourceId,
     regeneratedReason: reason,
+  };
+}
+
+async function duplicateFoodCardDoc(sourceDoc, reason) {
+  const db = getFirestoreDb();
+  const data = sourceDoc.data() || {};
+  await db
+    .collection('food_cards')
+    .add(getFoodCardClonePayload(data, sourceDoc.id, reason));
+}
+
+async function runFoodCardsMaintenanceOnce() {
+  const db = getFirestoreDb();
+  const now = Date.now();
+
+  const [expiredSnap, matchedSnap] = await Promise.all([
+    db.collection('food_cards').where('status', '==', 'waiting').where('expiresAt', '<=', now).get(),
+    db.collection('food_cards').where('status', '==', 'matched').get(),
+  ]);
+
+  const jobs = [];
+
+  expiredSnap.docs.forEach((d) => {
+    jobs.push(
+      (async () => {
+        await duplicateFoodCardDoc(d, 'expired');
+        await db.collection('food_cards').doc(d.id).delete();
+        console.log(`Expired card regenerated: ${String(d.data()?.title ?? d.id)}`);
+      })(),
+    );
   });
+
+  matchedSnap.docs.forEach((d) => {
+    const data = d.data() || {};
+    if (data.regeneratedAt) return;
+    jobs.push(
+      (async () => {
+        await duplicateFoodCardDoc(d, 'matched');
+        await db.collection('food_cards').doc(d.id).set(
+          { regeneratedAt: admin.firestore.FieldValue.serverTimestamp() },
+          { merge: true },
+        );
+        console.log(`Match completed for ${String(data?.title ?? d.id)}`);
+      })(),
+    );
+  });
+
+  if (jobs.length > 0) {
+    await Promise.allSettled(jobs);
+  }
 }
 
 router.post('/match-event', async (req, res) => {
@@ -263,24 +310,22 @@ router.post('/match-event', async (req, res) => {
 
 router.post('/refresh-food-cards', async (_req, res) => {
   try {
-    const db = getFirestoreDb();
-    const now = Date.now();
-    const expiredSnap = await db
-      .collection('food_cards')
-      .where('expiresAt', '<=', now)
-      .get();
-    const jobs = expiredSnap.docs.map(async (d) => {
-      await duplicateFoodCardDoc(d, 'expired');
-      await db.collection('food_cards').doc(d.id).delete();
-      console.log(`Expired card regenerated: ${String(d.data()?.title ?? d.id)}`);
-    });
-    await Promise.allSettled(jobs);
-    return res.json({ ok: true, regenerated: expiredSnap.size });
+    await runFoodCardsMaintenanceOnce();
+    return res.json({ ok: true });
   } catch (error) {
     console.error('refresh-food-cards error:', error);
     return res.status(500).json({ ok: false });
   }
 });
+
+if (!global.__foodCardsMaintenanceIntervalStarted) {
+  global.__foodCardsMaintenanceIntervalStarted = true;
+  setInterval(() => {
+    runFoodCardsMaintenanceOnce().catch((error) => {
+      console.error('food_cards maintenance loop error:', error);
+    });
+  }, 15000);
+}
 
 router.post('/', async (req, res) => {
   try {
