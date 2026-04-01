@@ -63,7 +63,6 @@ export default function ChatByIdScreen() {
   const [chatExists, setChatExists] = useState<boolean | null>(null);
   const [hasSyncedMessages, setHasSyncedMessages] = useState(false);
   const bootstrapAttemptedRef = useRef(false);
-  const aiBootstrapAttemptedRef = useRef(false);
   const listRef = useRef<FlatList<ChatMessage>>(null);
 
   useEffect(() => {
@@ -101,7 +100,6 @@ export default function ChatByIdScreen() {
     if (!chatId) return;
     setHasSyncedMessages(false);
     bootstrapAttemptedRef.current = false;
-    aiBootstrapAttemptedRef.current = false;
     const q = query(collection(db, 'chats', chatId, 'messages'), orderBy('createdAt', 'asc'));
     const unsub = onSnapshot(
       q,
@@ -137,7 +135,6 @@ export default function ChatByIdScreen() {
     (async () => {
       try {
         const welcome = 'You both joined this order 🍕';
-        const aiMessage = 'Hey! I can help you coordinate your order 🍕';
         await addDoc(collection(db, 'chats', chatId, 'messages'), {
           text: welcome,
           senderId: 'system',
@@ -152,23 +149,6 @@ export default function ChatByIdScreen() {
           lastMessage: welcome,
           lastMessageAt: Date.now(),
         }).catch(() => {});
-        if (!aiBootstrapAttemptedRef.current) {
-          aiBootstrapAttemptedRef.current = true;
-          await addDoc(collection(db, 'chats', chatId, 'messages'), {
-            text: aiMessage,
-            senderId: 'ai',
-            sender: 'ai',
-            userName: 'AI Assistant',
-            createdAt: Date.now(),
-            delivered: true,
-            seen: false,
-            system: true,
-          }).catch(() => {});
-          await updateDoc(doc(db, 'chats', chatId), {
-            lastMessage: aiMessage,
-            lastMessageAt: Date.now(),
-          }).catch(() => {});
-        }
       } catch {
         bootstrapAttemptedRef.current = false;
       }

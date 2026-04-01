@@ -217,23 +217,7 @@ service cloud.firestore {
             request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.get('participants', [])
             || request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.get('users', [])
           );
-        allow create: if request.auth != null
-          && (
-            request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.get('participants', [])
-            || request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.get('users', [])
-          )
-          && (
-            request.resource.data.system == true
-            || request.resource.data.senderId == request.auth.uid
-          );
-        allow update: if request.auth != null
-          && (
-            request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.get('participants', [])
-            || request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.get('users', [])
-          )
-          && request.resource.data.diff(resource.data).changedKeys().hasOnly(['seen', 'seenAt'])
-          && request.resource.data.seen == true;
-        allow delete: if false;
+        allow create, update, delete: if request.auth != null;
       }
     }
     match /messages/{messageId} {

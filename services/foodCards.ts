@@ -6,7 +6,6 @@ import {
   doc,
   getDoc,
   getDocs,
-  limit,
   onSnapshot,
   query,
   runTransaction,
@@ -135,41 +134,39 @@ export async function joinFoodCard(cardId: string): Promise<{
     { merge: true },
   );
 
-  const existingMessages = await getDocs(
-    query(collection(db, 'chats', chatId, 'messages'), limit(1)),
-  );
-  if (existingMessages.empty) {
-    const firstMessage = 'You both joined this order 🍕';
-    const aiMessage = 'Hey! I can help you coordinate your order 🍕';
-    await addDoc(collection(db, 'chats', chatId, 'messages'), {
-      text: firstMessage,
-      senderId: 'system',
-      sender: 'system',
-      userName: 'System',
-      createdAt: now,
-      delivered: true,
-      seen: false,
-      system: true,
-    }).catch(() => {});
-    await updateDoc(doc(db, 'chats', chatId), {
-      lastMessage: firstMessage,
-      lastMessageAt: Date.now(),
-    }).catch(() => {});
-    await addDoc(collection(db, 'chats', chatId, 'messages'), {
-      text: aiMessage,
-      senderId: 'ai',
-      sender: 'ai',
-      userName: 'AI Assistant',
-      createdAt: Date.now(),
-      delivered: true,
-      seen: false,
-      system: true,
-    }).catch(() => {});
-    await updateDoc(doc(db, 'chats', chatId), {
-      lastMessage: aiMessage,
-      lastMessageAt: Date.now(),
-    }).catch(() => {});
-  }
+  const firstMessage = 'You both joined this order 🍕';
+  const aiMessage = 'Hey! I can help you coordinate your order 🍕';
+  await addDoc(collection(db, 'chats', chatId, 'messages'), {
+    text: firstMessage,
+    senderId: 'system',
+    sender: 'system',
+    userName: 'System',
+    createdAt: now,
+    delivered: true,
+    seen: false,
+    system: true,
+  });
+  await updateDoc(doc(db, 'chats', chatId), {
+    lastMessage: firstMessage,
+    lastMessageAt: Date.now(),
+  });
+  console.log('System message added');
+  console.log('Adding AI message...');
+  await addDoc(collection(db, 'chats', chatId, 'messages'), {
+    text: aiMessage,
+    senderId: 'ai',
+    sender: 'ai',
+    userName: 'AI Assistant',
+    createdAt: Date.now(),
+    delivered: true,
+    seen: false,
+    system: true,
+  });
+  console.log('AI message added');
+  await updateDoc(doc(db, 'chats', chatId), {
+    lastMessage: aiMessage,
+    lastMessageAt: Date.now(),
+  });
 
   return { matched: true, chatId, otherUser: other };
 }
