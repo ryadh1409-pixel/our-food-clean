@@ -1,3 +1,4 @@
+import { useAuth } from '@/services/AuthContext';
 import * as Speech from 'expo-speech';
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -20,6 +21,7 @@ type Message = {
 };
 
 export default function ChatScreen() {
+  const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -59,7 +61,13 @@ export default function ChatScreen() {
       const res = await fetch('http://localhost:3000/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: outgoingText }),
+        body: JSON.stringify({
+          message: outgoingText,
+          user: {
+            uid: user?.uid ?? '',
+            name: user?.displayName ?? 'User',
+          },
+        }),
       });
 
       const data = (await res.json()) as { response?: string };
