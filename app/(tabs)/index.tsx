@@ -33,6 +33,7 @@ export default function SwipeScreen() {
   const [loading, setLoading] = useState(true);
   const [tick, setTick] = useState(0);
   const [joining, setJoining] = useState(false);
+  const [swipeDirection, setSwipeDirection] = useState<'left' | 'right' | null>(null);
   const pan = useRef(new Animated.ValueXY()).current;
   const swipeInFlightRef = useRef(false);
 
@@ -101,6 +102,7 @@ export default function SwipeScreen() {
       useNativeDriver: false,
     }).start(() => {
       pan.setValue({ x: 0, y: 0 });
+      setSwipeDirection(null);
       const action = dx > 0 ? onLike(cardId) : onSkip(cardId);
       Promise.resolve(action).finally(() => {
         swipeInFlightRef.current = false;
@@ -113,9 +115,15 @@ export default function SwipeScreen() {
       PanResponder.create({
         onStartShouldSetPanResponder: () => true,
         onMoveShouldSetPanResponder: () => true,
-        onPanResponderMove: (_, g) => pan.setValue({ x: g.dx, y: g.dy }),
+        onPanResponderMove: (_, g) => {
+          pan.setValue({ x: g.dx, y: g.dy });
+          if (g.dx > 8) setSwipeDirection('right');
+          else if (g.dx < -8) setSwipeDirection('left');
+          else setSwipeDirection(null);
+        },
         onPanResponderRelease: (_, g) => {
           if (!topCard || joining || swipeInFlightRef.current) {
+            setSwipeDirection(null);
             Animated.spring(pan, {
               toValue: { x: 0, y: 0 },
               useNativeDriver: false,
@@ -125,6 +133,7 @@ export default function SwipeScreen() {
           if (g.dx > SWIPE_TRIGGER) swipe(1, topCard.id);
           else if (g.dx < -SWIPE_TRIGGER) swipe(-1, topCard.id);
           else {
+            setSwipeDirection(null);
             Animated.spring(pan, {
               toValue: { x: 0, y: 0 },
               useNativeDriver: false,
@@ -148,6 +157,11 @@ export default function SwipeScreen() {
   const nopeOpacity = pan.x.interpolate({
     inputRange: [-120, -20],
     outputRange: [1, 0],
+    extrapolate: 'clamp',
+  });
+  const emojiOpacity = pan.x.interpolate({
+    inputRange: [-120, -20, 0, 20, 120],
+    outputRange: [1, 0.25, 0, 0.25, 1],
     extrapolate: 'clamp',
   });
 
@@ -180,6 +194,13 @@ export default function SwipeScreen() {
             <Animated.View style={[styles.swipeBadgeRight, { opacity: joinOpacity }]}>
               <Text style={styles.swipeBadgeTextRight}>JOIN ❤️</Text>
             </Animated.View>
+            {swipeDirection ? (
+              <Animated.View style={[styles.emojiOverlay, { opacity: emojiOpacity }]}>
+                <Text style={styles.emojiOverlayText}>
+                  {swipeDirection === 'right' ? '❤️' : '❌'}
+                </Text>
+              </Animated.View>
+            ) : null}
             <View style={styles.info}>
               <Text style={styles.cardTitle}>{topCard.title}</Text>
               <Text style={styles.meta}>${topCard.splitPrice.toFixed(2)} each</Text>
@@ -266,6 +287,23 @@ const styles = StyleSheet.create({
   },
   swipeBadgeTextLeft: { color: '#fda4af', fontWeight: '900', letterSpacing: 1.2 },
   swipeBadgeTextRight: { color: '#6ee7b7', fontWeight: '900', letterSpacing: 1.2 },
+  emojiOverlay: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 9,
+    pointerEvents: 'none',
+  },
+  emojiOverlayText: {
+    fontSize: 96,
+    textShadowColor: 'rgba(0,0,0,0.45)',
+    textShadowOffset: { width: 0, height: 3 },
+    textShadowRadius: 8,
+  },
   actions: { flexDirection: 'row', gap: 12, padding: 16 },
   btn: {
     flex: 1,

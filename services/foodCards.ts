@@ -140,6 +140,7 @@ export async function joinFoodCard(cardId: string): Promise<{
   );
   if (existingMessages.empty) {
     const firstMessage = 'You both joined this order 🍕';
+    const aiMessage = 'Hey! I can help you coordinate your order 🍕';
     await addDoc(collection(db, 'chats', chatId, 'messages'), {
       text: firstMessage,
       senderId: 'system',
@@ -154,38 +155,20 @@ export async function joinFoodCard(cardId: string): Promise<{
       lastMessage: firstMessage,
       lastMessageAt: Date.now(),
     }).catch(() => {});
-
-    try {
-      const res = await fetch('http://localhost:3000/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: firstMessage,
-          user: { uid, name: userName },
-          chatId,
-        }),
-      });
-      const data = (await res.json()) as { response?: string; reply?: string };
-      const aiReply = (data.reply ?? data.response ?? '').trim();
-      if (aiReply) {
-        await addDoc(collection(db, 'chats', chatId, 'messages'), {
-          text: aiReply,
-          senderId: 'ai',
-          sender: 'ai',
-          userName: 'AI Assistant',
-          createdAt: Date.now(),
-          delivered: true,
-          seen: false,
-          system: true,
-        });
-        await updateDoc(doc(db, 'chats', chatId), {
-          lastMessage: aiReply,
-          lastMessageAt: Date.now(),
-        }).catch(() => {});
-      }
-    } catch {
-      // Keep match flow resilient if AI endpoint is unavailable.
-    }
+    await addDoc(collection(db, 'chats', chatId, 'messages'), {
+      text: aiMessage,
+      senderId: 'ai',
+      sender: 'ai',
+      userName: 'AI Assistant',
+      createdAt: Date.now(),
+      delivered: true,
+      seen: false,
+      system: true,
+    }).catch(() => {});
+    await updateDoc(doc(db, 'chats', chatId), {
+      lastMessage: aiMessage,
+      lastMessageAt: Date.now(),
+    }).catch(() => {});
   }
 
   return { matched: true, chatId, otherUser: other };

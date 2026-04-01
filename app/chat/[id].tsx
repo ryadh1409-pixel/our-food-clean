@@ -137,6 +137,7 @@ export default function ChatByIdScreen() {
     (async () => {
       try {
         const welcome = 'You both joined this order 🍕';
+        const aiMessage = 'Hey! I can help you coordinate your order 🍕';
         await addDoc(collection(db, 'chats', chatId, 'messages'), {
           text: welcome,
           senderId: 'system',
@@ -153,40 +154,20 @@ export default function ChatByIdScreen() {
         }).catch(() => {});
         if (!aiBootstrapAttemptedRef.current) {
           aiBootstrapAttemptedRef.current = true;
-          try {
-            const res = await fetch('http://localhost:3000/chat', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                message: welcome,
-                user: {
-                  uid: auth.currentUser?.uid ?? '',
-                  name: auth.currentUser?.displayName ?? 'User',
-                },
-                chatId,
-              }),
-            });
-            const data = (await res.json()) as { response?: string; reply?: string };
-            const aiReply = (data.reply ?? data.response ?? '').trim();
-            if (aiReply) {
-              await addDoc(collection(db, 'chats', chatId, 'messages'), {
-                text: aiReply,
-                senderId: 'ai',
-                sender: 'ai',
-                userName: 'AI Assistant',
-                createdAt: Date.now(),
-                delivered: true,
-                seen: false,
-                system: true,
-              });
-              await updateDoc(doc(db, 'chats', chatId), {
-                lastMessage: aiReply,
-                lastMessageAt: Date.now(),
-              }).catch(() => {});
-            }
-          } catch {
-            aiBootstrapAttemptedRef.current = false;
-          }
+          await addDoc(collection(db, 'chats', chatId, 'messages'), {
+            text: aiMessage,
+            senderId: 'ai',
+            sender: 'ai',
+            userName: 'AI Assistant',
+            createdAt: Date.now(),
+            delivered: true,
+            seen: false,
+            system: true,
+          }).catch(() => {});
+          await updateDoc(doc(db, 'chats', chatId), {
+            lastMessage: aiMessage,
+            lastMessageAt: Date.now(),
+          }).catch(() => {});
         }
       } catch {
         bootstrapAttemptedRef.current = false;
