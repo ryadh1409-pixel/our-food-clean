@@ -26,7 +26,7 @@ export type FoodCard = {
   location: { latitude: number; longitude: number } | null;
   createdAt: Timestamp | null;
   expiresAt: number;
-  status: 'waiting' | 'matched';
+  status: 'waiting' | 'matched' | 'full';
   ownerId?: string;
   joinedUsers?: string[];
   maxUsers?: number;
@@ -159,6 +159,66 @@ export async function joinFoodCard(cardId: string): Promise<{
   console.log('System added');
 
   return { matched: true, chatId, otherUser: other };
+}
+
+export type JoinOrderResult = {
+  /** True when this uid was already listed in `joinedUsers` (no write performed). */
+  alreadyJoined: boolean;
+  /** True after this join when `joinedUsers.length` reached `maxUsers`. */
+  isFull: boolean;
+};
+
+/**
+ * Join a food card order by appending the current user to `joinedUsers`, using a
+ * transaction so concurrent joins cannot oversubscribe.
+ */
+export async function joinOrder(cardId: string): Promise<JoinOrderResult> {
+  const trimmed = cardId.trim();
+  if (!trimmed) throw new Error('Invalid card');
+
+  const uid = auth.currentUser?.uid;
+  if (!uid) throw new Error('Sign in required');
+
+  const cardRef = doc(db, FOOD_CARDS, trimmed);
+
+  return runTransaction(db, async (tx) => {
+    const snap = await tx.get(cardRef);
+    if (!snap.exists()) throw new Error('Card not found');
+
+    const data = snap.data() as Record<string, unknown>;
+    const status = typeof data.status === 'string' ? data.status : '';
+    if (status !== 'waiting') {
+      throw new Error('This order is not open for joining');
+    }
+
+    const maxUsers =
+      typeof data.maxUsers === 'number' && data.maxUsers > 0 ? data.maxUsers : 2;
+
+    const joinedUsers = Array.isArray(data.joinedUsers)
+      ? data.joinedUsers.filter((x): x is string => typeof x === 'string' && x.length > 0)
+      : [];
+
+    if (joinedUsers.includes(uid)) {
+      return {
+        alreadyJoined: true,
+        isFull: joinedUsers.length >= maxUsers,
+      };
+    }
+
+    if (joinedUsers.length >= maxUsers) {
+      throw new Error('Order is full');
+    }
+
+    const nextJoined = [...joinedUsers, uid];
+    const isFull = nextJoined.length >= maxUsers;
+
+    tx.update(cardRef, {
+      joinedUsers: nextJoined,
+      status: isFull ? 'full' : 'waiting',
+    });
+
+    return { alreadyJoined: false, isFull };
+  });
 }
 
 export async function createFoodCard(input: {

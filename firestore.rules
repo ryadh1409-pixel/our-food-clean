@@ -215,23 +215,51 @@ service cloud.firestore {
       return isSignedIn() && request.auth.token.email == 'support@halforder.app';
     }
 
+    function foodCardMaxUsersCap() {
+      return resource.data.keys().hasAll(['maxUsers'])
+        && resource.data.maxUsers is int
+        && resource.data.maxUsers > 0
+        ? resource.data.maxUsers
+        : 2;
+    }
+
+    function isValidFoodCardJoinedUsersJoinUpdate() {
+      let prevJoin = resource.data.get('joinedUsers', []);
+      let cap = foodCardMaxUsersCap();
+      let nextJoin = request.resource.data.joinedUsers;
+      return resource.data.status == 'waiting'
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly(['joinedUsers', 'status'])
+        && nextJoin is list
+        && prevJoin is list
+        && nextJoin.hasAll(prevJoin)
+        && nextJoin.size() == prevJoin.size() + 1
+        && nextJoin.hasAny([request.auth.uid])
+        && !prevJoin.hasAny([request.auth.uid])
+        && request.resource.data.status == (nextJoin.size() >= cap ? 'full' : 'waiting');
+    }
+
     function isValidFoodCardJoinUpdate() {
       return isSignedIn()
-        && request.resource.data.diff(resource.data).changedKeys().hasOnly(['user1', 'user2', 'status', 'createdAt'])
-        && resource.data.status == 'waiting'
         && (
           (
-            resource.data.user1 == null
-            && request.resource.data.user1.uid == request.auth.uid
-            && request.resource.data.status == 'waiting'
+            request.resource.data.diff(resource.data).changedKeys().hasOnly(['user1', 'user2', 'status', 'createdAt'])
+            && resource.data.status == 'waiting'
+            && (
+              (
+                resource.data.user1 == null
+                && request.resource.data.user1.uid == request.auth.uid
+                && request.resource.data.status == 'waiting'
+              )
+              || (
+                resource.data.user1.uid is string
+                && resource.data.user1.uid != request.auth.uid
+                && resource.data.user2 == null
+                && request.resource.data.user2.uid == request.auth.uid
+                && request.resource.data.status == 'matched'
+              )
+            )
           )
-          || (
-            resource.data.user1.uid is string
-            && resource.data.user1.uid != request.auth.uid
-            && resource.data.user2 == null
-            && request.resource.data.user2.uid == request.auth.uid
-            && request.resource.data.status == 'matched'
-          )
+          || isValidFoodCardJoinedUsersJoinUpdate()
         );
     }
 
