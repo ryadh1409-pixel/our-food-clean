@@ -28,6 +28,7 @@ type ChatMessage = {
   id: string;
   text: string;
   senderId: string;
+  sender: string;
   userName: string;
   createdAtMs: number;
 };
@@ -63,6 +64,7 @@ export default function ChatByIdScreen() {
   const [chatExists, setChatExists] = useState<boolean | null>(null);
   const [hasSyncedMessages, setHasSyncedMessages] = useState(false);
   const bootstrapAttemptedRef = useRef(false);
+  const aiInsertAttemptedRef = useRef(false);
   const listRef = useRef<FlatList<ChatMessage>>(null);
 
   useEffect(() => {
@@ -100,6 +102,7 @@ export default function ChatByIdScreen() {
     if (!chatId) return;
     setHasSyncedMessages(false);
     bootstrapAttemptedRef.current = false;
+    aiInsertAttemptedRef.current = false;
     const q = query(collection(db, 'chats', chatId, 'messages'), orderBy('createdAt', 'asc'));
     const unsub = onSnapshot(
       q,
@@ -154,6 +157,25 @@ export default function ChatByIdScreen() {
       }
     })();
   }, [chatId, chatExists, hasSyncedMessages, messages.length]);
+
+  useEffect(() => {
+    if (!chatId) return;
+    if (!messages.length) return;
+
+    const hasAI = messages.some((m) => m.sender === 'ai');
+
+    if (!hasAI && !aiInsertAttemptedRef.current) {
+      aiInsertAttemptedRef.current = true;
+      addDoc(collection(db, 'chats', chatId, 'messages'), {
+        text: 'Hey! I can help you coordinate your order 🍕',
+        sender: 'ai',
+        createdAt: Date.now(),
+      }).catch(() => {
+        aiInsertAttemptedRef.current = false;
+      });
+      console.log('AI inserted from chat screen');
+    }
+  }, [chatId, messages]);
 
   useEffect(() => {
     if (messages.length === 0) return;

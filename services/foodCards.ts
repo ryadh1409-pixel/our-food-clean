@@ -89,24 +89,23 @@ export async function joinFoodCard(cardId: string): Promise<{
       throw new Error('Card already matched');
     }
 
+    const host = data.user1;
     tx.update(cardRef, {
       user2: self,
       status: 'matched',
     });
-    return { matched: true as const };
+    return {
+      matched: true as const,
+      user1: host,
+      user2: self,
+    };
   });
 
   if (!txResult.matched) {
     return { matched: false };
   }
 
-  const refreshedSnap = await getDoc(cardRef);
-  if (!refreshedSnap.exists()) {
-    return { matched: false };
-  }
-  const refreshed = refreshedSnap.data() as Omit<FoodCard, 'id'>;
-  const user1 = refreshed.user1 ?? null;
-  const user2 = refreshed.user2 ?? null;
+  const { user1, user2 } = txResult;
   if (!user1?.uid || !user2?.uid) {
     return { matched: false };
   }
@@ -135,7 +134,6 @@ export async function joinFoodCard(cardId: string): Promise<{
   );
 
   const firstMessage = 'You both joined this order 🍕';
-  const aiMessage = 'Hey! I can help you coordinate your order 🍕';
   await addDoc(collection(db, 'chats', chatId, 'messages'), {
     text: firstMessage,
     senderId: 'system',
@@ -150,23 +148,7 @@ export async function joinFoodCard(cardId: string): Promise<{
     lastMessage: firstMessage,
     lastMessageAt: Date.now(),
   });
-  console.log('System message added');
-  console.log('Adding AI message...');
-  await addDoc(collection(db, 'chats', chatId, 'messages'), {
-    text: aiMessage,
-    senderId: 'ai',
-    sender: 'ai',
-    userName: 'AI Assistant',
-    createdAt: Date.now(),
-    delivered: true,
-    seen: false,
-    system: true,
-  });
-  console.log('AI message added');
-  await updateDoc(doc(db, 'chats', chatId), {
-    lastMessage: aiMessage,
-    lastMessageAt: Date.now(),
-  });
+  console.log('System added');
 
   return { matched: true, chatId, otherUser: other };
 }

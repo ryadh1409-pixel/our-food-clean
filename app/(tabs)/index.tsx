@@ -67,18 +67,18 @@ export default function SwipeScreen() {
         matched: result.matched,
         chatId: result.chatId ?? null,
       });
-      if (result.matched === true) {
+      if (result.chatId) {
         removeTop();
         console.log('[swipe] navigating to chat:', {
           pathname: '/chat/[id]',
-          id: String(targetId),
+          id: String(result.chatId),
         });
         router.push({
           pathname: '/chat/[id]',
-          params: { id: String(targetId) },
+          params: { id: String(result.chatId) },
         } as never);
       } else {
-        console.log('[swipe] no match, stay on swipe deck:', { cardId: targetId });
+        console.log('[swipe] no chat yet, stay on swipe deck:', { cardId: targetId });
         removeTop();
       }
     } finally {
