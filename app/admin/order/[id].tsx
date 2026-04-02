@@ -3,14 +3,25 @@ import { adminRoutes } from '@/constants/adminRoutes';
 import { adminCardShell, adminColors as COLORS } from '@/constants/adminTheme';
 import { theme } from '@/constants/theme';
 import { adminLog } from '@/lib/admin/adminDebug';
+import { adminDeleteOrderDeep } from '@/lib/admin/deleteOrderAdmin';
 import {
   formatFirestoreTime,
+  formatMillisToronto,
   formatParticipantPreview,
   orderCreatorUid,
+  orderDisplayPriceLabel,
+  orderDisplayTitle,
+  orderExpiresAtMs,
   orderParticipantUids,
 } from '@/lib/admin/orderHelpers';
 import { db } from '@/services/firebase';
-import { collection, doc, onSnapshot, serverTimestamp, updateDoc } from 'firebase/firestore';
+import {
+  collection,
+  doc,
+  onSnapshot,
+  serverTimestamp,
+  updateDoc,
+} from 'firebase/firestore';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
@@ -28,7 +39,7 @@ type Msg = { id: string; text: string; at: string; atMs: number };
 
 export default function AdminOrderDetailScreen() {
   const router = useRouter();
-  const { orderId: raw } = useLocalSearchParams<{ orderId: string }>();
+  const { id: raw } = useLocalSearchParams<{ id: string }>();
   const orderId = typeof raw === 'string' ? raw.trim() : '';
   const [data, setData] = useState<Record<string, unknown> | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -111,6 +122,34 @@ export default function AdminOrderDetailScreen() {
     ]);
   };
 
+  const confirmDelete = () => {
+    if (!orderId) return;
+    Alert.alert(
+      'Delete order',
+      'Permanently remove this order and its messages/ratings subcollections?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setSaving(true);
+            try {
+              adminLog('order-detail', 'adminDeleteOrderDeep', { orderId });
+              await adminDeleteOrderDeep(orderId);
+              Alert.alert('Deleted', 'Order removed.');
+              router.replace(adminRoutes.orders() as never);
+            } catch (e) {
+              Alert.alert('Error', e instanceof Error ? e.message : 'Failed');
+            } finally {
+              setSaving(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
   if (!orderId) {
     return (
       <SafeAreaView style={styles.screen}>
@@ -143,6 +182,9 @@ export default function AdminOrderDetailScreen() {
   const participantIds = orderParticipantUids(record);
   const creator = orderCreatorUid(record);
   const terminal = ['cancelled', 'completed', 'expired'].includes(status);
+  const title = orderDisplayTitle(record, orderId);
+  const price = orderDisplayPriceLabel(record);
+  const expMs = orderExpiresAtMs(record);
 
   return (
     <SafeAreaView style={styles.screen} edges={['bottom']}>
@@ -154,12 +196,20 @@ export default function AdminOrderDetailScreen() {
       />
       <ScrollView contentContainerStyle={styles.scroll}>
         <View style={styles.card}>
+          <Text style={styles.k}>Title</Text>
+          <Text style={styles.v}>{title}</Text>
+          <Text style={styles.k}>Price</Text>
+          <Text style={styles.v}>{price}</Text>
           <Text style={styles.k}>Order id</Text>
           <Text style={styles.mono}>{orderId}</Text>
           <Text style={styles.k}>Status</Text>
           <Text style={styles.v}>{status}</Text>
           <Text style={styles.k}>Created</Text>
           <Text style={styles.v}>{formatFirestoreTime(data.createdAt)}</Text>
+          <Text style={styles.k}>Expires</Text>
+          <Text style={styles.v}>
+            {expMs != null ? formatMillisToronto(expMs) : '—'}
+          </Text>
           <Text style={styles.k}>Creator</Text>
           <TouchableOpacity
             disabled={!creator}
@@ -174,10 +224,14 @@ export default function AdminOrderDetailScreen() {
             </Text>
           </TouchableOpacity>
           <Text style={styles.k}>
-            Participants ({participantIds.length}) — {formatParticipantPreview(participantIds, 6)}
+            Participants ({participantIds.length}) —{' '}
+            {formatParticipantPreview(participantIds, 6)}
           </Text>
           {participantIds.map((p) => (
-            <TouchableOpacity key={p} onPress={() => router.push(adminRoutes.user(p) as never)}>
+            <TouchableOpacity
+              key={p}
+              onPress={() => router.push(adminRoutes.user(p) as never)}
+            >
               <Text style={styles.part}>{p}</Text>
             </TouchableOpacity>
           ))}
@@ -223,8 +277,18 @@ export default function AdminOrderDetailScreen() {
             </TouchableOpacity>
           </View>
         ) : (
-          <Text style={styles.muted}>Terminal status — no actions.</Text>
+          <Text style={styles.muted}>Terminal status — cancel/complete disabled.</Text>
         )}
+
+        <View style={styles.actions}>
+          <TouchableOpacity
+            style={[styles.btn, styles.deleteBtn]}
+            disabled={saving}
+            onPress={confirmDelete}
+          >
+            <Text style={styles.deleteT}>{saving ? '…' : 'Delete order (Firestore)'}</Text>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -266,4 +330,10 @@ const styles = StyleSheet.create({
   dangerT: { fontWeight: '800', color: COLORS.error },
   ok: { backgroundColor: COLORS.successBg },
   okT: { fontWeight: '800', color: COLORS.successText },
+  deleteBtn: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: COLORS.error,
+  },
+  deleteT: { fontWeight: '800', color: COLORS.error },
 });

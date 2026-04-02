@@ -2,6 +2,7 @@
 export const adminRoutes = {
   home: '/admin',
   dashboard: '/admin/dashboard',
+  analytics: '/admin/analytics',
   users: '/admin/users',
   user: (id: string) => `/admin/user/${encodeURIComponent(id)}`,
   orders: (params?: { filter?: string }) =>

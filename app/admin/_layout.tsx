@@ -26,7 +26,8 @@ export default function AdminLayout() {
       <Stack.Screen name="users" options={{ title: 'Users' }} />
       <Stack.Screen name="user/[id]" options={{ title: 'User' }} />
       <Stack.Screen name="orders" options={{ title: 'Orders' }} />
-      <Stack.Screen name="order/[orderId]" options={{ title: 'Order' }} />
+      <Stack.Screen name="order/[id]" options={{ title: 'Order' }} />
+      <Stack.Screen name="analytics" options={{ title: 'Analytics' }} />
       <Stack.Screen name="reports" options={{ title: 'Reports' }} />
       <Stack.Screen name="report/[id]" options={{ title: 'Report' }} />
       <Stack.Screen name="complaints" options={{ title: 'User Complaints' }} />

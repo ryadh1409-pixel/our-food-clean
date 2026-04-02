@@ -48,16 +48,71 @@ export function isActiveOrderStatus(status: string): boolean {
   ].includes(status);
 }
 
-export function formatFirestoreTime(v: unknown): string {
+/** All admin-visible timestamps use Toronto (product region). */
+const TORONTO_LOCALE: Intl.DateTimeFormatOptions = {
+  timeZone: 'America/Toronto',
+};
+
+export function firestoreTimeToMs(v: unknown): number | null {
   if (v && typeof v === 'object' && v !== null && 'toMillis' in v) {
     const fn = (v as { toMillis?: () => number }).toMillis;
     if (typeof fn === 'function') {
       const ms = fn.call(v);
-      return ms ? new Date(ms).toLocaleString() : '—';
+      return typeof ms === 'number' && Number.isFinite(ms) ? ms : null;
     }
   }
   if (typeof v === 'number' && Number.isFinite(v)) {
-    return new Date(v).toLocaleString();
+    return v;
+  }
+  if (typeof v === 'string' && v.trim() && !Number.isNaN(Date.parse(v))) {
+    return Date.parse(v);
+  }
+  return null;
+}
+
+export function formatFirestoreTime(v: unknown): string {
+  const ms = firestoreTimeToMs(v);
+  if (ms == null) return '—';
+  return new Date(ms).toLocaleString('en-CA', TORONTO_LOCALE);
+}
+
+export function formatMillisToronto(ms: number): string {
+  if (!Number.isFinite(ms)) return '—';
+  return new Date(ms).toLocaleString('en-CA', TORONTO_LOCALE);
+}
+
+export function orderDisplayTitle(
+  data: Record<string, unknown>,
+  fallbackDocId: string,
+): string {
+  const food =
+    typeof data.foodName === 'string' && data.foodName.trim()
+      ? data.foodName.trim()
+      : '';
+  const title =
+    typeof data.title === 'string' && data.title.trim() ? data.title.trim() : '';
+  const rest =
+    typeof data.restaurantName === 'string' && data.restaurantName.trim()
+      ? data.restaurantName.trim()
+      : '';
+  return food || title || rest || fallbackDocId.slice(0, 8);
+}
+
+export function orderDisplayPriceLabel(data: Record<string, unknown>): string {
+  const total = data.totalPrice ?? data.price;
+  const split = data.splitPrice ?? data.sharePrice;
+  if (typeof total === 'number' && Number.isFinite(total)) {
+    return `$${total.toFixed(2)} total`;
+  }
+  if (typeof split === 'number' && Number.isFinite(split)) {
+    return `$${split.toFixed(2)} / share`;
   }
   return '—';
+}
+
+export function orderExpiresAtMs(data: Record<string, unknown>): number | null {
+  const exp = data.expiresAt;
+  if (typeof exp === 'number' && Number.isFinite(exp)) return exp;
+  const ms = firestoreTimeToMs(exp);
+  return ms;
 }

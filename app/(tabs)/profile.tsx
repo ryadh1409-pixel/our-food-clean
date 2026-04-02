@@ -3,6 +3,11 @@ import { KEYBOARD_TOOLBAR_NATIVE_ID, KeyboardToolbar } from '@/components/Keyboa
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { isAdminUser } from '@/constants/adminUid';
 import { shadows, theme } from '@/constants/theme';
+import {
+  formatUserDateOfBirthLong,
+  isValidOptionalIsoDate,
+  normalizeDateOfBirthFromFirestore,
+} from '@/lib/formatUserDateOfBirth';
 import { useTrustScore } from '@/hooks/useTrustScore';
 import { useAuth } from '@/services/AuthContext';
 import {
@@ -25,6 +30,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useRouter, type Href } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import {
+  deleteField,
   doc,
   getDoc,
   onSnapshot,
@@ -109,6 +115,7 @@ function mapUsersCollectionToProfile(
   ordersCount: number;
   averageRating: number;
   totalRatings: number;
+  dateOfBirthIso: string;
 } {
   const authDisplay = authUser?.displayName?.trim() ?? '';
   const photoURL = resolvePhotoURL(data, authUser);
@@ -122,6 +129,7 @@ function mapUsersCollectionToProfile(
       ordersCount: 0,
       averageRating: 0,
       totalRatings: 0,
+      dateOfBirthIso: '',
     };
   }
 
@@ -151,6 +159,7 @@ function mapUsersCollectionToProfile(
     ordersCount: orders,
     averageRating: pickRatingAverage(data),
     totalRatings: pickRatingCount(data),
+    dateOfBirthIso: normalizeDateOfBirthFromFirestore(data.dateOfBirth),
   };
 }
 
@@ -209,6 +218,8 @@ export default function ProfileScreen() {
   const [nameErrorMessage, setNameErrorMessage] = useState('');
   const [initialDisplayName, setInitialDisplayName] = useState('');
   const [initialPhone, setInitialPhone] = useState('');
+  const [dateOfBirthInput, setDateOfBirthInput] = useState('');
+  const [initialDateOfBirth, setInitialDateOfBirth] = useState('');
   const [ordersCount, setOrdersCount] = useState<number>(0);
   const [averageRating, setAverageRating] = useState(0);
   const [totalRatings, setTotalRatings] = useState(0);
@@ -259,6 +270,8 @@ export default function ProfileScreen() {
         setPhotoURL(mapped.photoURL);
         setPhone(mapped.phone);
         setInitialPhone(mapped.phone);
+        setDateOfBirthInput(mapped.dateOfBirthIso);
+        setInitialDateOfBirth(mapped.dateOfBirthIso);
 
         setProfileLoading(false);
       },
@@ -275,6 +288,8 @@ export default function ProfileScreen() {
         setPhotoURL(mapped.photoURL);
         setPhone(mapped.phone);
         setInitialPhone(mapped.phone);
+        setDateOfBirthInput(mapped.dateOfBirthIso);
+        setInitialDateOfBirth(mapped.dateOfBirthIso);
         setProfileLoading(false);
       },
     );
@@ -328,6 +343,14 @@ export default function ProfileScreen() {
       Alert.alert('Display name', mod.reason);
       return;
     }
+    const dobTrim = dateOfBirthInput.trim();
+    if (!isValidOptionalIsoDate(dobTrim)) {
+      Alert.alert(
+        'Date of birth',
+        'Use YYYY-MM-DD (e.g. 1989-06-12) or leave blank.',
+      );
+      return;
+    }
     if (nameFeedbackClearRef.current != null) {
       clearTimeout(nameFeedbackClearRef.current);
       nameFeedbackClearRef.current = null;
@@ -349,6 +372,9 @@ export default function ProfileScreen() {
           name: mod.text,
           avatar: currentUser.photoURL ?? null,
           phone: trimmedPhone,
+          ...(dobTrim
+            ? { dateOfBirth: dobTrim }
+            : { dateOfBirth: deleteField() }),
         },
         { merge: true },
       );
@@ -356,6 +382,8 @@ export default function ProfileScreen() {
       setInitialDisplayName(mod.text);
       setPhone(trimmedPhone);
       setInitialPhone(trimmedPhone);
+      setDateOfBirthInput(dobTrim);
+      setInitialDateOfBirth(dobTrim);
       setNameSaved(true);
       setNameSuccessMessage('Name updated');
       nameFeedbackClearRef.current = setTimeout(() => {
@@ -570,7 +598,8 @@ export default function ProfileScreen() {
     !savingName &&
     displayNameInput.trim().length > 0 &&
     (displayNameInput.trim() !== initialDisplayName.trim() ||
-      phone.trim() !== initialPhone.trim());
+      phone.trim() !== initialPhone.trim() ||
+      dateOfBirthInput.trim() !== initialDateOfBirth.trim());
   const saveButtonLabel = savingName ? 'Saving…' : nameSaved ? 'Saved ✓' : 'Save name';
   const initialLetter = displayName.slice(0, 1).toUpperCase() || '?';
 
@@ -640,7 +669,7 @@ export default function ProfileScreen() {
   return (
     <SafeAreaView style={dynamicStyles.container} edges={['top']}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
-      <KeyboardToolbar focusedIndex={focusedInputIndex} totalInputs={2} />
+      <KeyboardToolbar focusedIndex={focusedInputIndex} totalInputs={3} />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -752,6 +781,29 @@ export default function ProfileScreen() {
               }
               onFocus={() => setFocusedInputIndex(1)}
             />
+            <Text style={dynamicStyles.label}>Date of birth</Text>
+            <TextInput
+              style={dynamicStyles.input}
+              value={dateOfBirthInput}
+              onChangeText={setDateOfBirthInput}
+              placeholder="YYYY-MM-DD (optional)"
+              placeholderTextColor={pal.textTertiary}
+              editable={!savingName}
+              autoCapitalize="none"
+              keyboardType="numbers-and-punctuation"
+              inputAccessoryViewID={
+                Platform.OS === 'ios' ? KEYBOARD_TOOLBAR_NATIVE_ID : undefined
+              }
+              onFocus={() => setFocusedInputIndex(2)}
+            />
+            {(() => {
+              const dobPreview = dateOfBirthInput.trim()
+                ? formatUserDateOfBirthLong(dateOfBirthInput.trim())
+                : null;
+              return dobPreview ? (
+                <Text style={dynamicStyles.dobFormatted}>{dobPreview}</Text>
+              ) : null;
+            })()}
             <TouchableOpacity
               style={[
                 dynamicStyles.primaryButton,
@@ -1161,6 +1213,13 @@ function createDynamicStyles(pal: Palette, isDarkMode: boolean) {
       fontSize: 16,
       color: pal.text,
       backgroundColor: pal.inputBg,
+      marginBottom: 12,
+    },
+    dobFormatted: {
+      fontSize: 15,
+      fontWeight: '600',
+      color: pal.textSecondary,
+      marginTop: -8,
       marginBottom: 12,
     },
     primaryButton: {

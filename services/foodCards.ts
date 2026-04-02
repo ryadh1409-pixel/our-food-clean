@@ -168,12 +168,20 @@ export type JoinOrderResult = {
   isFull: boolean;
 };
 
-/** Disable the food-card Join control when signed out, already in `joinedUsers`, or at capacity. */
+function isCardOwnedByUser(card: FoodCard, uid: string): boolean {
+  if (typeof card.ownerId === 'string' && card.ownerId === uid) return true;
+  if (card.user1?.uid === uid) return true;
+  return false;
+}
+
+/** Disable the food-card Join control when signed out, already in `joinedUsers`, at capacity, admin preview, or own card. */
 export function isFoodCardJoinDisabled(
   card: FoodCard,
   uid: string | undefined,
 ): boolean {
   if (!uid) return true;
+  if (uid === ADMIN_UID) return true;
+  if (isCardOwnedByUser(card, uid)) return true;
   const cap =
     typeof card.maxUsers === 'number' && card.maxUsers > 0 ? card.maxUsers : 2;
   const joined = Array.isArray(card.joinedUsers)
@@ -210,6 +218,15 @@ export async function joinOrder(
     const status = typeof data.status === 'string' ? data.status : '';
     if (status !== 'waiting') {
       throw new Error('This order is not open for joining');
+    }
+
+    const ownerId = typeof data.ownerId === 'string' ? data.ownerId : '';
+    if (ownerId && ownerId === authedUid) {
+      throw new Error('You cannot join your own card');
+    }
+    const u1 = data.user1 as { uid?: string } | null | undefined;
+    if (u1 && typeof u1.uid === 'string' && u1.uid === authedUid) {
+      throw new Error('You cannot join your own card');
     }
 
     const maxUsers =

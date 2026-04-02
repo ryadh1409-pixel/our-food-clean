@@ -395,19 +395,23 @@ export default function AdminScreen() {
               </Text>
               <Text style={styles.cardCta}>Orders data →</Text>
             </TouchableOpacity>
-            <View style={styles.card}>
-              <Text style={styles.cardLabel}>Active Cards</Text>
-              <Text style={styles.cardValue}>{metrics.activeCards}</Text>
-              <Text style={styles.cardHint}>Listed above (food card tool)</Text>
-            </View>
             <TouchableOpacity
               style={styles.card}
               activeOpacity={0.85}
-              onPress={() => router.push('/explore' as never)}
+              onPress={() => router.push(adminRoutes.orders())}
+            >
+              <Text style={styles.cardLabel}>Active Cards</Text>
+              <Text style={styles.cardValue}>{metrics.activeCards}</Text>
+              <Text style={styles.cardCta}>Open orders (admin) →</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.card}
+              activeOpacity={0.85}
+              onPress={() => router.push(adminRoutes.analytics)}
             >
               <Text style={styles.cardLabel}>Total Matches</Text>
               <Text style={styles.cardValue}>{metrics.totalMatches}</Text>
-              <Text style={styles.cardCta}>Open browse feed →</Text>
+              <Text style={styles.cardCta}>Admin analytics →</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.card}

@@ -1,3 +1,4 @@
+import { isAdminUser } from '@/constants/adminUid';
 import { theme } from '@/constants/theme';
 import { useAuth } from '@/services/AuthContext';
 import {
@@ -63,16 +64,27 @@ export default function SwipeScreen() {
     return () => clearInterval(id);
   }, []);
 
-  const topCard = cards[0] ?? null;
-  const secondCard = cards[1] ?? null;
   const uid = user?.uid;
-  /** Block swipe / primary join when signed in but cannot join this card (already in, full, etc.). */
+  const adminPreview = isAdminUser(user);
+  const deckCards = useMemo(() => {
+    if (adminPreview && uid) {
+      return cards.filter(
+        (c) => typeof c.ownerId !== 'string' || c.ownerId !== uid,
+      );
+    }
+    return cards;
+  }, [cards, adminPreview, uid]);
+  const topCard = deckCards[0] ?? null;
+  const secondCard = deckCards[1] ?? null;
+  /** Block swipe / primary join when signed in but cannot join this card (already in, full, admin, own card, etc.). */
   const joinBlockedForUser =
     !!uid && !!topCard && isFoodCardJoinDisabled(topCard, uid);
   const joinPrimaryDisabled =
     !topCard || joining || (!!uid && joinBlockedForUser);
 
-  const removeTop = () => setCards((prev) => prev.slice(1));
+  const removeCardById = (cardId: string) => {
+    setCards((prev) => prev.filter((c) => c.id !== cardId));
+  };
 
   const onLike = async (cardId?: string) => {
     const targetId = cardId ?? topCard?.id;
@@ -98,7 +110,7 @@ export default function SwipeScreen() {
       } else if (result.isFull) {
         Alert.alert('Order full', 'This card has reached the maximum number of joiners.');
       }
-      removeTop();
+      removeCardById(targetId);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Could not join this card.';
       Alert.alert('Could not join', msg);
@@ -111,7 +123,7 @@ export default function SwipeScreen() {
     const targetId = cardId ?? topCard?.id;
     if (!targetId) return;
     await skipFoodCard(targetId);
-    removeTop();
+    removeCardById(targetId);
   };
 
   const swipe = (dx: number, cardId: string) => {
@@ -143,7 +155,7 @@ export default function SwipeScreen() {
           else setSwipeDirection(null);
         },
         onPanResponderRelease: (_, g) => {
-          if (!topCard || joining || swipeInFlightRef.current || joinBlockedForUser) {
+          if (!topCard || joining || swipeInFlightRef.current) {
             setSwipeDirection(null);
             Animated.spring(pan, {
               toValue: { x: 0, y: 0 },
@@ -151,9 +163,19 @@ export default function SwipeScreen() {
             }).start();
             return;
           }
-          if (g.dx > SWIPE_TRIGGER) swipe(1, topCard.id);
-          else if (g.dx < -SWIPE_TRIGGER) swipe(-1, topCard.id);
-          else {
+          if (g.dx > SWIPE_TRIGGER) {
+            if (joinBlockedForUser) {
+              setSwipeDirection(null);
+              Animated.spring(pan, {
+                toValue: { x: 0, y: 0 },
+                useNativeDriver: false,
+              }).start();
+              return;
+            }
+            swipe(1, topCard.id);
+          } else if (g.dx < -SWIPE_TRIGGER) {
+            swipe(-1, topCard.id);
+          } else {
             setSwipeDirection(null);
             Animated.spring(pan, {
               toValue: { x: 0, y: 0 },
@@ -190,7 +212,18 @@ export default function SwipeScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <Text style={styles.title}>Swipe Food</Text>
-        <Text style={styles.subtitle}>Right = Join · Left = Skip</Text>
+        <Text style={styles.subtitle}>
+          {adminPreview
+            ? 'Admin preview · Join disabled · Skip to browse cards'
+            : 'Right = Join · Left = Skip'}
+        </Text>
+        {adminPreview ? (
+          <View style={styles.adminBanner}>
+            <Text style={styles.adminBannerText}>
+              Admin account — swipe deck is view-only for joins (your cards are excluded).
+            </Text>
+          </View>
+        ) : null}
       </View>
       {loading ? (
         <View style={styles.centered}>
@@ -214,6 +247,10 @@ export default function SwipeScreen() {
                 <Text style={styles.retryBtnText}>Try again</Text>
               </TouchableOpacity>
             </>
+          ) : adminPreview && cards.length > 0 ? (
+            <Text style={styles.empty}>
+              No cards from other users to preview. Your admin listings are hidden here.
+            </Text>
           ) : (
             <Text style={styles.empty}>
               No active food cards yet. Check back soon.
@@ -338,6 +375,20 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: theme.spacing.screen, paddingVertical: 12 },
   title: { color: '#F8FAFC', fontSize: 24, fontWeight: '800' },
   subtitle: { color: 'rgba(248,250,252,0.6)', marginTop: 4 },
+  adminBanner: {
+    marginTop: 10,
+    padding: 10,
+    borderRadius: 10,
+    backgroundColor: 'rgba(251, 191, 36, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(251, 191, 36, 0.45)',
+  },
+  adminBannerText: {
+    color: '#FDE68A',
+    fontWeight: '700',
+    fontSize: 13,
+    lineHeight: 18,
+  },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   loadingHint: {
     marginTop: 12,
