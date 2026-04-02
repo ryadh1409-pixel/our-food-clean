@@ -1,5 +1,6 @@
 import { adminRoutes } from '@/constants/adminRoutes';
 import { isAdminUser } from '@/constants/adminUid';
+import { adminError, adminLog } from '@/lib/admin/adminDebug';
 import { adminCardShell, adminColors as COLORS } from '@/constants/adminTheme';
 import { theme } from '@/constants/theme';
 import { useAuth } from '@/services/AuthContext';
@@ -83,6 +84,7 @@ export default function AdminScreen() {
 
   const fetchMetrics = useCallback(async () => {
     try {
+      adminLog('admin-home', 'fetchMetrics: users, orders, food_cards');
       const [usersSnap, ordersSnap, cardsSnap] = await Promise.all([
         getDocs(collection(db, 'users')),
         getDocs(collection(db, 'orders')),
@@ -134,7 +136,7 @@ export default function AdminScreen() {
         if (data?.status === 'matched') totalMatches += 1;
       });
 
-      setMetrics({
+      const nextMetrics = {
         totalUsers,
         totalOrders,
         ordersToday,
@@ -144,9 +146,12 @@ export default function AdminScreen() {
         activeCards,
         totalMatches,
         completedOrders,
-      });
+      };
+      adminLog('admin-home', 'metrics loaded', nextMetrics);
+      setMetrics(nextMetrics);
       setError(null);
     } catch (e) {
+      adminError('admin-home', 'fetchMetrics failed', e);
       setMetrics(null);
       setError(e instanceof Error ? e.message : 'Failed to load metrics');
     } finally {

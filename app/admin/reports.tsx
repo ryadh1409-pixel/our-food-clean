@@ -2,7 +2,8 @@ import { AdminHeader } from '@/components/admin/AdminHeader';
 import { adminRoutes } from '@/constants/adminRoutes';
 import { adminCardShell, adminColors as COLORS } from '@/constants/adminTheme';
 import { theme } from '@/constants/theme';
-import { formatFirestoreTime } from '@/lib/admin/orderHelpers';
+import { adminError, adminLog } from '@/lib/admin/adminDebug';
+import { formatFirestoreTime, reportDetailText } from '@/lib/admin/orderHelpers';
 import { db } from '@/services/firebase';
 import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
 import { useRouter } from 'expo-router';
@@ -33,6 +34,7 @@ export default function AdminReportsListScreen() {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
+    adminLog('reports', 'subscribe reports query orderBy createdAt desc limit 120');
     const q = query(
       collection(db, 'reports'),
       orderBy('createdAt', 'desc'),
@@ -41,16 +43,11 @@ export default function AdminReportsListScreen() {
     const u = onSnapshot(
       q,
       (snap) => {
+        adminLog('reports', `reports snapshot: ${snap.size} documents`);
         const list: Row[] = snap.docs.map((d) => {
-          const data = d.data();
-          const preview =
-            typeof data.message === 'string'
-              ? data.message
-              : typeof data.details === 'string'
-                ? data.details
-                : typeof data.context === 'string'
-                  ? data.context
-                  : null;
+          const data = d.data() as Record<string, unknown>;
+          const full = reportDetailText(data);
+          const preview = full ? full.slice(0, 120) : null;
           return {
             id: d.id,
             reportedUserId:
@@ -60,7 +57,7 @@ export default function AdminReportsListScreen() {
             reporterId:
               typeof data.reporterId === 'string' ? data.reporterId : '—',
             reason: typeof data.reason === 'string' ? data.reason : null,
-            preview: preview ? preview.slice(0, 120) : null,
+            preview,
             createdAt: formatFirestoreTime(data.createdAt),
             adminResolution:
               typeof data.adminResolution === 'string'
@@ -71,7 +68,10 @@ export default function AdminReportsListScreen() {
         setRows(list);
         setReady(true);
       },
-      () => setReady(true),
+      (err) => {
+        adminError('reports', 'reports listener error', err);
+        setReady(true);
+      },
     );
     return () => u();
   }, []);

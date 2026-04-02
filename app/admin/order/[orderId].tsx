@@ -2,7 +2,13 @@ import { AdminHeader } from '@/components/admin/AdminHeader';
 import { adminRoutes } from '@/constants/adminRoutes';
 import { adminCardShell, adminColors as COLORS } from '@/constants/adminTheme';
 import { theme } from '@/constants/theme';
-import { formatFirestoreTime, orderCreatorUid } from '@/lib/admin/orderHelpers';
+import { adminLog } from '@/lib/admin/adminDebug';
+import {
+  formatFirestoreTime,
+  formatParticipantPreview,
+  orderCreatorUid,
+  orderParticipantUids,
+} from '@/lib/admin/orderHelpers';
 import { db } from '@/services/firebase';
 import { collection, doc, onSnapshot, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -34,14 +40,20 @@ export default function AdminOrderDetailScreen() {
       setLoading(false);
       return;
     }
+    adminLog('order-detail', 'subscribe order + messages', { orderId });
     const od = doc(db, 'orders', orderId);
     const u1 = onSnapshot(od, (snap) => {
+      adminLog('order-detail', 'order doc snapshot', {
+        orderId,
+        exists: snap.exists(),
+      });
       setData(snap.exists() ? snap.data() ?? {} : {});
       setLoading(false);
     });
     const u2 = onSnapshot(
       collection(db, 'orders', orderId, 'messages'),
       (snap) => {
+        adminLog('order-detail', `messages subcollection size: ${snap.size}`);
         const list: Msg[] = snap.docs.map((d) => {
           const m = d.data();
           const text =
@@ -83,6 +95,7 @@ export default function AdminOrderDetailScreen() {
         onPress: async () => {
           setSaving(true);
           try {
+            adminLog('order-detail', 'updateDoc order status', { orderId, status: next });
             await updateDoc(doc(db, 'orders', orderId), {
               status: next,
               adminStatusUpdatedAt: serverTimestamp(),
@@ -126,10 +139,9 @@ export default function AdminOrderDetailScreen() {
   }
 
   const status = typeof data.status === 'string' ? data.status : '—';
-  const parts = Array.isArray(data.participants)
-    ? data.participants.filter((x): x is string => typeof x === 'string')
-    : [];
-  const creator = orderCreatorUid(data);
+  const record = data as Record<string, unknown>;
+  const participantIds = orderParticipantUids(record);
+  const creator = orderCreatorUid(record);
   const terminal = ['cancelled', 'completed', 'expired'].includes(status);
 
   return (
@@ -161,8 +173,10 @@ export default function AdminOrderDetailScreen() {
               {creator || '—'}
             </Text>
           </TouchableOpacity>
-          <Text style={styles.k}>Participants ({parts.length})</Text>
-          {parts.map((p) => (
+          <Text style={styles.k}>
+            Participants ({participantIds.length}) — {formatParticipantPreview(participantIds, 6)}
+          </Text>
+          {participantIds.map((p) => (
             <TouchableOpacity key={p} onPress={() => router.push(adminRoutes.user(p) as never)}>
               <Text style={styles.part}>{p}</Text>
             </TouchableOpacity>

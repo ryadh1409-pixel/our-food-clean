@@ -2,7 +2,13 @@ import { AdminHeader } from '@/components/admin/AdminHeader';
 import { adminRoutes } from '@/constants/adminRoutes';
 import { adminCardShell, adminColors as COLORS } from '@/constants/adminTheme';
 import { theme } from '@/constants/theme';
-import { formatFirestoreTime, isActiveOrderStatus } from '@/lib/admin/orderHelpers';
+import { adminError, adminLog } from '@/lib/admin/adminDebug';
+import {
+  formatFirestoreTime,
+  formatParticipantPreview,
+  isActiveOrderStatus,
+  orderParticipantUids,
+} from '@/lib/admin/orderHelpers';
 import { db } from '@/services/firebase';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -20,7 +26,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 type Row = {
   id: string;
   status: string;
-  participants: number;
+  participantCount: number;
+  participantPreview: string;
   createdAt: string;
   createdMs: number;
 };
@@ -46,14 +53,14 @@ export default function AdminOrdersScreen() {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
+    adminLog('orders', 'subscribe orders collection');
     const u = onSnapshot(
       collection(db, 'orders'),
       (snap) => {
+        adminLog('orders', `orders snapshot: ${snap.size} documents`);
         const list: Row[] = snap.docs.map((d) => {
-          const data = d.data();
-          const parts = Array.isArray(data.participants)
-            ? data.participants.filter((x): x is string => typeof x === 'string')
-            : [];
+          const data = d.data() as Record<string, unknown>;
+          const ids = orderParticipantUids(data);
           const c = data.createdAt;
           let ms = 0;
           if (c && typeof c === 'object' && c !== null && 'toMillis' in c) {
@@ -63,7 +70,8 @@ export default function AdminOrdersScreen() {
           return {
             id: d.id,
             status: typeof data.status === 'string' ? data.status : '—',
-            participants: parts.length,
+            participantCount: ids.length,
+            participantPreview: formatParticipantPreview(ids),
             createdAt: formatFirestoreTime(data.createdAt),
             createdMs: ms,
           };
@@ -72,7 +80,10 @@ export default function AdminOrdersScreen() {
         setRows(list);
         setReady(true);
       },
-      () => setReady(true),
+      (err) => {
+        adminError('orders', 'orders listener error', err);
+        setReady(true);
+      },
     );
     return () => u();
   }, []);
@@ -143,6 +154,13 @@ export default function AdminOrdersScreen() {
           data={filtered}
           keyExtractor={(i) => i.id}
           contentContainerStyle={styles.list}
+          ListEmptyComponent={
+            !ready ? null : (
+              <Text style={styles.empty}>
+                No orders match this filter (or Firestore has no orders).
+              </Text>
+            )
+          }
           renderItem={({ item }) => (
             <TouchableOpacity
               style={styles.card}
@@ -154,7 +172,7 @@ export default function AdminOrdersScreen() {
                 Status: <Text style={styles.em}>{item.status}</Text>
               </Text>
               <Text style={styles.meta}>
-                Participants: {item.participants}
+                Participants ({item.participantCount}): {item.participantPreview}
               </Text>
               <Text style={styles.meta}>{item.createdAt}</Text>
               <Text style={styles.cta}>Details →</Text>
@@ -198,4 +216,11 @@ const styles = StyleSheet.create({
   meta: { fontSize: 14, color: COLORS.textMuted, marginTop: 2 },
   em: { fontWeight: '700', color: COLORS.text },
   cta: { marginTop: 10, fontWeight: '700', color: COLORS.primary },
+  empty: {
+    textAlign: 'center',
+    color: COLORS.textMuted,
+    marginTop: 24,
+    paddingHorizontal: 16,
+    fontSize: 15,
+  },
 });

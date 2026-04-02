@@ -2,10 +2,13 @@ import { AdminHeader } from '@/components/admin/AdminHeader';
 import { adminRoutes } from '@/constants/adminRoutes';
 import { adminCardShell, adminColors as COLORS } from '@/constants/adminTheme';
 import { theme } from '@/constants/theme';
+import { adminError, adminLog } from '@/lib/admin/adminDebug';
 import {
   formatFirestoreTime,
   isActiveOrderStatus,
   orderCreatorUid,
+  orderParticipantUids,
+  reportDetailText,
 } from '@/lib/admin/orderHelpers';
 import { db } from '@/services/firebase';
 import {
@@ -43,6 +46,7 @@ type ReportRow = {
   reason: string | null;
   detail: string | null;
   createdAt: string;
+  createdMs: number;
   adminResolution: string | null;
 };
 
@@ -62,76 +66,94 @@ export default function AdminUserDetailScreen() {
       setProfileLoading(false);
       return;
     }
+    adminLog('user-detail', `subscribe user doc: ${userId}`);
     const u = onSnapshot(
       doc(db, 'users', userId),
       (snap) => {
+        adminLog('user-detail', 'user doc snapshot', {
+          exists: snap.exists(),
+          id: userId,
+        });
         setProfile(snap.exists() ? snap.data() ?? {} : {});
         setProfileLoading(false);
       },
-      () => setProfileLoading(false),
+      (err) => {
+        adminError('user-detail', 'user doc listener error', err);
+        setProfileLoading(false);
+      },
     );
     return () => u();
   }, [userId]);
 
   useEffect(() => {
     if (!userId) return;
-    const unsub = onSnapshot(collection(db, 'orders'), (snap) => {
-      const next = new Map<string, OrderRow>();
-      snap.docs.forEach((d) => {
-        const data = d.data() as Record<string, unknown>;
-        const creator = orderCreatorUid(data);
-        const parts = Array.isArray(data.participants)
-          ? data.participants.filter((x): x is string => typeof x === 'string')
-          : [];
-        const isHost = creator === userId;
-        const isPart = parts.includes(userId);
-        if (!isHost && !isPart) return;
-        const title =
-          (typeof data.foodName === 'string' ? data.foodName : null) ??
-          (typeof data.restaurantName === 'string' ? data.restaurantName : null) ??
-          d.id.slice(0, 8);
-        next.set(d.id, {
-          id: d.id,
-          title,
-          status: typeof data.status === 'string' ? data.status : '—',
-          role: isHost ? 'Host' : 'Participant',
-          createdAt: formatFirestoreTime(data.createdAt),
+    adminLog('user-detail', 'subscribe orders (filter client-side)', { userId });
+    const unsub = onSnapshot(
+      collection(db, 'orders'),
+      (snap) => {
+        adminLog('user-detail', `orders snapshot for user: ${snap.size} total docs`);
+        const next = new Map<string, OrderRow>();
+        snap.docs.forEach((d) => {
+          const data = d.data() as Record<string, unknown>;
+          const uids = orderParticipantUids(data);
+          if (!uids.includes(userId)) return;
+          const creator = orderCreatorUid(data);
+          const title =
+            (typeof data.foodName === 'string' ? data.foodName : null) ??
+            (typeof data.restaurantName === 'string' ? data.restaurantName : null) ??
+            d.id.slice(0, 8);
+          next.set(d.id, {
+            id: d.id,
+            title,
+            status: typeof data.status === 'string' ? data.status : '—',
+            role: creator === userId ? 'Host' : 'Participant',
+            createdAt: formatFirestoreTime(data.createdAt),
+          });
         });
-      });
+      adminLog('user-detail', `user linked orders: ${next.size}`);
       setOrdersMap(next);
-    });
+    },
+      (err) => adminError('user-detail', 'orders listener error', err),
+    );
     return () => unsub();
   }, [userId]);
 
   useEffect(() => {
     if (!userId) return;
+    adminLog('user-detail', 'subscribe reports for reportedUserId', { userId });
     const q = query(
       collection(db, 'reports'),
       where('reportedUserId', '==', userId),
     );
-    const u = onSnapshot(q, (snap) => {
-      const list: ReportRow[] = snap.docs.map((d) => {
-        const data = d.data();
-        const detail =
-          typeof data.message === 'string'
-            ? data.message
-            : typeof data.context === 'string'
-              ? data.context
-              : null;
-        return {
-          id: d.id,
-          reason: typeof data.reason === 'string' ? data.reason : null,
-          detail,
-          createdAt: formatFirestoreTime(data.createdAt),
-          adminResolution:
-            typeof data.adminResolution === 'string'
-              ? data.adminResolution
-              : null,
-        };
-      });
-      list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-      setReports(list);
-    });
+    const u = onSnapshot(
+      q,
+      (snap) => {
+        adminLog('user-detail', `reports vs user: ${snap.size}`);
+        const list: ReportRow[] = snap.docs.map((d) => {
+          const data = d.data() as Record<string, unknown>;
+          const c = data.createdAt;
+          let createdMs = 0;
+          if (c && typeof c === 'object' && c !== null && 'toMillis' in c) {
+            const fn = (c as { toMillis: () => number }).toMillis;
+            if (typeof fn === 'function') createdMs = fn.call(c);
+          }
+          return {
+            id: d.id,
+            reason: typeof data.reason === 'string' ? data.reason : null,
+            detail: reportDetailText(data),
+            createdAt: formatFirestoreTime(data.createdAt),
+            createdMs,
+            adminResolution:
+              typeof data.adminResolution === 'string'
+                ? data.adminResolution
+                : null,
+          };
+        });
+        list.sort((a, b) => b.createdMs - a.createdMs);
+        setReports(list);
+      },
+      (err) => adminError('user-detail', 'reports listener error', err),
+    );
     return () => u();
   }, [userId]);
 
@@ -168,7 +190,14 @@ export default function AdminUserDetailScreen() {
           onPress: async () => {
             setActing(true);
             try {
-              await updateDoc(doc(db, 'users', userId), { banned: !banned });
+              const nextBanned = !banned;
+              adminLog('user-detail', 'updateDoc users.banned', {
+                userId,
+                banned: nextBanned,
+              });
+              await updateDoc(doc(db, 'users', userId), {
+                banned: nextBanned ? true : false,
+              });
             } catch (e) {
               Alert.alert('Error', e instanceof Error ? e.message : 'Failed');
             } finally {

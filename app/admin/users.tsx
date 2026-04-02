@@ -2,7 +2,11 @@ import { AdminHeader } from '@/components/admin/AdminHeader';
 import { adminRoutes } from '@/constants/adminRoutes';
 import { adminCardShell, adminColors as COLORS } from '@/constants/adminTheme';
 import { theme } from '@/constants/theme';
-import { orderCreatorUid, formatFirestoreTime } from '@/lib/admin/orderHelpers';
+import { adminError, adminLog } from '@/lib/admin/adminDebug';
+import {
+  formatFirestoreTime,
+  orderParticipantUids,
+} from '@/lib/admin/orderHelpers';
 import { db } from '@/services/firebase';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { useRouter } from 'expo-router';
@@ -31,12 +35,7 @@ type OrderLite = { id: string; data: Record<string, unknown> };
 function mergeTouches(orders: OrderLite[]): Record<string, number> {
   const touches: Record<string, number> = {};
   orders.forEach(({ data }) => {
-    const host = orderCreatorUid(data);
-    if (host) touches[host] = (touches[host] ?? 0) + 1;
-    const parts = Array.isArray(data.participants)
-      ? data.participants.filter((x): x is string => typeof x === 'string')
-      : [];
-    parts.forEach((uid) => {
+    orderParticipantUids(data).forEach((uid) => {
       touches[uid] = (touches[uid] ?? 0) + 1;
     });
   });
@@ -51,9 +50,11 @@ export default function AdminUsersScreen() {
   const [ordersReady, setOrdersReady] = useState(false);
 
   useEffect(() => {
+    adminLog('users', 'subscribe users collection');
     const u = onSnapshot(
       collection(db, 'users'),
       (snap) => {
+        adminLog('users', `users snapshot: ${snap.size} documents`);
         const list: UserDoc[] = snap.docs.map((d) => {
           const data = d.data();
           const c = data.createdAt;
@@ -76,21 +77,29 @@ export default function AdminUsersScreen() {
         setUsers(list);
         setUsersReady(true);
       },
-      () => setUsersReady(true),
+      (err) => {
+        adminError('users', 'users listener error', err);
+        setUsersReady(true);
+      },
     );
     return () => u();
   }, []);
 
   useEffect(() => {
+    adminLog('users', 'subscribe orders collection (for touch counts)');
     const o = onSnapshot(
       collection(db, 'orders'),
       (snap) => {
+        adminLog('users', `orders snapshot: ${snap.size} documents`);
         setOrders(
           snap.docs.map((d) => ({ id: d.id, data: d.data() as Record<string, unknown> })),
         );
         setOrdersReady(true);
       },
-      () => setOrdersReady(true),
+      (err) => {
+        adminError('users', 'orders listener error', err);
+        setOrdersReady(true);
+      },
     );
     return () => o();
   }, []);
@@ -123,6 +132,11 @@ export default function AdminUsersScreen() {
           data={rows}
           keyExtractor={(i) => i.id}
           contentContainerStyle={styles.list}
+          ListEmptyComponent={
+            loading ? null : (
+              <Text style={styles.empty}>No users in Firestore yet.</Text>
+            )
+          }
           renderItem={({ item }) => (
             <TouchableOpacity
               style={[styles.card, item.banned && styles.cardBanned]}
@@ -156,6 +170,12 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: COLORS.background },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   hint: { marginTop: 10, color: COLORS.textMuted },
+  empty: {
+    textAlign: 'center',
+    color: COLORS.textMuted,
+    marginTop: 32,
+    fontSize: 15,
+  },
   list: { padding: 16, paddingBottom: 32 },
   card: {
     ...adminCardShell,

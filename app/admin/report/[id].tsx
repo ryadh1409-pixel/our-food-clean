@@ -2,7 +2,8 @@ import { AdminHeader } from '@/components/admin/AdminHeader';
 import { adminRoutes } from '@/constants/adminRoutes';
 import { adminCardShell, adminColors as COLORS } from '@/constants/adminTheme';
 import { theme } from '@/constants/theme';
-import { formatFirestoreTime } from '@/lib/admin/orderHelpers';
+import { adminError, adminLog } from '@/lib/admin/adminDebug';
+import { formatFirestoreTime, reportDetailText } from '@/lib/admin/orderHelpers';
 import { db } from '@/services/firebase';
 import {
   doc,
@@ -38,10 +39,22 @@ export default function AdminReportDetailScreen() {
       setLoading(false);
       return;
     }
-    const u = onSnapshot(doc(db, 'reports', reportId), (snap) => {
-      setReport(snap.exists() ? snap.data() ?? {} : {});
-      setLoading(false);
-    });
+    adminLog('report-detail', 'subscribe report doc', { reportId });
+    const u = onSnapshot(
+      doc(db, 'reports', reportId),
+      (snap) => {
+        adminLog('report-detail', 'report snapshot', {
+          reportId,
+          exists: snap.exists(),
+        });
+        setReport(snap.exists() ? snap.data() ?? {} : {});
+        setLoading(false);
+      },
+      (err) => {
+        adminError('report-detail', 'report listener error', err);
+        setLoading(false);
+      },
+    );
     return () => u();
   }, [reportId]);
 
@@ -59,9 +72,15 @@ export default function AdminReportDetailScreen() {
       setUserInfo(null);
       return;
     }
-    const u = onSnapshot(doc(db, 'users', reportedUserId), (snap) => {
-      setUserInfo(snap.exists() ? snap.data() ?? {} : {});
-    });
+    adminLog('report-detail', 'subscribe reported user doc', { reportedUserId });
+    const u = onSnapshot(
+      doc(db, 'users', reportedUserId),
+      (snap) => {
+        adminLog('report-detail', 'reported user snapshot', { exists: snap.exists() });
+        setUserInfo(snap.exists() ? snap.data() ?? {} : {});
+      },
+      (err) => adminError('report-detail', 'reported user listener error', err),
+    );
     return () => u();
   }, [reportedUserId]);
 
@@ -74,6 +93,7 @@ export default function AdminReportDetailScreen() {
         onPress: async () => {
           setActing(true);
           try {
+            adminLog('report-detail', 'ignore report', { reportId });
             await updateDoc(doc(db, 'reports', reportId), {
               adminResolution: 'ignored',
               adminResolvedAt: serverTimestamp(),
@@ -100,11 +120,12 @@ export default function AdminReportDetailScreen() {
           style: 'destructive',
           onPress: async () => {
             setActing(true);
-            try {
-              await updateDoc(doc(db, 'users', reportedUserId), {
-                banned: true,
-              });
-              await updateDoc(doc(db, 'reports', reportId), {
+          try {
+            adminLog('report-detail', 'ban user from report', { reportedUserId });
+            await updateDoc(doc(db, 'users', reportedUserId), {
+              banned: true,
+            });
+            await updateDoc(doc(db, 'reports', reportId), {
                 adminResolution: 'banned_reported_user',
                 adminResolvedAt: serverTimestamp(),
               });
@@ -147,10 +168,7 @@ export default function AdminReportDetailScreen() {
     );
   }
 
-  const detail =
-    (typeof report.message === 'string' ? report.message : null) ??
-    (typeof report.details === 'string' ? report.details : null) ??
-    (typeof report.context === 'string' ? report.context : null);
+  const detail = report ? reportDetailText(report as Record<string, unknown>) : null;
 
   const uEmail =
     userInfo && typeof userInfo.email === 'string' ? userInfo.email : null;

@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { adminRoutes } from '@/constants/adminRoutes';
 import { isAdminUser } from '@/constants/adminUid';
+import { adminError, adminLog } from '@/lib/admin/adminDebug';
 import { adminCardShell, adminColors as COLORS } from '@/constants/adminTheme';
 import { theme } from '@/constants/theme';
 
@@ -61,6 +62,7 @@ export default function AdminDashboardScreen() {
 
     async function fetchStats() {
       try {
+        adminLog('dashboard', 'getDocs users, orders, complaints, reports');
         const [usersSnap, ordersSnap, complaintsSnap, reportsSnap] =
           await Promise.all([
             getDocs(collection(db, 'users')),
@@ -104,16 +106,19 @@ export default function AdminDashboardScreen() {
           if (ms >= todayStart && ms <= todayEnd) ordersToday += 1;
         });
 
-        setStats({
+        const payload = {
           totalUsers,
           totalOrders,
           activeOrders,
           complaints,
           ordersToday,
           reports,
-        });
+        };
+        adminLog('dashboard', 'stats loaded', payload);
+        setStats(payload);
         setError(null);
       } catch (e) {
+        adminError('dashboard', 'fetchStats failed', e);
         if (!cancelled) {
           setError(e instanceof Error ? e.message : 'Failed to load stats');
           setStats(null);
