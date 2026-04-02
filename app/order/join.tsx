@@ -101,7 +101,7 @@ export default function JoinOrderScreen() {
         senderName: '',
         createdAt: serverTimestamp(),
       });
-      router.replace(`/order/${orderId}` as never);
+      router.push(`/order/${orderId}` as never);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to join';
       Alert.alert('Could not join', msg);

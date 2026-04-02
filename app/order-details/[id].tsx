@@ -139,7 +139,7 @@ export default function OrderDetailsScreen() {
     try {
       await joinOrder(order.id);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-      router.replace(`/order/${order.id}` as never);
+      router.push(`/order/${order.id}` as never);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to join order.';
       console.error('[joinOrder]', msg, e);

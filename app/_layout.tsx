@@ -57,7 +57,6 @@ export const linking = {
       privacy: 'privacy',
       subscribe: 'subscribe',
       'order/[id]': 'order/:id',
-      'order/room/[id]': 'order/room/:id',
       'match/[orderId]': 'match/:orderId',
       'food-match/[matchId]': 'food-match/:matchId',
       'join/[orderId]': 'join/:orderId',

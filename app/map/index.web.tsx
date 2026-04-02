@@ -56,7 +56,7 @@ export default function MapScreenWeb() {
                 key={order.id}
                 style={styles.card}
                 onPress={() =>
-                  router.push(`/order/room/${order.id}` as const)
+                  router.push(`/order/${order.id}` as const)
                 }
               >
                 <Text style={styles.cardTitle}>{order.restaurantName}</Text>

@@ -229,25 +229,16 @@ export default function MatchCheckoutScreen() {
         type: 'system',
       });
       await createAlert('order_matched', 'Meeting confirmed');
-      router.replace({
-        pathname: '/order/room/[id]',
-        params: { id: orderId },
-      } as never);
+      router.push(`/order/${orderId}` as never);
     } catch (e) {
-      router.replace({
-        pathname: '/order/room/[id]',
-        params: { id: orderId },
-      } as never);
+      router.push(`/order/${orderId}` as never);
     } finally {
       setConfirming(false);
     }
   };
 
   const openChat = () => {
-    router.push({
-      pathname: '/order/room/[id]',
-      params: { id: orderId },
-    } as never);
+    router.push(`/order/${orderId}` as never);
   };
 
   const mapPoints =

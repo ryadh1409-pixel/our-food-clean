@@ -340,7 +340,7 @@ export default function JoinScreen() {
         senderName: '',
         createdAt: serverTimestamp(),
       });
-      router.replace(`/order/${orderId}` as never);
+      router.push(`/order/${orderId}` as never);
     } catch (e) {
       logError(e, { alert: false });
       const msg = e instanceof Error ? e.message : 'Failed to join';

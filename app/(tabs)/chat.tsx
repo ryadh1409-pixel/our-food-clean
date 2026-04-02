@@ -190,10 +190,7 @@ export default function ChatScreen() {
       router.push({ pathname: '/(tabs)/join' } as never);
       return;
     }
-    router.push({
-      pathname: '/order/[id]',
-      params: { id: first.id },
-    } as never);
+    router.push(`/order/${first.id}` as never);
   };
 
   const handleCreateOrderAction = () => {

@@ -471,7 +471,7 @@ function SwipeScreenInner() {
         }).catch(() => {});
         setBurstKey((k) => k + 1);
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        router.replace(`/order/${order.id}` as const);
+        router.push(`/order/${order.id}` as const);
         setIndex((i) => i + 1);
       } catch (error) {
         console.error('[Swipe] failed to join order on like:', error);

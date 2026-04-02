@@ -1,243 +1,204 @@
 import { theme } from '@/constants/theme';
 import { auth, db } from '@/services/firebase';
-import {
-  ORDER_JOIN_WINDOW_MS,
-  formatOrderCountdown,
-  getJoinedAtMsForUser,
-  normalizeParticipantsStrings,
-} from '@/services/orderLifecycle';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { doc, onSnapshot } from 'firebase/firestore';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  addDoc,
+  collection,
+  orderBy,
+  query,
+  serverTimestamp,
+} from 'firebase/firestore';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Linking,
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
+  TextInput,
+  TouchableOpacity,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { onSnapshot } from 'firebase/firestore';
 
-type OrderDoc = {
-  title: string;
-  participants: string[];
-  participantLines: string[];
-  status: string;
+type OrderMessage = {
+  id: string;
+  text?: string;
+  senderId?: string;
+  senderName?: string;
+  createdAt?: unknown;
 };
 
-function mapSnapToOrder(
-  id: string,
-  data: Record<string, unknown> | undefined,
-): OrderDoc | null {
-  if (!data) return null;
-  const title =
-    (typeof data.restaurantName === 'string' && data.restaurantName.trim()
-      ? data.restaurantName
-      : null) ??
-    (typeof data.foodName === 'string' && data.foodName.trim()
-      ? data.foodName
-      : null) ??
-    'Order';
-  const participants = normalizeParticipantsStrings(data.participants);
-  const jm = data.joinedAtMap as Record<string, unknown> | undefined;
-  const participantLines = participants.map((uid) => {
-    const raw = jm?.[uid];
-    const j =
-      raw &&
-      typeof raw === 'object' &&
-      raw !== null &&
-      'toMillis' in raw &&
-      typeof (raw as { toMillis: () => number }).toMillis === 'function'
-        ? (raw as { toMillis: () => number }).toMillis()
-        : typeof raw === 'number'
-          ? raw
-          : null;
-    const joined =
-      j != null
-        ? `joined ${new Date(j).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}`
-        : 'pending join record';
-    return `• ${uid.slice(0, 8)}… — ${joined}`;
-  });
-  const status =
-    typeof data.status === 'string' && data.status.trim()
-      ? data.status
-      : 'open';
-  return {
-    title,
-    participants,
-    participantLines,
-    status,
-  };
-}
-
-export default function OrderDetailsScreen() {
+export default function OrderChatScreen() {
   const router = useRouter();
-  const { id: rawId } = useLocalSearchParams<{ id?: string }>();
-  const orderId = typeof rawId === 'string' ? rawId : '';
-  const [order, setOrder] = useState<OrderDoc | null>(null);
+  const params = useLocalSearchParams<{ id?: string | string[] }>();
+  const orderId = useMemo(() => {
+    const raw = params.id;
+    const str = Array.isArray(raw) ? raw[0] : raw;
+    return typeof str === 'string' ? str : '';
+  }, [params.id]);
+
+  const [messages, setMessages] = useState<OrderMessage[]>([]);
   const [loading, setLoading] = useState(true);
-  const [docData, setDocData] = useState<Record<string, unknown> | undefined>(
-    undefined,
-  );
-  const [nowTick, setNowTick] = useState(() => Date.now());
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [input, setInput] = useState('');
+  const listRef = useRef<FlatList<OrderMessage> | null>(null);
+
+  const currentUser = auth.currentUser;
+  const uid = currentUser?.uid ?? '';
+
+  const messagesRef = useMemo(() => {
+    if (!orderId.trim()) return null;
+    return collection(db, 'orders', orderId, 'messages');
+  }, [orderId]);
+
+  const q = useMemo(() => {
+    if (!messagesRef) return null;
+    return query(messagesRef, orderBy('createdAt', 'asc'));
+  }, [messagesRef]);
 
   useEffect(() => {
-    const t = setInterval(() => setNowTick(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, []);
-
-  useEffect(() => {
-    if (!orderId.trim()) {
-      setOrder(null);
-      setDocData(undefined);
+    if (!q) {
+      setMessages([]);
       setLoading(false);
+      setError(orderId.trim() ? null : 'Missing order id.');
       return;
     }
+
     setLoading(true);
-    const ref = doc(db, 'orders', orderId);
+    setError(null);
+
     const unsub = onSnapshot(
-      ref,
-      (snap) => {
-        if (!snap.exists()) {
-          setOrder(null);
-          setDocData(undefined);
-          setLoading(false);
-          return;
-        }
-        const data = snap.data() as Record<string, unknown>;
-        console.log('UID:', auth.currentUser?.uid ?? '');
-        console.log(
-          'ORDER PARTICIPANTS:',
-          normalizeParticipantsStrings(data.participants),
-        );
-        setDocData(data);
-        setOrder(mapSnapToOrder(snap.id, data));
+      q,
+      (snapshot) => {
+        const next: OrderMessage[] = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...(docSnap.data() as Omit<OrderMessage, 'id'>),
+        }));
+        setMessages(next);
         setLoading(false);
       },
-      () => {
-        setOrder(null);
-        setDocData(undefined);
+      (e) => {
+        setError(e instanceof Error ? e.message : 'Failed to load messages');
         setLoading(false);
       },
     );
+
     return () => unsub();
-  }, [orderId]);
+  }, [q, orderId]);
 
-  const countdownLabel = useMemo(() => {
-    const uid = auth.currentUser?.uid ?? '';
-    if (!uid || !docData) return null;
-    const joinedMs = getJoinedAtMsForUser(docData.joinedAtMap, uid);
-    if (joinedMs == null) return null;
-    const rem = ORDER_JOIN_WINDOW_MS - (nowTick - joinedMs);
-    if (rem <= 0) return "Time's up";
-    return formatOrderCountdown(rem);
-  }, [docData, nowTick]);
+  useEffect(() => {
+    if (!listRef.current) return;
+    // Fire-and-forget scroll on every message update.
+    // The list updates are driven by Firestore snapshots.
+    requestAnimationFrame(() => {
+      listRef.current?.scrollToEnd({ animated: true });
+    });
+  }, [messages.length]);
 
-  const inviteWhatsApp = useCallback(async () => {
-    const link = `https://yourapp.com/order/${orderId}`;
-    const message = `Join my order 🍕 ${link}`;
-    const httpsUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
-    await Linking.openURL(httpsUrl).catch(() => {});
-  }, [orderId]);
+  const canSend = !!uid && input.trim().length > 0 && !sending;
 
-  if (!orderId.trim()) {
+  const onSend = async () => {
+    if (!messagesRef) return;
+    if (!uid) return;
+    if (!canSend) return;
+
+    const text = input.trim();
+    setSending(true);
+    try {
+      await addDoc(messagesRef, {
+        text,
+        senderId: uid,
+        senderName:
+          typeof currentUser?.displayName === 'string' && currentUser.displayName.trim()
+            ? currentUser.displayName
+            : currentUser?.email?.split('@')[0] ?? 'User',
+        createdAt: serverTimestamp(),
+      });
+      setInput('');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to send message');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const renderMessage = ({ item }: { item: OrderMessage }) => {
+    const mine = item.senderId === uid;
+    const bubbleStyle = mine ? styles.bubbleMine : styles.bubbleTheirs;
+    const textStyle = mine ? styles.textMine : styles.textTheirs;
     return (
-      <SafeAreaView style={styles.root} edges={['top']}>
-        <Text style={styles.errorText}>Missing order id.</Text>
-        <Pressable
-          style={styles.secondaryBtn}
-          onPress={() => router.back()}
-        >
-          <Text style={styles.secondaryBtnText}>Go back</Text>
-        </Pressable>
-      </SafeAreaView>
+      <View style={[styles.row, mine ? styles.rowRight : styles.rowLeft]}>
+        <View style={[styles.bubble, bubbleStyle]}>
+          {!mine && item.senderName ? (
+            <Text style={[styles.senderName, styles.textMuted]}>{item.senderName}</Text>
+          ) : null}
+          <Text style={[styles.text, textStyle]}>{item.text ?? ''}</Text>
+        </View>
+      </View>
     );
-  }
-
-  if (loading) {
-    return (
-      <SafeAreaView style={styles.root} edges={['top']}>
-        <ActivityIndicator size="large" color={theme.colors.primary} />
-      </SafeAreaView>
-    );
-  }
-
-  if (!order) {
-    return (
-      <SafeAreaView style={styles.root} edges={['top']}>
-        <Text style={styles.errorText}>Order not found.</Text>
-        <Pressable
-          style={styles.secondaryBtn}
-          onPress={() => router.back()}
-        >
-          <Text style={styles.secondaryBtnText}>Go back</Text>
-        </Pressable>
-      </SafeAreaView>
-    );
-  }
+  };
 
   return (
     <SafeAreaView style={styles.root} edges={['top']}>
       <View style={styles.headerRow}>
-        <Pressable
-          onPress={() => router.back()}
-          style={styles.backBtn}
-          hitSlop={12}
-        >
+        <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
           <MaterialIcons name="arrow-back" size={22} color="#F8FAFC" />
         </Pressable>
-        <Text style={styles.headerTitle}>Order</Text>
+        <Text style={styles.headerTitle}>Order Chat</Text>
         <View style={styles.headerSpacer} />
       </View>
-      <ScrollView
-        contentContainerStyle={styles.scroll}
-        showsVerticalScrollIndicator={false}
-      >
-        <Text style={styles.title}>{order.title}</Text>
-        <View style={styles.pill}>
-          <Text style={styles.pillLabel}>Status</Text>
-          <Text style={styles.pillValue}>{order.status}</Text>
-        </View>
-        {countdownLabel ? (
-          <View style={styles.timerBox}>
-            <Text style={styles.timerLabel}>Your time window</Text>
-            <Text style={styles.timerValue}>{countdownLabel}</Text>
+
+      <View style={styles.chatBody}>
+        {loading ? (
+          <View style={styles.centered}>
+            <ActivityIndicator size="large" color={theme.colors.primary} />
           </View>
-        ) : null}
-        <Text style={styles.sectionTitle}>Participants</Text>
-        <View style={styles.participantCard}>
-          {order.participantLines.length ? (
-            order.participantLines.map((line, i) => (
-              <Text key={`${line}-${i}`} style={styles.participantLine}>
-                {line}
-              </Text>
-            ))
-          ) : (
-            <Text style={styles.muted}>No participants yet.</Text>
-          )}
+        ) : error ? (
+          <View style={styles.centered}>
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
+        ) : (
+          <FlatList
+            ref={listRef}
+            data={messages}
+            keyExtractor={(m) => m.id}
+            renderItem={renderMessage}
+            contentContainerStyle={styles.listContent}
+            onContentSizeChange={() =>
+              listRef.current?.scrollToEnd({ animated: true })
+            }
+          />
+        )}
+      </View>
+
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View style={styles.inputRow}>
+          <TextInput
+            value={input}
+            onChangeText={setInput}
+            placeholder="Write a message..."
+            placeholderTextColor="#9CA3AF"
+            style={styles.input}
+            editable={!sending && !!uid}
+            onSubmitEditing={onSend}
+          />
+          <TouchableOpacity
+            style={[styles.sendBtn, !canSend && styles.sendBtnDisabled]}
+            disabled={!canSend}
+            onPress={() => void onSend()}
+          >
+            <Text style={styles.sendBtnText}>{sending ? '...' : 'Send'}</Text>
+          </TouchableOpacity>
         </View>
-        <Pressable
-          style={({ pressed }) => [
-            styles.primaryBtn,
-            pressed && styles.primaryBtnPressed,
-          ]}
-          onPress={() => router.push(`/order/room/${orderId}` as never)}
-        >
-          <Text style={styles.primaryBtnText}>Open order room</Text>
-        </Pressable>
-        <Pressable
-          style={({ pressed }) => [
-            styles.secondaryInviteBtn,
-            pressed && styles.primaryBtnPressed,
-          ]}
-          onPress={() => void inviteWhatsApp()}
-        >
-          <Text style={styles.secondaryInviteBtnText}>Invite on WhatsApp</Text>
-        </Pressable>
-      </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -246,143 +207,120 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: '#06080C',
-    paddingHorizontal: 20,
+    paddingHorizontal: 14,
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: 8,
-    marginBottom: 8,
   },
   backBtn: {
     padding: 8,
   },
   headerTitle: {
     color: '#F8FAFC',
-    fontSize: 17,
-    fontWeight: '700',
+    fontWeight: '800',
+    fontSize: 16,
   },
   headerSpacer: {
     width: 38,
   },
-  scroll: {
-    paddingBottom: 32,
+  chatBody: {
+    flex: 1,
   },
-  title: {
-    color: '#F8FAFC',
-    fontSize: 24,
-    fontWeight: '800',
-    marginBottom: 16,
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  pill: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+  errorText: {
+    color: '#FCA5A5',
+    fontSize: 14,
   },
-  pillLabel: {
-    color: 'rgba(248,250,252,0.55)',
-    fontSize: 12,
-    fontWeight: '600',
-    marginBottom: 4,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+  listContent: {
+    paddingVertical: 12,
+    paddingBottom: 16,
   },
-  pillValue: {
-    color: '#7DD3FC',
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  timerBox: {
-    backgroundColor: 'rgba(250,204,21,0.12)',
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(250,204,21,0.35)',
-  },
-  timerLabel: {
-    color: 'rgba(250,250,250,0.65)',
-    fontSize: 12,
-    fontWeight: '600',
-    marginBottom: 6,
-  },
-  timerValue: {
-    color: '#FDE047',
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  sectionTitle: {
-    color: '#F8FAFC',
-    fontSize: 16,
-    fontWeight: '700',
+  row: {
+    width: '100%',
     marginBottom: 10,
   },
-  participantCard: {
-    backgroundColor: '#11161F',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+  rowLeft: {
+    alignItems: 'flex-start',
   },
-  participantLine: {
-    color: 'rgba(248,250,252,0.9)',
+  rowRight: {
+    alignItems: 'flex-end',
+  },
+  bubble: {
+    maxWidth: '80%',
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  bubbleMine: {
+    backgroundColor: 'rgba(16, 36, 29, 0.95)',
+    borderColor: 'rgba(52, 211, 153, 0.25)',
+  },
+  bubbleTheirs: {
+    backgroundColor: 'rgba(20, 25, 34, 0.95)',
+    borderColor: 'rgba(125, 211, 252, 0.18)',
+  },
+  senderName: {
+    marginBottom: 6,
+  },
+  text: {
     fontSize: 14,
-    lineHeight: 22,
+    lineHeight: 20,
     fontWeight: '500',
   },
-  muted: {
-    color: 'rgba(248,250,252,0.45)',
-    fontSize: 14,
+  textMine: {
+    color: '#E9FFF6',
   },
-  primaryBtn: {
+  textTheirs: {
+    color: '#F8FAFC',
+  },
+  textMuted: {
+    color: 'rgba(248,250,252,0.62)',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  inputRow: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingVertical: 10,
+    paddingBottom: 16,
+  },
+  input: {
+    flex: 1,
+    backgroundColor: 'rgba(17, 22, 31, 0.95)',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    color: '#F8FAFC',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  sendBtn: {
     backgroundColor: 'rgba(52, 211, 153, 0.22)',
     borderRadius: 14,
-    paddingVertical: 16,
+    paddingHorizontal: 16,
+    justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
     borderColor: 'rgba(52, 211, 153, 0.45)',
   },
-  primaryBtnPressed: {
-    opacity: 0.9,
+  sendBtnDisabled: {
+    opacity: 0.6,
   },
-  primaryBtnText: {
+  sendBtnText: {
     color: '#A7F3D0',
-    fontSize: 16,
     fontWeight: '800',
-  },
-  secondaryInviteBtn: {
-    marginTop: 12,
-    backgroundColor: 'rgba(37, 211, 102, 0.2)',
-    borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(37, 211, 102, 0.45)',
-  },
-  secondaryInviteBtnText: {
-    color: '#86EFAC',
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  secondaryBtn: {
-    marginTop: 16,
-    alignSelf: 'flex-start',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-  },
-  secondaryBtnText: {
-    color: '#7DD3FC',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  errorText: {
-    color: '#FCA5A5',
-    fontSize: 16,
-    marginTop: 24,
+    fontSize: 14,
   },
 });
+

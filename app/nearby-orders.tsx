@@ -75,7 +75,7 @@ export default function NearbyOrdersScreen() {
       return;
     }
     if (order.participants.includes(uid)) {
-      router.push(`/order/room/${order.id}` as const);
+      router.push(`/order/${order.id}` as const);
       return;
     }
     if (order.participants.length >= order.maxParticipants) {
@@ -116,7 +116,7 @@ export default function NearbyOrdersScreen() {
       });
       // Analytics: user joined an order
       await trackOrderJoined(uid, order.id);
-      router.replace(`/order/${order.id}` as const);
+      router.push(`/order/${order.id}` as const);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to join';
       Alert.alert('Error', msg);

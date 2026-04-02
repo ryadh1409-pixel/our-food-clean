@@ -1314,7 +1314,7 @@ export default function OrderRoomScreen() {
     const uid = auth.currentUser?.uid;
     if (!uid) {
       router.push(
-        `/(auth)/login?redirectTo=${encodeURIComponent(`/order/room/${orderId}`)}` as never,
+        `/(auth)/login?redirectTo=${encodeURIComponent(`/order/${orderId}`)}` as never,
       );
       return;
     }
@@ -1373,7 +1373,7 @@ export default function OrderRoomScreen() {
       });
       // Analytics: user joined an order
       await trackOrderJoined(uid, orderId);
-      router.replace(`/order/${orderId}` as never);
+      router.push(`/order/${orderId}` as never);
     } catch (e) {
       Alert.alert('Error', e instanceof Error ? e.message : 'Failed to join');
     } finally {
