@@ -1,6 +1,8 @@
 import { theme } from '@/constants/theme';
+import { useAuth } from '@/services/AuthContext';
 import {
-  joinFoodCard,
+  isFoodCardJoinDisabled,
+  joinOrder,
   skipFoodCard,
   subscribeWaitingFoodCards,
   type FoodCard,
@@ -9,6 +11,7 @@ import { useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   Image,
   PanResponder,
@@ -29,6 +32,7 @@ function formatTimer(expiresAt: number): string {
 export default function SwipeScreen() {
   const SWIPE_TRIGGER = 90;
   const router = useRouter();
+  const { user } = useAuth();
   const [cards, setCards] = useState<FoodCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [cardsError, setCardsError] = useState(false);
@@ -61,34 +65,43 @@ export default function SwipeScreen() {
 
   const topCard = cards[0] ?? null;
   const secondCard = cards[1] ?? null;
+  const uid = user?.uid;
+  /** Block swipe / primary join when signed in but cannot join this card (already in, full, etc.). */
+  const joinBlockedForUser =
+    !!uid && !!topCard && isFoodCardJoinDisabled(topCard, uid);
+  const joinPrimaryDisabled =
+    !topCard || joining || (!!uid && joinBlockedForUser);
 
   const removeTop = () => setCards((prev) => prev.slice(1));
 
   const onLike = async (cardId?: string) => {
     const targetId = cardId ?? topCard?.id;
     if (!targetId || joining) return;
+    const joinUid = user?.uid;
+    if (!joinUid) {
+      Alert.alert('Sign in required', 'Sign in to join a food card.');
+      router.push('/(auth)/login' as never);
+      return;
+    }
+    const card = cards.find((c) => c.id === targetId) ?? topCard;
+    if (!card || isFoodCardJoinDisabled(card, joinUid)) return;
     setJoining(true);
     try {
-      const result = await joinFoodCard(targetId);
-      console.log('[swipe] joinFoodCard result:', {
+      const result = await joinOrder(targetId, joinUid);
+      console.log('[swipe] joinOrder result:', {
         cardId: targetId,
-        matched: result.matched,
-        chatId: result.chatId ?? null,
+        alreadyJoined: result.alreadyJoined,
+        isFull: result.isFull,
       });
-      if (result.chatId) {
-        removeTop();
-        console.log('[swipe] navigating to chat:', {
-          pathname: '/chat/[id]',
-          id: String(result.chatId),
-        });
-        router.push({
-          pathname: '/chat/[id]',
-          params: { id: String(result.chatId) },
-        } as never);
-      } else {
-        console.log('[swipe] no chat yet, stay on swipe deck:', { cardId: targetId });
-        removeTop();
+      if (result.alreadyJoined) {
+        Alert.alert('Already joined', 'You are already on this order.');
+      } else if (result.isFull) {
+        Alert.alert('Order full', 'This card has reached the maximum number of joiners.');
       }
+      removeTop();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Could not join this card.';
+      Alert.alert('Could not join', msg);
     } finally {
       setJoining(false);
     }
@@ -130,7 +143,7 @@ export default function SwipeScreen() {
           else setSwipeDirection(null);
         },
         onPanResponderRelease: (_, g) => {
-          if (!topCard || joining || swipeInFlightRef.current) {
+          if (!topCard || joining || swipeInFlightRef.current || joinBlockedForUser) {
             setSwipeDirection(null);
             Animated.spring(pan, {
               toValue: { x: 0, y: 0 },
@@ -149,7 +162,7 @@ export default function SwipeScreen() {
           }
         },
       }),
-    [pan, topCard?.id, joining],
+    [pan, topCard, joining, joinBlockedForUser],
   );
 
   const rotate = pan.x.interpolate({
@@ -239,6 +252,29 @@ export default function SwipeScreen() {
                   : 'Location not listed on this card'}
               </Text>
               <Text style={styles.timer}>Ends in {formatTimer(topCard.expiresAt + tick * 0)}</Text>
+              <TouchableOpacity
+                activeOpacity={0.85}
+                disabled={joinPrimaryDisabled}
+                onPress={() => onLike(topCard.id)}
+                style={[
+                  styles.inlineJoinBtn,
+                  joinPrimaryDisabled && styles.inlineJoinBtnDisabled,
+                ]}
+              >
+                {joining ? (
+                  <ActivityIndicator color="#07241A" />
+                ) : (
+                  <Text style={styles.inlineJoinText}>
+                    {!uid
+                      ? 'Sign in to join'
+                      : topCard.joinedUsers?.includes(uid)
+                        ? 'Joined'
+                        : topCard.status === 'full'
+                          ? 'Full'
+                          : '❤️ Join order'}
+                  </Text>
+                )}
+              </TouchableOpacity>
               {topCard.user1 ? (
                 <View style={styles.hostRow}>
                   {topCard.user1.photo ? (
@@ -270,15 +306,27 @@ export default function SwipeScreen() {
           <Text style={styles.skipText}>❌ Skip</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          disabled={!topCard || joining}
+          disabled={joinPrimaryDisabled}
           onPress={() => onLike()}
           style={[
             styles.btn,
             styles.likeBtn,
-            (!topCard || joining) && styles.btnDisabled,
+            joinPrimaryDisabled && styles.btnDisabled,
           ]}
         >
-          <Text style={styles.likeText}>{joining ? '...' : '❤️ Join'}</Text>
+          {joining ? (
+            <ActivityIndicator color="#07241A" />
+          ) : (
+            <Text style={styles.likeText}>
+              {!uid
+                ? 'Sign in'
+                : topCard && topCard.joinedUsers?.includes(uid)
+                  ? 'Joined'
+                  : topCard && (topCard.status === 'full' || (topCard.joinedUsers?.length ?? 0) >= (topCard.maxUsers ?? 2))
+                    ? 'Full'
+                    : '❤️ Join'}
+            </Text>
+          )}
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -331,6 +379,16 @@ const styles = StyleSheet.create({
   avatarPlaceholder: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)' },
   hostName: { color: '#D1FAE5', fontWeight: '700' },
   waitingText: { color: 'rgba(248,250,252,0.72)', marginTop: 8, fontWeight: '600' },
+  inlineJoinBtn: {
+    marginTop: 12,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#34D399',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  inlineJoinBtnDisabled: { opacity: 0.45 },
+  inlineJoinText: { color: '#07241A', fontWeight: '800', fontSize: 15 },
   swipeBadgeLeft: {
     position: 'absolute',
     left: 18,

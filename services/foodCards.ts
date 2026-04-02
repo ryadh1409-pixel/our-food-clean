@@ -168,16 +168,37 @@ export type JoinOrderResult = {
   isFull: boolean;
 };
 
+/** Disable the food-card Join control when signed out, already in `joinedUsers`, or at capacity. */
+export function isFoodCardJoinDisabled(
+  card: FoodCard,
+  uid: string | undefined,
+): boolean {
+  if (!uid) return true;
+  const cap =
+    typeof card.maxUsers === 'number' && card.maxUsers > 0 ? card.maxUsers : 2;
+  const joined = Array.isArray(card.joinedUsers)
+    ? card.joinedUsers.filter((x): x is string => typeof x === 'string' && x.length > 0)
+    : [];
+  if (card.status === 'full') return true;
+  if (joined.includes(uid)) return true;
+  if (joined.length >= cap) return true;
+  return false;
+}
+
 /**
- * Join a food card order by appending the current user to `joinedUsers`, using a
+ * Join a food card order by appending the user to `joinedUsers`, using a
  * transaction so concurrent joins cannot oversubscribe.
  */
-export async function joinOrder(cardId: string): Promise<JoinOrderResult> {
+export async function joinOrder(
+  cardId: string,
+  uid: string,
+): Promise<JoinOrderResult> {
   const trimmed = cardId.trim();
   if (!trimmed) throw new Error('Invalid card');
 
-  const uid = auth.currentUser?.uid;
-  if (!uid) throw new Error('Sign in required');
+  const authedUid = auth.currentUser?.uid;
+  if (!authedUid) throw new Error('Sign in required');
+  if (!uid || uid !== authedUid) throw new Error('Not authorized');
 
   const cardRef = doc(db, FOOD_CARDS, trimmed);
 
@@ -198,7 +219,7 @@ export async function joinOrder(cardId: string): Promise<JoinOrderResult> {
       ? data.joinedUsers.filter((x): x is string => typeof x === 'string' && x.length > 0)
       : [];
 
-    if (joinedUsers.includes(uid)) {
+    if (joinedUsers.includes(authedUid)) {
       return {
         alreadyJoined: true,
         isFull: joinedUsers.length >= maxUsers,
@@ -209,7 +230,7 @@ export async function joinOrder(cardId: string): Promise<JoinOrderResult> {
       throw new Error('Order is full');
     }
 
-    const nextJoined = [...joinedUsers, uid];
+    const nextJoined = [...joinedUsers, authedUid];
     const isFull = nextJoined.length >= maxUsers;
 
     tx.update(cardRef, {

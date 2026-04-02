@@ -1,5 +1,11 @@
 import { theme } from '@/constants/theme';
-import { joinFoodCard, subscribeWaitingFoodCards, type FoodCard } from '@/services/foodCards';
+import { useAuth } from '@/services/AuthContext';
+import {
+  isFoodCardJoinDisabled,
+  joinOrder,
+  subscribeWaitingFoodCards,
+  type FoodCard,
+} from '@/services/foodCards';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
@@ -25,6 +31,7 @@ const D = {
 
 export default function BrowseScreen() {
   const router = useRouter();
+  const { user } = useAuth();
   const [cards, setCards] = useState<FoodCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState(false);
@@ -44,12 +51,23 @@ export default function BrowseScreen() {
     return () => unsub();
   }, [retryKey]);
 
-  const onJoin = async (id: string) => {
-    setJoiningId(id);
+  const onJoin = async (card: FoodCard) => {
+    const uid = user?.uid;
+    if (!uid) {
+      Alert.alert('Sign in required', 'Sign in to join a food card.');
+      router.push('/(auth)/login' as never);
+      return;
+    }
+    if (isFoodCardJoinDisabled(card, uid)) return;
+    setJoiningId(card.id);
     try {
-      const result = await joinFoodCard(id);
-      if (result.matched) {
-        router.push(`/match/${id}` as const);
+      const result = await joinOrder(card.id, uid);
+      if (result.alreadyJoined) {
+        Alert.alert('Already joined', 'You are already on this order.');
+      } else if (result.isFull) {
+        Alert.alert('Order full', 'This card has reached the maximum number of joiners.');
+      } else {
+        Alert.alert('Joined', 'You have joined this order.');
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Could not join this card.';
@@ -90,30 +108,48 @@ export default function BrowseScreen() {
               <Text style={styles.empty}>No active food cards yet. Check back soon.</Text>
             )
           ) : (
-            cards.map((card) => (
-              <View key={card.id} style={styles.card}>
-                <Image source={{ uri: card.image }} style={styles.hero} />
-                <View style={styles.cardBody}>
-                  <Text style={styles.cardTitle}>{card.title}</Text>
-                  <Text style={styles.meta}>{card.restaurantName}</Text>
-                  <Text style={styles.meta}>
-                    ${card.splitPrice.toFixed(2)} each · total ${card.price.toFixed(2)}
-                  </Text>
-                  <Text style={styles.meta}>Expires in 45 minutes</Text>
-                  <TouchableOpacity
-                    style={styles.joinBtn}
-                    disabled={joiningId === card.id}
-                    onPress={() => onJoin(card.id)}
-                  >
-                    {joiningId === card.id ? (
-                      <ActivityIndicator color="#0B1A15" />
-                    ) : (
-                      <Text style={styles.joinText}>❤️ Join</Text>
-                    )}
-                  </TouchableOpacity>
+            cards.map((card) => {
+              const uid = user?.uid;
+              const joinBusy = joiningId === card.id;
+              const joinDisabled =
+                joinBusy || (!!uid && isFoodCardJoinDisabled(card, uid));
+              const cap =
+                typeof card.maxUsers === 'number' && card.maxUsers > 0
+                  ? card.maxUsers
+                  : 2;
+              const joinedCount = card.joinedUsers?.length ?? 0;
+              const alreadyIn = uid ? (card.joinedUsers?.includes(uid) ?? false) : false;
+              const atCapacity =
+                card.status === 'full' || joinedCount >= cap;
+              let joinLabel = '❤️ Join';
+              if (!uid) joinLabel = 'Sign in to join';
+              else if (alreadyIn) joinLabel = 'Joined';
+              else if (atCapacity) joinLabel = 'Full';
+              return (
+                <View key={card.id} style={styles.card}>
+                  <Image source={{ uri: card.image }} style={styles.hero} />
+                  <View style={styles.cardBody}>
+                    <Text style={styles.cardTitle}>{card.title}</Text>
+                    <Text style={styles.meta}>{card.restaurantName}</Text>
+                    <Text style={styles.meta}>
+                      ${card.splitPrice.toFixed(2)} each · total ${card.price.toFixed(2)}
+                    </Text>
+                    <Text style={styles.meta}>Expires in 45 minutes</Text>
+                    <TouchableOpacity
+                      style={[styles.joinBtn, joinDisabled && !joinBusy && styles.joinBtnDisabled]}
+                      disabled={joinDisabled}
+                      onPress={() => onJoin(card)}
+                    >
+                      {joinBusy ? (
+                        <ActivityIndicator color="#0B1A15" />
+                      ) : (
+                        <Text style={styles.joinText}>{joinLabel}</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
                 </View>
-              </View>
-            ))
+              );
+            })
           )}
         </ScrollView>
       )}
@@ -161,5 +197,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  joinBtnDisabled: { opacity: 0.45 },
   joinText: { color: '#071A14', fontWeight: '800' },
 });
