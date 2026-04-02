@@ -24,37 +24,18 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { auth, db } from '@/services/firebase';
 
-type ChatMessage = {
-  id: string;
-  text: string;
-  senderId: string;
-  sender: string;
-  userName: string;
-  createdAtMs: number;
-};
+/** Firestore message doc shape varies; listener spreads `doc.data()`. */
+type ChatMessage = { id: string } & Record<string, unknown>;
 
 function paramToId(raw: string | string[] | undefined): string {
   if (raw == null) return '';
   return String(Array.isArray(raw) ? raw[0] : raw);
 }
 
-function readCreatedAtMs(value: unknown): number {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (
-    value &&
-    typeof value === 'object' &&
-    'toMillis' in value &&
-    typeof (value as { toMillis: () => number }).toMillis === 'function'
-  ) {
-    return (value as { toMillis: () => number }).toMillis();
-  }
-  return Date.now();
-}
-
 export default function ChatByIdScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ id?: string | string[] }>();
-  const chatId = paramToId(params.id);
+  const id = paramToId(params.id);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(true);
@@ -68,7 +49,7 @@ export default function ChatByIdScreen() {
   const listRef = useRef<FlatList<ChatMessage>>(null);
 
   useEffect(() => {
-    if (!chatId) {
+    if (!id) {
       setChatExists(null);
       setHasSyncedMessages(false);
       setMessages([]);
@@ -78,14 +59,14 @@ export default function ChatByIdScreen() {
     }
     setError(null);
     setLoading(true);
-  }, [chatId]);
+  }, [id]);
 
   useEffect(() => {
-    if (!chatId) {
+    if (!id) {
       return;
     }
     setChatExists(null);
-    const unsub = onSnapshot(doc(db, 'chats', chatId), (snap) => {
+    const unsub = onSnapshot(doc(db, 'chats', id), (snap) => {
       if (!snap.exists()) {
         setError('Chat not found.');
         setChatExists(false);
@@ -96,28 +77,24 @@ export default function ChatByIdScreen() {
       }
     });
     return () => unsub();
-  }, [chatId]);
+  }, [id]);
 
   useEffect(() => {
-    if (!chatId) return;
+    if (!id) return;
     setHasSyncedMessages(false);
     bootstrapAttemptedRef.current = false;
     aiInsertAttemptedRef.current = false;
-    const q = query(collection(db, 'chats', chatId, 'messages'), orderBy('createdAt', 'asc'));
-    const unsub = onSnapshot(
+
+    const q = query(collection(db, 'chats', id, 'messages'), orderBy('createdAt', 'asc'));
+
+    const unsubscribe = onSnapshot(
       q,
-      (snap) => {
-        const rows = snap.docs.map((d) => {
-          const data = d.data();
-          return {
-            id: d.id,
-            text: String(data?.text ?? ''),
-            senderId: String(data?.senderId ?? ''),
-            userName: String(data?.userName ?? 'User'),
-            createdAtMs: readCreatedAtMs(data?.createdAt),
-          };
-        });
-        setMessages(rows);
+      (snapshot) => {
+        const msgs = snapshot.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        }));
+        setMessages(msgs as ChatMessage[]);
         setHasSyncedMessages(true);
         setLoading(false);
       },
@@ -127,18 +104,19 @@ export default function ChatByIdScreen() {
         setLoading(false);
       },
     );
-    return () => unsub();
-  }, [chatId]);
+
+    return () => unsubscribe();
+  }, [id]);
 
   useEffect(() => {
-    if (!chatId || chatExists !== true || !hasSyncedMessages || messages.length > 0 || bootstrapAttemptedRef.current) {
+    if (!id || chatExists !== true || !hasSyncedMessages || messages.length > 0 || bootstrapAttemptedRef.current) {
       return;
     }
     bootstrapAttemptedRef.current = true;
     (async () => {
       try {
         const welcome = 'You both joined this order 🍕';
-        await addDoc(collection(db, 'chats', chatId, 'messages'), {
+        await addDoc(collection(db, 'chats', id, 'messages'), {
           text: welcome,
           senderId: 'system',
           sender: 'system',
@@ -148,7 +126,7 @@ export default function ChatByIdScreen() {
           seen: false,
           system: true,
         });
-        await updateDoc(doc(db, 'chats', chatId), {
+        await updateDoc(doc(db, 'chats', id), {
           lastMessage: welcome,
           lastMessageAt: Date.now(),
         }).catch(() => {});
@@ -156,17 +134,17 @@ export default function ChatByIdScreen() {
         bootstrapAttemptedRef.current = false;
       }
     })();
-  }, [chatId, chatExists, hasSyncedMessages, messages.length]);
+  }, [id, chatExists, hasSyncedMessages, messages.length]);
 
   useEffect(() => {
-    if (!chatId) return;
+    if (!id) return;
     if (!messages.length) return;
 
-    const hasAI = messages.some((m) => m.sender === 'ai');
+    const hasAI = messages.some((m) => m['sender'] === 'ai');
 
     if (!hasAI && !aiInsertAttemptedRef.current) {
       aiInsertAttemptedRef.current = true;
-      addDoc(collection(db, 'chats', chatId, 'messages'), {
+      addDoc(collection(db, 'chats', id, 'messages'), {
         text: 'Hey! I can help you coordinate your order 🍕',
         sender: 'ai',
         createdAt: Date.now(),
@@ -175,14 +153,14 @@ export default function ChatByIdScreen() {
       });
       console.log('AI inserted from chat screen');
     }
-  }, [chatId, messages]);
+  }, [id, messages]);
 
   useEffect(() => {
     if (messages.length === 0) return;
     listRef.current?.scrollToEnd({ animated: true });
   }, [messages.length]);
 
-  const canSend = useMemo(() => text.trim().length > 0 && !sending && !!chatId, [text, sending, chatId]);
+  const canSend = useMemo(() => text.trim().length > 0 && !sending && !!id, [text, sending, id]);
 
   const onSend = async () => {
     if (!canSend) return;
@@ -191,13 +169,13 @@ export default function ChatByIdScreen() {
     const payload = text.trim();
     setSending(true);
     try {
-      await addDoc(collection(db, 'chats', chatId, 'messages'), {
+      await addDoc(collection(db, 'chats', id, 'messages'), {
         text: payload,
         senderId: uid,
         userName: auth.currentUser?.displayName || auth.currentUser?.email?.split('@')[0] || 'User',
         createdAt: Date.now(),
       });
-      await updateDoc(doc(db, 'chats', chatId), {
+      await updateDoc(doc(db, 'chats', id), {
         lastMessage: payload,
         lastMessageAt: Date.now(),
       }).catch(() => {});
@@ -229,11 +207,14 @@ export default function ChatByIdScreen() {
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.listContent}
             renderItem={({ item }) => {
-              const mine = item.senderId === auth.currentUser?.uid;
+              const senderId = String(item.senderId ?? '');
+              const mine = senderId === auth.currentUser?.uid;
+              const label = String(item.userName ?? item.sender ?? 'User');
+              const body = String(item.text ?? '');
               return (
                 <View style={[styles.bubble, mine ? styles.mine : styles.theirs]}>
-                  <Text style={styles.name}>{item.userName}</Text>
-                  <Text style={styles.msg}>{item.text}</Text>
+                  <Text style={styles.name}>{label}</Text>
+                  <Text style={styles.msg}>{body}</Text>
                 </View>
               );
             }}
