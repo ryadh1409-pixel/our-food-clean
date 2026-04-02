@@ -1,13 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import {
-  addDoc,
-  collection,
-  doc,
-  onSnapshot,
-  orderBy,
-  query,
-  updateDoc,
-} from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
+import { addDoc, doc as firestoreDoc, updateDoc } from 'firebase/firestore';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -59,6 +52,10 @@ export default function ChatByIdScreen() {
     }
     setError(null);
     setLoading(true);
+    setMessages([]);
+    setHasSyncedMessages(false);
+    bootstrapAttemptedRef.current = false;
+    aiInsertAttemptedRef.current = false;
   }, [id]);
 
   useEffect(() => {
@@ -66,7 +63,7 @@ export default function ChatByIdScreen() {
       return;
     }
     setChatExists(null);
-    const unsub = onSnapshot(doc(db, 'chats', id), (snap) => {
+    const unsub = onSnapshot(firestoreDoc(db, 'chats', id), (snap) => {
       if (!snap.exists()) {
         setError('Chat not found.');
         setChatExists(false);
@@ -74,6 +71,7 @@ export default function ChatByIdScreen() {
       } else {
         setError(null);
         setChatExists(true);
+        setLoading(false);
       }
     });
     return () => unsub();
@@ -81,29 +79,22 @@ export default function ChatByIdScreen() {
 
   useEffect(() => {
     if (!id) return;
-    setHasSyncedMessages(false);
-    bootstrapAttemptedRef.current = false;
-    aiInsertAttemptedRef.current = false;
 
-    const q = query(collection(db, 'chats', id, 'messages'), orderBy('createdAt', 'asc'));
-
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const msgs = snapshot.docs.map((d) => ({
-          id: d.id,
-          ...d.data(),
-        }));
-        setMessages(msgs as ChatMessage[]);
-        setHasSyncedMessages(true);
-        setLoading(false);
-      },
-      () => {
-        setMessages([]);
-        setHasSyncedMessages(true);
-        setLoading(false);
-      },
+    const q = query(
+      collection(db, 'chats', id, 'messages'),
+      orderBy('createdAt', 'asc'),
     );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const msgs = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      console.log('Messages updated:', msgs);
+      setMessages(msgs);
+      setHasSyncedMessages(true);
+    });
 
     return () => unsubscribe();
   }, [id]);
@@ -126,7 +117,7 @@ export default function ChatByIdScreen() {
           seen: false,
           system: true,
         });
-        await updateDoc(doc(db, 'chats', id), {
+        await updateDoc(firestoreDoc(db, 'chats', id), {
           lastMessage: welcome,
           lastMessageAt: Date.now(),
         }).catch(() => {});
@@ -175,7 +166,7 @@ export default function ChatByIdScreen() {
         userName: auth.currentUser?.displayName || auth.currentUser?.email?.split('@')[0] || 'User',
         createdAt: Date.now(),
       });
-      await updateDoc(doc(db, 'chats', id), {
+      await updateDoc(firestoreDoc(db, 'chats', id), {
         lastMessage: payload,
         lastMessageAt: Date.now(),
       }).catch(() => {});
