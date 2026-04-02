@@ -27,6 +27,9 @@ export type FoodCard = {
   createdAt: Timestamp | null;
   expiresAt: number;
   status: 'waiting' | 'matched';
+  ownerId?: string;
+  joinedUsers?: string[];
+  maxUsers?: number;
   user1?: { uid: string; name: string; photo: string | null } | null;
   user2?: { uid: string; name: string; photo: string | null } | null;
 };
@@ -169,6 +172,8 @@ export async function createFoodCard(input: {
 }) {
   const email = auth.currentUser?.email?.toLowerCase() ?? '';
   if (email !== ADMIN_EMAIL) throw new Error('Admin only');
+  const uid = auth.currentUser?.uid ?? '';
+  if (!uid) throw new Error('Sign in required');
   const activeSnap = await getDocs(
     query(collection(db, FOOD_CARDS), where('status', '==', 'waiting')),
   );
@@ -184,6 +189,9 @@ export async function createFoodCard(input: {
       input.latitude != null && input.longitude != null
         ? { latitude: input.latitude, longitude: input.longitude }
         : null,
+    ownerId: uid,
+    joinedUsers: [] as string[],
+    maxUsers: 2,
     createdAt: serverTimestamp(),
     expiresAt: now + 45 * 60 * 1000,
     status: 'waiting',
@@ -197,6 +205,10 @@ async function duplicateCard(cardId: string) {
   if (!snap.exists()) return;
   const data = snap.data();
   const now = Date.now();
+  const owner =
+    typeof data.ownerId === 'string' && data.ownerId
+      ? data.ownerId
+      : auth.currentUser?.uid ?? '';
   await addDoc(collection(db, FOOD_CARDS), {
     title: data.title ?? 'Food card',
     image: data.image ?? '',
@@ -204,6 +216,9 @@ async function duplicateCard(cardId: string) {
     price: Number(data.price) || 0,
     splitPrice: Number(data.splitPrice) || 0,
     location: data.location ?? null,
+    ownerId: owner,
+    joinedUsers: [] as string[],
+    maxUsers: 2,
     createdAt: serverTimestamp(),
     expiresAt: now + 45 * 60 * 1000,
     status: 'waiting',
