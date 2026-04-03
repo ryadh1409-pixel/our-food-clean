@@ -387,9 +387,9 @@ exports.onReportCreated = functions.firestore
 
 exports.onOrderMessageCreated = functions.firestore
   .document('orders/{orderId}/messages/{messageId}')
-  .onCreate(async (snap) => {
-    const data = snap.data();
-    const senderId = typeof data?.senderId === 'string' ? data.senderId : null;
+  .onCreate(async (snap, context) => {
+    const data = snap.data() || {};
+    const senderId = typeof data.senderId === 'string' ? data.senderId : null;
     if (!senderId) return null;
 
     const db = admin.firestore();
@@ -401,6 +401,42 @@ exports.onOrderMessageCreated = functions.firestore
       { merge: true },
     );
     await refreshUserDerivedFields(db, senderId);
+
+    const orderId = context.params.orderId;
+    const messageId = context.params.messageId;
+    const isSystem =
+      data.type === 'system' ||
+      senderId === 'system' ||
+      String(data.senderName ?? '').toLowerCase() === 'system';
+    if (!isSystem && orderId) {
+      try {
+        const orderSnap = await db.doc(`orders/${orderId}`).get();
+        if (orderSnap.exists) {
+          const od = orderSnap.data() || {};
+          const members = orderMemberIds(od);
+          const recipients = members.filter((id) => id !== senderId);
+          if (recipients.length > 0) {
+            const bodyText =
+              typeof data.text === 'string' && data.text.trim()
+                ? data.text.trim().slice(0, 200)
+                : 'New message';
+            const senderNameRaw =
+              (typeof data.userName === 'string' && data.userName.trim()) ||
+              (typeof data.senderName === 'string' && data.senderName.trim()) ||
+              '';
+            const title = senderNameRaw || 'Order chat';
+            await notifyUsersExpo(db, recipients, title, bodyText, {
+              type: 'order_message',
+              orderId,
+              messageId,
+            });
+          }
+        }
+      } catch (e) {
+        console.warn('[onOrderMessageCreated] push notify', orderId, e);
+      }
+    }
+
     return null;
   });
 
@@ -679,15 +715,6 @@ exports.notifyAdminOnComplaint = functions.firestore
   });
 
 /**
- * Inactive user reminder: run every hour.
- * Find users with lastActive older than 48h, send push reminder.
- * Skip if user already received inactive_reminder in last 48h.
- */
-const INACTIVE_HOURS = 48;
-const REMINDER_TITLE = 'HalfOrder';
-const REMINDER_BODY = 'Hungry? Find someone to split a meal with 🍔';
-
-/**
  * New chat message under HalfOrder / order thread: `chats/{chatId}/messages/*`.
  * Sends via Expo Push API (not FCM directly).
  */
@@ -813,77 +840,6 @@ exports.joinCancelledNotification = functions.firestore
     return null;
   });
 
-exports.inactiveUserReminder = functions.pubsub
-  .schedule('every 1 hours')
-  .timeZone('America/Toronto')
-  .onRun(async () => {
-    const db = admin.firestore();
-    const now = Date.now();
-    const cutoffMs = now - INACTIVE_HOURS * 60 * 60 * 1000;
-    const cutoffTimestamp = admin.firestore.Timestamp.fromMillis(cutoffMs);
-
-    const usersSnap = await db
-      .collection('users')
-      .where('lastActive', '<', cutoffTimestamp)
-      .get();
-    const toNotify = [];
-
-    for (const doc of usersSnap.docs) {
-      const uid = doc.id;
-      const data = doc.data();
-      const token = data?.fcmToken ?? data?.expoPushToken ?? data?.pushToken;
-      if (typeof token !== 'string' || !token) continue;
-      if (data?.notificationsEnabled === false) continue;
-
-      const logsSnap = await db
-        .collection('notification_logs')
-        .where('userId', '==', uid)
-        .where('type', '==', 'inactive_reminder')
-        .where('time', '>=', cutoffTimestamp)
-        .limit(1)
-        .get();
-
-      if (!logsSnap.empty) continue;
-
-      toNotify.push({ uid, token, email: data?.email ?? '' });
-    }
-
-    for (const { uid, token } of toNotify) {
-      try {
-        const res = await fetch('https://exp.host/--/api/v2/push/send', {
-          method: 'POST',
-          headers: {
-            Accept: 'application/json',
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            to: token,
-            title: REMINDER_TITLE,
-            body: REMINDER_BODY,
-            sound: 'default',
-          }),
-        });
-        if (!res.ok) {
-          console.warn(
-            'inactiveUserReminder push failed for',
-            uid,
-            await res.text(),
-          );
-          continue;
-        }
-        await db.collection('notification_logs').add({
-          userId: uid,
-          type: 'inactive_reminder',
-          time: admin.firestore.FieldValue.serverTimestamp(),
-        });
-      } catch (err) {
-        console.warn('inactiveUserReminder error for', uid, err);
-      }
-    }
-
-    return null;
-  });
-
 /**
  * Firestore `feedback/{id}` onCreate → email support (one send per new doc).
  */
@@ -905,38 +861,6 @@ exports.sendFeedbackEmail = functions.firestore
       console.log('[sendFeedbackEmail] success', snap.id);
     } catch (err) {
       console.error('[sendFeedbackEmail] failure', snap.id, err);
-    }
-    return null;
-  });
-
-/**
- * Scheduled daily metrics email — 14:00 America/Toronto.
- */
-exports.dailyReport = functions.pubsub
-  .schedule('0 14 * * *')
-  .timeZone('America/Toronto')
-  .onRun(async () => {
-    const db = admin.firestore();
-    try {
-      const [usersSnap, ordersSnap, feedbackSnap] = await Promise.all([
-        db.collection('users').get(),
-        db.collection('orders').get(),
-        db.collection('feedback').get(),
-      ]);
-      const users = usersSnap.size;
-      const orders = ordersSnap.size;
-      const feedback = feedbackSnap.size;
-      const body = `Users: ${users}\nOrders: ${orders}\nFeedback: ${feedback}`;
-      const transport = getMailTransporter();
-      await transport.sendMail({
-        from: '"HalfOrder Reports" <noreply@halforder.app>',
-        to: SUPPORT_INBOX,
-        subject: 'HalfOrder Daily Report',
-        text: body,
-      });
-      console.log('[dailyReport] success', { users, orders, feedback });
-    } catch (err) {
-      console.error('[dailyReport] failure', err);
     }
     return null;
   });

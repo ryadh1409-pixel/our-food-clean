@@ -45,41 +45,84 @@ service cloud.firestore {
         );
     }
 
-    function participantsAllStrings(participants, idx) {
-      return idx >= participants.size()
-        || (
-          participants[idx] is string
-          && participantsAllStrings(participants, idx + 1)
+    /**
+     * Lists are bounded to 20 entries (same cap as maxPeople / maxUsers in orders).
+     * Firestore rules forbid recursive functions; use fixed-depth checks instead.
+     */
+    function listAllStrings(lst) {
+      return lst is list
+        && lst.size() <= 20
+        && (lst.size() < 1 || lst[0] is string)
+        && (lst.size() < 2 || lst[1] is string)
+        && (lst.size() < 3 || lst[2] is string)
+        && (lst.size() < 4 || lst[3] is string)
+        && (lst.size() < 5 || lst[4] is string)
+        && (lst.size() < 6 || lst[5] is string)
+        && (lst.size() < 7 || lst[6] is string)
+        && (lst.size() < 8 || lst[7] is string)
+        && (lst.size() < 9 || lst[8] is string)
+        && (lst.size() < 10 || lst[9] is string)
+        && (lst.size() < 11 || lst[10] is string)
+        && (lst.size() < 12 || lst[11] is string)
+        && (lst.size() < 13 || lst[12] is string)
+        && (lst.size() < 14 || lst[13] is string)
+        && (lst.size() < 15 || lst[14] is string)
+        && (lst.size() < 16 || lst[15] is string)
+        && (lst.size() < 17 || lst[16] is string)
+        && (lst.size() < 18 || lst[17] is string)
+        && (lst.size() < 19 || lst[18] is string)
+        && (lst.size() < 20 || lst[19] is string);
+    }
+
+    function participantsAllStrings(participants) {
+      return listAllStrings(participants);
+    }
+
+    function usersAllStrings(users) {
+      return listAllStrings(users);
+    }
+
+    function participantEntryMatchesUid(parts, uid, i) {
+      return parts.size() > i
+        && (
+          (parts[i] is string && parts[i] == uid)
+          || (
+            parts[i] is map
+            && parts[i].keys().hasAll(['userId', 'name'])
+            && parts[i].userId == uid
+          )
         );
     }
 
     /** HalfOrder / legacy: `users` uids or `participants` strings | maps with userId. */
-    function participantListContainsUid(parts, uid, idx) {
-      return idx >= parts.size()
-        || (
-          (parts[idx] is string && parts[idx] == uid)
-          || (
-            parts[idx] is map
-            && parts[idx].keys().hasAll(['userId', 'name'])
-            && parts[idx].userId == uid
-          )
-          || participantListContainsUid(parts, uid, idx + 1)
-        );
+    function participantListContainsUid(parts, uid) {
+      return participantEntryMatchesUid(parts, uid, 0)
+        || participantEntryMatchesUid(parts, uid, 1)
+        || participantEntryMatchesUid(parts, uid, 2)
+        || participantEntryMatchesUid(parts, uid, 3)
+        || participantEntryMatchesUid(parts, uid, 4)
+        || participantEntryMatchesUid(parts, uid, 5)
+        || participantEntryMatchesUid(parts, uid, 6)
+        || participantEntryMatchesUid(parts, uid, 7)
+        || participantEntryMatchesUid(parts, uid, 8)
+        || participantEntryMatchesUid(parts, uid, 9)
+        || participantEntryMatchesUid(parts, uid, 10)
+        || participantEntryMatchesUid(parts, uid, 11)
+        || participantEntryMatchesUid(parts, uid, 12)
+        || participantEntryMatchesUid(parts, uid, 13)
+        || participantEntryMatchesUid(parts, uid, 14)
+        || participantEntryMatchesUid(parts, uid, 15)
+        || participantEntryMatchesUid(parts, uid, 16)
+        || participantEntryMatchesUid(parts, uid, 17)
+        || participantEntryMatchesUid(parts, uid, 18)
+        || participantEntryMatchesUid(parts, uid, 19);
     }
 
     function isOrderMember(orderData) {
       return isSignedIn()
         && (
           request.auth.uid in orderData.get('users', [])
-          || participantListContainsUid(orderData.get('participants', []), request.auth.uid, 0)
-        );
-    }
-
-    function usersAllStrings(users, idx) {
-      return idx >= users.size()
-        || (
-          users[idx] is string
-          && usersAllStrings(users, idx + 1)
+          || participantListContainsUid(orderData.get('participants', []), request.auth.uid)
         );
     }
 
@@ -99,21 +142,52 @@ service cloud.firestore {
         && p.userId.size() > 0;
     }
 
-    function allParticipantDocsValid(parts, idx) {
-      return idx >= parts.size()
-        || (
-          validParticipantDoc(parts[idx])
-          && allParticipantDocsValid(parts, idx + 1)
-        );
+    function allParticipantDocsValid(parts) {
+      return parts is list
+        && parts.size() <= 20
+        && (parts.size() < 1 || validParticipantDoc(parts[0]))
+        && (parts.size() < 2 || validParticipantDoc(parts[1]))
+        && (parts.size() < 3 || validParticipantDoc(parts[2]))
+        && (parts.size() < 4 || validParticipantDoc(parts[3]))
+        && (parts.size() < 5 || validParticipantDoc(parts[4]))
+        && (parts.size() < 6 || validParticipantDoc(parts[5]))
+        && (parts.size() < 7 || validParticipantDoc(parts[6]))
+        && (parts.size() < 8 || validParticipantDoc(parts[7]))
+        && (parts.size() < 9 || validParticipantDoc(parts[8]))
+        && (parts.size() < 10 || validParticipantDoc(parts[9]))
+        && (parts.size() < 11 || validParticipantDoc(parts[10]))
+        && (parts.size() < 12 || validParticipantDoc(parts[11]))
+        && (parts.size() < 13 || validParticipantDoc(parts[12]))
+        && (parts.size() < 14 || validParticipantDoc(parts[13]))
+        && (parts.size() < 15 || validParticipantDoc(parts[14]))
+        && (parts.size() < 16 || validParticipantDoc(parts[15]))
+        && (parts.size() < 17 || validParticipantDoc(parts[16]))
+        && (parts.size() < 18 || validParticipantDoc(parts[17]))
+        && (parts.size() < 19 || validParticipantDoc(parts[18]))
+        && (parts.size() < 20 || validParticipantDoc(parts[19]));
     }
 
-    function countParticipantUserId(parts, uid, idx) {
-      return idx >= parts.size()
-        ? 0
-        : (
-          (parts[idx] is map && parts[idx].userId == uid ? 1 : 0)
-          + countParticipantUserId(parts, uid, idx + 1)
-        );
+    function countParticipantUserId(parts, uid) {
+      return (parts.size() > 0 && parts[0] is map && parts[0].userId == uid ? 1 : 0)
+        + (parts.size() > 1 && parts[1] is map && parts[1].userId == uid ? 1 : 0)
+        + (parts.size() > 2 && parts[2] is map && parts[2].userId == uid ? 1 : 0)
+        + (parts.size() > 3 && parts[3] is map && parts[3].userId == uid ? 1 : 0)
+        + (parts.size() > 4 && parts[4] is map && parts[4].userId == uid ? 1 : 0)
+        + (parts.size() > 5 && parts[5] is map && parts[5].userId == uid ? 1 : 0)
+        + (parts.size() > 6 && parts[6] is map && parts[6].userId == uid ? 1 : 0)
+        + (parts.size() > 7 && parts[7] is map && parts[7].userId == uid ? 1 : 0)
+        + (parts.size() > 8 && parts[8] is map && parts[8].userId == uid ? 1 : 0)
+        + (parts.size() > 9 && parts[9] is map && parts[9].userId == uid ? 1 : 0)
+        + (parts.size() > 10 && parts[10] is map && parts[10].userId == uid ? 1 : 0)
+        + (parts.size() > 11 && parts[11] is map && parts[11].userId == uid ? 1 : 0)
+        + (parts.size() > 12 && parts[12] is map && parts[12].userId == uid ? 1 : 0)
+        + (parts.size() > 13 && parts[13] is map && parts[13].userId == uid ? 1 : 0)
+        + (parts.size() > 14 && parts[14] is map && parts[14].userId == uid ? 1 : 0)
+        + (parts.size() > 15 && parts[15] is map && parts[15].userId == uid ? 1 : 0)
+        + (parts.size() > 16 && parts[16] is map && parts[16].userId == uid ? 1 : 0)
+        + (parts.size() > 17 && parts[17] is map && parts[17].userId == uid ? 1 : 0)
+        + (parts.size() > 18 && parts[18] is map && parts[18].userId == uid ? 1 : 0)
+        + (parts.size() > 19 && parts[19] is map && parts[19].userId == uid ? 1 : 0);
     }
 
     /** HalfOrder: food-card swipe creates `orders` with `cardId` + `users` + `host` + `participants`. */
@@ -125,7 +199,7 @@ service cloud.firestore {
         && request.resource.data.cardId.size() > 0
         && request.resource.data.users is list
         && request.resource.data.users.size() == 1
-        && usersAllStrings(request.resource.data.users, 0)
+        && usersAllStrings(request.resource.data.users)
         && request.auth.uid == request.resource.data.users[0]
         && request.resource.data.host is map
         && validOrderHostDoc(request.resource.data.host)
@@ -134,7 +208,7 @@ service cloud.firestore {
         && request.resource.data.participants.size() == 1
         && validParticipantDoc(request.resource.data.participants[0])
         && request.resource.data.participants[0].userId == request.auth.uid
-        && allParticipantDocsValid(request.resource.data.participants, 0)
+        && allParticipantDocsValid(request.resource.data.participants)
         && (
           request.resource.data.status == 'waiting'
           || request.resource.data.status == 'active'
@@ -158,7 +232,7 @@ service cloud.firestore {
         && resource.data.cardId is string
         && resource.data.get('users', []).size() > 0
         && request.resource.data.users is list
-        && usersAllStrings(request.resource.data.users, 0)
+        && usersAllStrings(request.resource.data.users)
         && request.resource.data.participants is list
         && request.resource.data.users.size() == resource.data.get('users', []).size() + 1
         && request.resource.data.participants.size()
@@ -176,11 +250,11 @@ service cloud.firestore {
           || request.resource.data.host == resource.data.host
         )
         && countParticipantUserId(
-          request.resource.data.participants, request.auth.uid, 0
+          request.resource.data.participants, request.auth.uid
         ) == countParticipantUserId(
-          resource.data.get('participants', []), request.auth.uid, 0
+          resource.data.get('participants', []), request.auth.uid
         ) + 1
-        && allParticipantDocsValid(request.resource.data.participants, 0)
+        && allParticipantDocsValid(request.resource.data.participants)
         && (
           (
             request.resource.data.diff(resource.data).changedKeys()
@@ -208,7 +282,7 @@ service cloud.firestore {
         && resource.data.get('users', []).size() == 1
         && request.resource.data.users is list
         && request.resource.data.users.size() == 2
-        && usersAllStrings(request.resource.data.users, 0)
+        && usersAllStrings(request.resource.data.users)
         && request.resource.data.participants is list
         && request.resource.data.participants.size() == 2
         && request.auth.uid in request.resource.data.users
@@ -440,7 +514,7 @@ service cloud.firestore {
         && request.resource.data.maxPeople >= 2
         && request.resource.data.participants is list
         && request.resource.data.participants.size() == 1
-        && participantsAllStrings(request.resource.data.participants, 0)
+        && participantsAllStrings(request.resource.data.participants)
         && request.auth.uid in request.resource.data.participants
         && request.resource.data.joinedAtMap is map
         && request.resource.data.joinedAtMap[request.auth.uid] is timestamp
@@ -465,7 +539,7 @@ service cloud.firestore {
         && !isCurrentUserRestricted()
         && request.resource.data.diff(resource.data).changedKeys().hasOnly(['participants', 'joinedAtMap'])
         && request.resource.data.participants is list
-        && participantsAllStrings(request.resource.data.participants, 0)
+        && participantsAllStrings(request.resource.data.participants)
         && request.resource.data.participants.size()
           == resource.data.get('participants', []).size() + 1
         && request.auth.uid in request.resource.data.participants
@@ -482,7 +556,7 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).changedKeys()
           .hasOnly(['participants', 'joinedAtMap', 'status', 'user2Id', 'user2Name'])
         && request.resource.data.participants is list
-        && participantsAllStrings(request.resource.data.participants, 0)
+        && participantsAllStrings(request.resource.data.participants)
         && request.resource.data.participants.size()
           == resource.data.get('participants', []).size() + 1
         && request.auth.uid in request.resource.data.participants
@@ -513,7 +587,7 @@ service cloud.firestore {
             .hasOnly(['participants', 'joinedAtMap', 'status'])
         )
         && request.resource.data.participants is list
-        && participantsAllStrings(request.resource.data.participants, 0)
+        && participantsAllStrings(request.resource.data.participants)
         && request.resource.data.participants.size()
           == resource.data.get('participants', []).size() - 1
         && !(request.auth.uid in request.resource.data.participants)
@@ -557,14 +631,6 @@ service cloud.firestore {
         && resource.data.status in ['open', 'matched', 'full']
         && request.resource.data.status == 'expired'
         && request.auth.uid in resource.data.get('participants', []);
-    }
-
-    function foodCardMaxUsersCap() {
-      return resource.data.keys().hasAll(['maxUsers'])
-        && resource.data.maxUsers is int
-        && resource.data.maxUsers > 0
-        ? resource.data.maxUsers
-        : 2;
     }
 
     /** Open swipe-deck food card status. */
@@ -643,6 +709,44 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    /**
+     * Email invite row → Cloud Function `sendOrderInvite` (nodemailer).
+     * Inviter must be a member of the order (`users` or string `participants`).
+     */
+    match /invites/{inviteId} {
+      allow create: if isSignedIn()
+        && !isCurrentUserRestricted()
+        && request.resource.data.keys().hasAll([
+          'email',
+          'orderId',
+          'inviterName',
+          'inviterId',
+          'createdAt',
+        ])
+        && request.resource.data.email is string
+        && request.resource.data.email.size() > 3
+        && request.resource.data.orderId is string
+        && request.resource.data.orderId.size() > 0
+        && request.resource.data.inviterName is string
+        && request.resource.data.inviterId == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && exists(/databases/$(database)/documents/orders/$(request.resource.data.orderId))
+        && (
+          request.auth.uid in get(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.get('users', [])
+          || request.auth.uid in get(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.get('participants', [])
+          || participantListContainsUid(
+            get(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.get('participants', []),
+            request.auth.uid
+          )
+        );
+      allow read: if isAdmin()
+        || (
+          isSignedIn()
+          && resource.data.inviterId == request.auth.uid
+        );
+      allow update, delete: if false;
+    }
+
     /** First pair-join on a half-order: one doc per orderId (idempotency). */
     match /referrals/{orderId} {
       allow read: if isSignedIn();
@@ -717,7 +821,7 @@ service cloud.firestore {
         && request.resource.data.orderId == resource.data.orderId
         && request.resource.data.diff(resource.data).changedKeys().hasOnly(['users'])
         && request.resource.data.users is list
-        && usersAllStrings(request.resource.data.users, 0)
+        && usersAllStrings(request.resource.data.users)
         && resource.data.get('users', []).size() > 0
         && request.resource.data.users.size() == resource.data.get('users', []).size() + 1
         && request.auth.uid in request.resource.data.users
@@ -758,7 +862,7 @@ service cloud.firestore {
           && request.resource.data.orderId == chatId
           && request.resource.data.users is list
           && request.resource.data.users.size() >= 1
-          && usersAllStrings(request.resource.data.users, 0)
+          && usersAllStrings(request.resource.data.users)
           && request.auth.uid in request.resource.data.users
           && request.resource.data.createdAt != null
         );

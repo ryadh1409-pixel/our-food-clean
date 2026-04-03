@@ -18,9 +18,11 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -61,6 +63,7 @@ import {
 } from '@/services/joinOrder';
 import { joinOrder as joinFoodCardOrder } from '@/services/foodCards';
 import { normalizeParticipantsStrings } from '@/services/orderLifecycle';
+import { submitOrderEmailInvite } from '@/services/orderInviteEmail';
 import { claimReferralInboxRewards } from '@/services/referralRewards';
 
 const PLACEHOLDER_FOOD_IMAGE =
@@ -221,6 +224,9 @@ export default function OrderDetailsScreen() {
   const [completing, setCompleting] = useState(false);
   const [countdownSec, setCountdownSec] = useState(0);
   const [isBlocked, setIsBlocked] = useState(false);
+  const [emailInviteOpen, setEmailInviteOpen] = useState(false);
+  const [emailInviteInput, setEmailInviteInput] = useState('');
+  const [emailInviteSending, setEmailInviteSending] = useState(false);
   const prevJoinedCountRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -555,6 +561,31 @@ export default function OrderDetailsScreen() {
     });
   };
 
+  const inviterDisplayName =
+    viewerProfile?.name?.trim() ||
+    auth.currentUser?.displayName?.trim() ||
+    auth.currentUser?.email?.split('@')[0] ||
+    'Friend';
+
+  const submitEmailInvite = async () => {
+    if (!order?.id) return;
+    setEmailInviteSending(true);
+    try {
+      await submitOrderEmailInvite({
+        email: emailInviteInput,
+        orderId: order.id,
+        inviterName: inviterDisplayName,
+      });
+      setEmailInviteOpen(false);
+      setEmailInviteInput('');
+      Alert.alert('Invite sent', 'If email is configured, they will get a link in their inbox.');
+    } catch (e) {
+      Alert.alert('Could not send', friendlyErrorMessage(e));
+    } finally {
+      setEmailInviteSending(false);
+    }
+  };
+
   const handleReportUser = () => {
     const uid = auth.currentUser?.uid;
     const reported = partnerIdForSafety;
@@ -753,6 +784,15 @@ export default function OrderDetailsScreen() {
             >
               <Text style={styles.inviteWhatsAppBtnSubtleText}>Invite via WhatsApp</Text>
             </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.inviteEmailBtnSubtle}
+              onPress={() => setEmailInviteOpen(true)}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.inviteWhatsAppBtnSubtleText}>
+                Invite by email (sends link)
+              </Text>
+            </TouchableOpacity>
           </View>
         ) : null}
         {detailSource === 'order' &&
@@ -897,6 +937,53 @@ export default function OrderDetailsScreen() {
         </TouchableOpacity>
       </ScrollView>
       </ScreenFadeIn>
+      <Modal
+        visible={emailInviteOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setEmailInviteOpen(false)}
+      >
+        <View style={styles.emailModalBackdrop}>
+          <View style={styles.emailModalCard}>
+            <Text style={styles.emailModalTitle}>Email invite</Text>
+            <Text style={styles.emailModalHint}>
+              We’ll email them a link to this order (requires mail setup in Firebase).
+            </Text>
+            <TextInput
+              style={styles.emailModalInput}
+              placeholder="friend@example.com"
+              placeholderTextColor="#64748B"
+              value={emailInviteInput}
+              onChangeText={setEmailInviteInput}
+              autoCapitalize="none"
+              keyboardType="email-address"
+            />
+            <View style={styles.emailModalActions}>
+              <TouchableOpacity
+                style={styles.emailModalCancel}
+                onPress={() => {
+                  setEmailInviteOpen(false);
+                  setEmailInviteInput('');
+                }}
+              >
+                <Text style={styles.emailModalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.emailModalSend,
+                  emailInviteSending && styles.emailModalSendDisabled,
+                ]}
+                disabled={emailInviteSending}
+                onPress={() => void submitEmailInvite()}
+              >
+                <Text style={styles.emailModalSendText}>
+                  {emailInviteSending ? 'Sending…' : 'Send'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1053,11 +1140,69 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 16,
   },
+  inviteEmailBtnSubtle: {
+    marginTop: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
   inviteWhatsAppBtnSubtleText: {
     color: '#7dd3fc',
     fontWeight: '700',
     fontSize: 14,
   },
+  emailModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  emailModalCard: {
+    backgroundColor: '#141922',
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#232A35',
+  },
+  emailModalTitle: {
+    color: '#F8FAFC',
+    fontSize: 18,
+    fontWeight: '800',
+    marginBottom: 8,
+  },
+  emailModalHint: {
+    color: '#94A3B8',
+    fontSize: 13,
+    marginBottom: 14,
+    lineHeight: 18,
+  },
+  emailModalInput: {
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    color: '#F8FAFC',
+    fontSize: 16,
+    marginBottom: 16,
+  },
+  emailModalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+  },
+  emailModalCancel: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  emailModalCancelText: { color: '#94A3B8', fontWeight: '700' },
+  emailModalSend: {
+    backgroundColor: '#2563EB',
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 10,
+  },
+  emailModalSendDisabled: { opacity: 0.6 },
+  emailModalSendText: { color: '#FFFFFF', fontWeight: '800' },
   partnerCard: {
     marginTop: 20,
     padding: 20,

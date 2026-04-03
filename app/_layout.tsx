@@ -834,6 +834,20 @@ function RootLayoutNav() {
             `${message}\n\n${PAYMENT_MATCH_ALERT_MESSAGE}`,
           );
         }
+        const nTitle = notification?.request?.content?.title;
+        const nBody = notification?.request?.content?.body;
+        if (data?.type === 'chat_message') {
+          Alert.alert(
+            typeof nTitle === 'string' && nTitle.trim() ? nTitle : 'New message',
+            typeof nBody === 'string' && nBody.trim() ? nBody : 'Someone sent a message in your order chat.',
+          );
+        }
+        if (data?.type === 'order_message') {
+          Alert.alert(
+            typeof nTitle === 'string' && nTitle.trim() ? nTitle : 'Order chat',
+            typeof nBody === 'string' && nBody.trim() ? nBody : 'New message on your order.',
+          );
+        }
         const notificationId = data?.notificationId as string | undefined;
         if (notificationId) {
           logNotificationReceived(notificationId).catch(() => {});
@@ -898,6 +912,18 @@ function RootLayoutNav() {
             () => router.push(`/order/${orderId}` as never),
             300,
           );
+        }
+      }
+      if (data?.type === 'chat_message') {
+        const chatId = typeof data.chatId === 'string' ? data.chatId.trim() : '';
+        if (chatId) {
+          setTimeout(() => router.push(`/chat/${chatId}` as never), 300);
+        }
+      }
+      if (data?.type === 'order_message') {
+        const orderId = typeof data.orderId === 'string' ? data.orderId.trim() : '';
+        if (orderId) {
+          setTimeout(() => router.push(`/order/room/${orderId}` as never), 300);
         }
       }
     });

@@ -73,6 +73,7 @@ export default function AdminScreen() {
   const [price, setPrice] = useState('');
   const [splitPrice, setSplitPrice] = useState('');
   const [location, setLocation] = useState('');
+  const [description, setDescription] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -240,6 +241,7 @@ export default function AdminScreen() {
         title: title.trim(),
         image: imageUrl.trim(),
         restaurantName: restaurantName.trim(),
+        description: description.trim() || '',
         price: total,
         splitPrice: split,
         location: location.trim() || null,
@@ -256,6 +258,7 @@ export default function AdminScreen() {
       setPrice('');
       setSplitPrice('');
       setLocation('');
+      setDescription('');
       setImageUrl('');
       fetchMetrics();
       Alert.alert('Saved', 'Food card created successfully.');
@@ -347,6 +350,7 @@ export default function AdminScreen() {
           {imageUrl ? <Image source={{ uri: imageUrl }} style={styles.preview} /> : null}
           <TextInput style={styles.input} placeholder="Title" placeholderTextColor={COLORS.textMuted} value={title} onChangeText={setTitle} />
           <TextInput style={styles.input} placeholder="Restaurant Name" placeholderTextColor={COLORS.textMuted} value={restaurantName} onChangeText={setRestaurantName} />
+          <TextInput style={styles.input} placeholder="Description (optional)" placeholderTextColor={COLORS.textMuted} value={description} onChangeText={setDescription} multiline />
           <TextInput style={styles.input} placeholder="Total Price" placeholderTextColor={COLORS.textMuted} value={price} onChangeText={setPrice} keyboardType="decimal-pad" />
           <TextInput style={styles.input} placeholder="Split Price" placeholderTextColor={COLORS.textMuted} value={splitPrice} onChangeText={setSplitPrice} keyboardType="decimal-pad" />
           <TextInput style={styles.input} placeholder="Location" placeholderTextColor={COLORS.textMuted} value={location} onChangeText={setLocation} />
