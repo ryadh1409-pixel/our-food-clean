@@ -218,6 +218,8 @@ export async function handleUserChatTurn(input: {
   uid: string;
   nearbyJoinableCount: number;
   timeContext: TimeContext;
+  /** You’re alone on a waiting half-order — assistant may nudge to invite. */
+  awaitingPartnerAlone?: boolean;
 }): Promise<{
   state: ChatState;
   messages: AiBotMessage[];
@@ -332,6 +334,13 @@ export async function handleUserChatTurn(input: {
   }
 
   if (intent === 'unknown') {
+    if (input.awaitingPartnerAlone) {
+      push({
+        text: 'Want to invite a friend and get a reward? 🎁 Use Invite on your order screen, or tell me what you’re craving.',
+        action: 'none',
+      });
+      return { state, messages };
+    }
     if (input.nearbyJoinableCount === 0 && !state.templateSuggestedOnce) {
       suggestTemplateOnce();
       return { state, messages };

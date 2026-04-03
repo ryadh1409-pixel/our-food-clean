@@ -29,6 +29,7 @@ export function useAIChat() {
       uid: string;
       nearbyJoinableCount: number;
       timeContext: TimeContext;
+      awaitingPartnerAlone?: boolean;
     }) => {
       const result = await handleUserChatTurn({
         text: params.text,
@@ -36,6 +37,7 @@ export function useAIChat() {
         uid: params.uid,
         nearbyJoinableCount: params.nearbyJoinableCount,
         timeContext: params.timeContext,
+        awaitingPartnerAlone: params.awaitingPartnerAlone,
       });
       stateRef.current = result.state;
       return result;

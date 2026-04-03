@@ -70,7 +70,9 @@ export const linking = {
       },
       'match/[orderId]': 'match/:orderId',
       'food-match/[matchId]': 'food-match/:matchId',
+      /** `/join/:orderId` must be listed before `/join` so links resolve correctly. */
       'join/[orderId]': 'join/:orderId',
+      'join/index': 'join',
       'chat/[id]': 'chat/:id',
     },
   },

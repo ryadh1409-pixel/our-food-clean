@@ -26,6 +26,7 @@ import {
 import { syncOrderMemberProfilesForOrder } from '@/services/orderMemberProfile';
 import { trySendPairJoinExpoPush } from '@/services/orderPairPushNotify';
 import { joinOrderWithParticipantRecord } from '@/services/orderLifecycle';
+import { applyHalfOrderPairReferralRewards } from '@/services/referralRewards';
 import { getPublicUserFields } from '@/services/users';
 
 /**
@@ -169,6 +170,7 @@ export async function joinHalfOrderByOrderId(orderId: string): Promise<{
       'Someone joined your order!',
     );
     void trySendPairJoinExpoPush(trimmedId, uid);
+    void applyHalfOrderPairReferralRewards(trimmedId, uid);
   }
 
   await setDoc(

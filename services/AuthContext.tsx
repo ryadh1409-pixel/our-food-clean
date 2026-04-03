@@ -33,6 +33,7 @@ import React, {
 import { ActivityIndicator, Platform, View } from 'react-native';
 import { theme } from '@/constants/theme';
 import { auth, db } from '@/services/firebase';
+import { claimReferralInboxRewards } from '@/services/referralRewards';
 import { subscribeExpoPushTokenRefresh } from '@/services/notifications';
 import {
   persistUserPushTokens,
@@ -212,6 +213,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         registerExpoPushTokenAndSyncToFirestore(firebaseUser.uid).catch(
           () => {},
         );
+        void claimReferralInboxRewards(firebaseUser.uid);
       }
       setLoading(false);
     });

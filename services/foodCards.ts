@@ -19,6 +19,7 @@ import {
 } from '@/services/orders';
 import { trySendPairJoinExpoPush } from '@/services/orderPairPushNotify';
 import { syncOrderMemberProfilesForOrder } from '@/services/orderMemberProfile';
+import { applyHalfOrderPairReferralRewards } from '@/services/referralRewards';
 import { getPublicUserFields } from '@/services/users';
 import {
   addDoc,
@@ -522,6 +523,7 @@ export async function joinOrder(
         'Someone joined your order!',
       );
       void trySendPairJoinExpoPush(outcome.orderId, authedUid);
+      void applyHalfOrderPairReferralRewards(outcome.orderId, authedUid);
     }
   }
 

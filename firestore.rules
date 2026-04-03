@@ -620,6 +620,31 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow update, delete: if false;
     }
+
+    /** First pair-join on a half-order: one doc per orderId (idempotency). */
+    match /referrals/{orderId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && !isCurrentUserRestricted()
+        && !exists(/databases/$(database)/documents/referrals/$(orderId))
+        && request.resource.data.keys().hasAll([
+          'inviterId',
+          'invitedUserId',
+          'orderId',
+          'createdAt',
+        ])
+        && request.resource.data.orderId == orderId
+        && request.resource.data.invitedUserId == request.auth.uid
+        && request.resource.data.inviterId is string
+        && request.resource.data.inviterId != request.auth.uid
+        && request.resource.data.inviterId != request.resource.data.invitedUserId
+        && request.resource.data.createdAt == request.time
+        && request.auth.uid in get(/databases/$(database)/documents/orders/$(orderId)).data.get('users', [])
+        && request.resource.data.inviterId in get(/databases/$(database)/documents/orders/$(orderId)).data.get('users', [])
+        && get(/databases/$(database)/documents/orders/$(orderId)).data.get('users', []).size() >= 2;
+      allow update, delete: if isAdmin();
+    }
+
     match /users/{userId} {
       allow read: if request.auth != null;
       allow create, update: if (request.auth != null && request.auth.uid == userId) || isAdmin();
@@ -635,6 +660,23 @@ service cloud.firestore {
       match /fcmToken/{docId} {
         allow read: if request.auth != null && (request.auth.uid == userId || isAdmin());
         allow create, update, delete: if request.auth != null && request.auth.uid == userId;
+      }
+      /** Pending host credit (+2) from a pair-join referral; host claims via client. */
+      match /referralInbox/{orderId} {
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow create: if isSignedIn()
+          && !isCurrentUserRestricted()
+          && request.auth.uid == request.resource.data.fromUid
+          && request.auth.uid != userId
+          && request.resource.data.credits == 2
+          && request.resource.data.orderId == orderId
+          && request.resource.data.createdAt == request.time
+          && exists(/databases/$(database)/documents/referrals/$(orderId))
+          && get(/databases/$(database)/documents/referrals/$(orderId)).data.invitedUserId
+            == request.auth.uid
+          && get(/databases/$(database)/documents/referrals/$(orderId)).data.inviterId == userId;
+        allow delete: if request.auth != null && request.auth.uid == userId;
+        allow update: if false;
       }
     }
     function isChatDocMember(chatId) {

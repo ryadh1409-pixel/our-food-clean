@@ -1,6 +1,20 @@
 const INVITE_BASE = 'https://halforder.app/join';
 const ORDER_BASE = 'https://halforder.app/order';
 
+/** Universal link that opens the app join flow (`/join` + `orderId` query). */
+export function buildJoinOrderWebUrl(orderId: string): string {
+  const id = orderId.trim();
+  if (!id) return INVITE_BASE;
+  return `${INVITE_BASE}?orderId=${encodeURIComponent(id)}`;
+}
+
+/** WhatsApp one-tap share: HalfOrder copy + join deep link. */
+export function buildViralWhatsAppInviteLink(orderId: string): string {
+  const inviteLink = buildJoinOrderWebUrl(orderId);
+  const message = `Hey 🍕 I started an order on HalfOrder — join me here:\n${inviteLink}`;
+  return `https://wa.me/?text=${encodeURIComponent(message)}`;
+}
+
 /** Public web URL for an order (universal links / share). */
 export function buildOrderWebUrl(orderId: string): string {
   const id = orderId.trim();
@@ -10,9 +24,7 @@ export function buildOrderWebUrl(orderId: string): string {
 
 /** WhatsApp share with prefilled “Join my order” + web link. */
 export function buildOrderWhatsAppInviteLink(orderId: string): string {
-  const url = buildOrderWebUrl(orderId);
-  const text = encodeURIComponent(`Join my order: ${url}`);
-  return `https://wa.me/?text=${text}`;
+  return buildViralWhatsAppInviteLink(orderId);
 }
 
 /**

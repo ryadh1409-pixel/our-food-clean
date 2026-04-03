@@ -1,3 +1,4 @@
+import { useFocusEffect } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import * as Linking from 'expo-linking';
@@ -6,7 +7,13 @@ import {
   onSnapshot,
   type DocumentSnapshot,
 } from 'firebase/firestore';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -48,6 +55,7 @@ import {
 } from '@/services/joinOrder';
 import { joinOrder as joinFoodCardOrder } from '@/services/foodCards';
 import { normalizeParticipantsStrings } from '@/services/orderLifecycle';
+import { claimReferralInboxRewards } from '@/services/referralRewards';
 
 const PLACEHOLDER_FOOD_IMAGE =
   'https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=1200&q=80';
@@ -327,6 +335,13 @@ export default function OrderDetailsScreen() {
   }, [orderId]);
 
   const { uid: viewerUid, profile: viewerProfile } = useCurrentUser();
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!viewerUid) return;
+      void claimReferralInboxRewards(viewerUid);
+    }, [viewerUid]),
+  );
 
   const halfParticipantCount = useMemo(() => {
     if (!order?.usesHalfUsers) return 0;
@@ -656,7 +671,11 @@ export default function OrderDetailsScreen() {
         <View style={styles.card}>
           <Text style={styles.meta}>Total: ${order.totalPrice.toFixed(2)}</Text>
           <Text style={styles.meta}>
-            Joined: {order.peopleJoined}/{order.maxPeople}
+            {order.usesHalfUsers
+              ? `Joined: ${halfParticipantCount}/${order.maxPeople}${
+                  halfParticipantCount >= order.maxPeople ? ' ✅' : ''
+                }`
+              : `Joined: ${order.peopleJoined}/${order.maxPeople}`}
           </Text>
           <Text style={styles.meta}>Remaining spots: {remainingSpots}</Text>
           <Text style={styles.meta}>
@@ -712,7 +731,7 @@ export default function OrderDetailsScreen() {
         halfParticipantCount === 1 ? (
           <View style={styles.waitingCard}>
             <Text style={styles.waitingCentered}>
-              Waiting for someone to join...
+              Invite a friend to join faster 🚀
             </Text>
             <TouchableOpacity
               style={styles.inviteWhatsAppBtnSubtle}
@@ -750,6 +769,9 @@ export default function OrderDetailsScreen() {
                 {partnerDistanceKm != null
                   ? `📍 ${partnerDistanceKm.toFixed(1)} km away`
                   : '📍 Distance unknown'}
+              </Text>
+              <Text style={styles.inviteMoreHint}>
+                Invite another friend and earn more 💸
               </Text>
             </View>
             <View style={styles.primaryActionsRow}>
@@ -1027,6 +1049,12 @@ const styles = StyleSheet.create({
   partnerAvatarPlaceholder: { borderWidth: 1, borderColor: '#334155' },
   partnerNameBold: { color: '#F8FAFC', fontSize: 18, fontWeight: 'bold' },
   partnerMeta: { color: '#9CA3AF', fontSize: 14 },
+  inviteMoreHint: {
+    color: '#94A3B8',
+    fontSize: 14,
+    marginTop: 12,
+    textAlign: 'center',
+  },
   primaryActionsRow: {
     flexDirection: 'row',
     gap: 10,

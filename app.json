@@ -54,6 +54,11 @@
             {
               "scheme": "https",
               "host": "halforder.app",
+              "pathPrefix": "/join"
+            },
+            {
+              "scheme": "https",
+              "host": "halforder.app",
               "pathPrefix": "/terms"
             },
             {
@@ -70,6 +75,11 @@
               "scheme": "https",
               "host": "www.halforder.app",
               "pathPrefix": "/order"
+            },
+            {
+              "scheme": "https",
+              "host": "www.halforder.app",
+              "pathPrefix": "/join"
             },
             {
               "scheme": "https",

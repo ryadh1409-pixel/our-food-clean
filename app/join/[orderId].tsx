@@ -1,7 +1,7 @@
 import AppLogo from '@/components/AppLogo';
 import { getIosAppStoreUrl, getPlayStoreUrl } from '@/constants/storeLinks';
 import { REFERRAL_ORDER_ID_KEY, REFERRAL_STORAGE_KEY } from '@/lib/invite-link';
-import { db } from '@/services/firebase';
+import { auth, db } from '@/services/firebase';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { doc, getDoc } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
@@ -111,6 +111,9 @@ export default function JoinInviteScreen() {
         });
         setNotFound(false);
         setLoading(false);
+        if (auth.currentUser?.uid && orderId?.trim()) {
+          router.replace(`/order/${orderId.trim()}` as never);
+        }
       })
       .catch(() => {
         if (!cancelled) {

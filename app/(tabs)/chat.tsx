@@ -12,6 +12,7 @@ import {
   getSmartMatches,
   type SmartMatchOrder,
 } from '@/services/matchingEngine';
+import { userHasSoloWaitingHalfOrder } from '@/services/referralRewards';
 import {
   SUGGESTED_ORDER_BOT_COPY,
   generateSuggestedOrder,
@@ -283,11 +284,13 @@ export default function ChatScreen() {
       try {
         const ctx = detectTimeContext();
         const fetched = await fetchActiveJoinableOrdersForContext(ctx, 3);
+        const awaitingPartnerAlone = await userHasSoloWaitingHalfOrder(uid);
         const result = await runUserTurn({
           text: outgoingText,
           uid,
           nearbyJoinableCount: fetched.length,
           timeContext: ctx,
+          awaitingPartnerAlone,
         });
 
         const baseId = Date.now();
