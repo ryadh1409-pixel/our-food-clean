@@ -8,6 +8,7 @@ import {
   type Timestamp,
 } from 'firebase/firestore';
 import { db } from '@/services/firebase';
+import { autoInvite } from '@/services/autoInvite';
 
 export type ParticipantStatus = 'joined' | 'left' | 'paid';
 
@@ -97,6 +98,11 @@ export async function createOrder(input: CreateOrderInput): Promise<string> {
     scheduledTime: input.scheduledTime ?? null,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
+  });
+  void autoInvite({
+    id: ref.id,
+    foodName: input.restaurant?.name,
+    creatorUid: input.creatorId,
   });
   return ref.id;
 }

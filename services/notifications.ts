@@ -45,9 +45,16 @@ export async function ensureAndroidNotificationChannelAsync(): Promise<void> {
 }
 
 /**
- * Foreground: show system alert / banner / list where the OS supports it.
- * Idempotent — safe to call multiple times.
+ * One-shot client setup: Android channel + foreground handler.
+ * Safe to call from `App` mount alongside root layout configuration.
  */
+export async function setupNotifications(): Promise<void> {
+  if (Platform.OS === 'web') return;
+  configureForegroundNotificationHandler();
+  await ensureAndroidNotificationChannelAsync();
+}
+
+/** Foreground presentation. Idempotent — safe to call multiple times. */
 export function configureForegroundNotificationHandler(): void {
   if (Platform.OS === 'web') return;
   if (foregroundHandlerConfigured) return;

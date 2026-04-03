@@ -3,6 +3,7 @@ import {
   HALF_ORDER_MATCH_WAIT_MS,
   ORDER_STATUS,
 } from '@/constants/orderStatus';
+import { autoInvite } from '@/services/autoInvite';
 import { auth, db } from '@/services/firebase';
 import {
   ensureHalfOrderChat,
@@ -311,6 +312,21 @@ function buildHalfOrderFromCard(
   const restaurant =
     typeof data.restaurantName === 'string' ? data.restaurantName.trim() : '';
 
+  const loc = data.location;
+  let latitude: number | undefined;
+  let longitude: number | undefined;
+  if (loc && typeof loc === 'object' && loc !== null) {
+    const L = loc as Record<string, unknown>;
+    const la =
+      typeof L.latitude === 'number' ? L.latitude : null;
+    const lo =
+      typeof L.longitude === 'number' ? L.longitude : null;
+    if (la != null && lo != null && Number.isFinite(la) && Number.isFinite(lo)) {
+      latitude = la;
+      longitude = lo;
+    }
+  }
+
   const now = Date.now();
   return {
     cardId,
@@ -327,6 +343,7 @@ function buildHalfOrderFromCard(
     totalPrice: Number(price.toFixed(2)),
     location: restaurant || 'Nearby',
     restaurantName: restaurant,
+    ...(latitude != null && longitude != null ? { latitude, longitude } : {}),
   };
 }
 
@@ -510,6 +527,20 @@ export async function joinOrder(
 
   const alreadyJoined =
     outcome.kind === 'joined_existing' && outcome.alreadyIn === true;
+
+  if (outcome.kind === 'created') {
+    const oData = finalSnap.data() as Record<string, unknown> | undefined;
+    void autoInvite({
+      id: outcome.orderId,
+      foodName:
+        typeof oData?.foodName === 'string' ? oData.foodName : undefined,
+      creatorUid: authedUid,
+      latitude:
+        typeof oData?.latitude === 'number' ? oData.latitude : null,
+      longitude:
+        typeof oData?.longitude === 'number' ? oData.longitude : null,
+    });
+  }
 
   return {
     alreadyJoined,

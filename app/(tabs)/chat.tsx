@@ -1,11 +1,17 @@
+import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useAuth } from '@/services/AuthContext';
 import {
-  type AssistantOrderSummary,
-  type TimeContext,
   buildSmartMatchIntroText,
   detectFoodIntent,
   detectTimeContext,
   fetchActiveJoinableOrdersForContext,
+  type AssistantOrderSummary,
+  type TimeContext,
 } from '@/services/chatAssistantOrders';
+import {
+  getSmartMatches,
+  type SmartMatchOrder,
+} from '@/services/matchingEngine';
 import {
   SUGGESTED_ORDER_BOT_COPY,
   generateSuggestedOrder,
@@ -18,6 +24,7 @@ import {
   FlatList,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -110,13 +117,47 @@ function buildUserTurnBotMessage(
 
 export default function ChatScreen() {
   const router = useRouter();
+  const { user: authUser } = useAuth();
+  const { profile } = useCurrentUser();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [introLoading, setIntroLoading] = useState(true);
   const [introFetchFailed, setIntroFetchFailed] = useState(false);
   const [error, setError] = useState('');
+  const [smartLoading, setSmartLoading] = useState(false);
+  const [smartMatches, setSmartMatches] = useState<{
+    aiText: string;
+    nearbyOrders: SmartMatchOrder[];
+  } | null>(null);
   const flatListRef = useRef<FlatList<Message> | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loc = profile?.location;
+    if (!loc || !authUser?.uid) {
+      setSmartMatches(null);
+      return;
+    }
+    const ctx = detectTimeContext();
+    const food = ctx.fallbackFood;
+    setSmartLoading(true);
+    void getSmartMatches({
+      lat: loc.lat,
+      lng: loc.lng,
+      food,
+      uid: authUser.uid,
+    })
+      .then((res) => {
+        if (!cancelled) setSmartMatches(res);
+      })
+      .finally(() => {
+        if (!cancelled) setSmartLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authUser?.uid, profile?.location?.lat, profile?.location?.lng]);
 
   useEffect(() => {
     let cancelled = false;
@@ -328,6 +369,59 @@ export default function ChatScreen() {
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
           contentContainerStyle={styles.messagesContent}
+          ListHeaderComponent={
+            <View style={styles.growthHeader}>
+              {!profile?.location ? (
+                <Text style={styles.growthHint}>
+                  Enable location on your profile for AI + nearby order matches (2km).
+                </Text>
+              ) : null}
+              {smartLoading ? (
+                <View style={styles.growthCard}>
+                  <ActivityIndicator size="small" color="#6EE7B7" />
+                  <Text style={styles.growthSubtitle}>Finding smart matches…</Text>
+                </View>
+              ) : null}
+              {!smartLoading &&
+              smartMatches &&
+              (smartMatches.nearbyOrders.length > 0 || smartMatches.aiText) ? (
+                <View style={styles.growthCard}>
+                  <Text style={styles.growthTitle}>Smart matches</Text>
+                  {smartMatches.aiText ? (
+                    <Text style={styles.growthAi}>{smartMatches.aiText}</Text>
+                  ) : null}
+                  {smartMatches.nearbyOrders.length > 0 ? (
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={styles.chipRow}
+                    >
+                      {smartMatches.nearbyOrders.map((o) => (
+                        <TouchableOpacity
+                          key={o.id}
+                          style={styles.matchChip}
+                          activeOpacity={0.85}
+                          onPress={() => router.push(`/order/${o.id}` as never)}
+                        >
+                          <Text style={styles.chipTitle} numberOfLines={1}>
+                            {o.restaurantName}
+                          </Text>
+                          <Text style={styles.chipMeta} numberOfLines={2}>
+                            {o.distanceMeters != null
+                              ? `${Math.round(o.distanceMeters)}m`
+                              : 'Nearby'}{' '}
+                            · {o.foodName}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  ) : (
+                    <Text style={styles.growthEmpty}>No orders in 2km right now.</Text>
+                  )}
+                </View>
+              ) : null}
+            </View>
+          }
           ListEmptyComponent={
             introLoading ? (
               <View style={styles.introPlaceholder}>
@@ -512,4 +606,52 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  growthHeader: { marginBottom: 8 },
+  growthHint: {
+    color: 'rgba(250, 204, 21, 0.9)',
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 10,
+    paddingHorizontal: 4,
+  },
+  growthCard: {
+    backgroundColor: '#1a1d24',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(110, 231, 183, 0.25)',
+  },
+  growthTitle: {
+    color: '#6EE7B7',
+    fontSize: 13,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginBottom: 8,
+  },
+  growthSubtitle: {
+    color: '#9CA3AF',
+    fontSize: 12,
+    marginTop: 8,
+  },
+  growthAi: {
+    color: '#F8FAFC',
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 10,
+  },
+  growthEmpty: { color: '#9CA3AF', fontSize: 13 },
+  chipRow: { gap: 10, paddingVertical: 4 },
+  matchChip: {
+    width: 200,
+    padding: 10,
+    borderRadius: 10,
+    backgroundColor: '#252a33',
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  chipTitle: { color: '#F8FAFC', fontWeight: '700', fontSize: 14 },
+  chipMeta: { color: '#9CA3AF', fontSize: 12, marginTop: 4 },
 });

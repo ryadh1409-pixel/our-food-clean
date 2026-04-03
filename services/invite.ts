@@ -1,21 +1,28 @@
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
-import { db } from '@/services/firebase';
+/**
+ * WhatsApp viral loop — opens share with Arabic copy + web deep link.
+ */
+import * as Linking from 'expo-linking';
 
-export async function inviteFriend(
-  email: string,
-  orderId: string,
-  inviterName: string,
-): Promise<string> {
-  const trimmedEmail = email.trim();
-  const trimmedName = inviterName.trim() || 'User';
-  if (!trimmedEmail || !orderId) {
-    throw new Error('Email and orderId are required');
+const OURFOOD_ORDER_BASE = 'https://ourfood.app/order';
+
+function buildMessage(orderId: string): string {
+  const id = orderId.trim();
+  return `🍔 لقيت شخص يقاسم الطلب!\nوفر فلوس 💰\nJoin here:\n${OURFOOD_ORDER_BASE}/${encodeURIComponent(id)}`;
+}
+
+/**
+ * Opens WhatsApp with prefilled viral message.
+ * @returns whether `openURL` was attempted without throw
+ */
+export async function sendWhatsAppInvite(orderId: string): Promise<boolean> {
+  const id = orderId.trim();
+  if (!id) return false;
+  const text = encodeURIComponent(buildMessage(id));
+  const url = `https://wa.me/?text=${text}`;
+  try {
+    await Linking.openURL(url);
+    return true;
+  } catch {
+    return false;
   }
-  const ref = await addDoc(collection(db, 'invites'), {
-    email: trimmedEmail,
-    orderId,
-    inviterName: trimmedName,
-    createdAt: serverTimestamp(),
-  });
-  return ref.id;
 }
