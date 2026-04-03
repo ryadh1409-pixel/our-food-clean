@@ -6,15 +6,34 @@ const { notifyUsersExpo } = require('./lib/expoPush');
 
 admin.initializeApp();
 
-const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 465,
-  secure: true,
-  auth: {
-    user: process.env.SMTP_USER || process.env.GMAIL_USER,
-    pass: process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD,
-  },
-});
+/** Inbound address for feedback + daily report (not secret). */
+const SUPPORT_INBOX = 'support@halforder.app';
+
+/**
+ * Nodemailer → Gmail using Firebase runtime config (recommended).
+ * Run: `firebase functions:config:set gmail.email="you@gmail.com" gmail.password="xxxx xxxx xxxx xxxx"`
+ *
+ * For local emulator only, you may set GMAIL_USER + GMAIL_APP_PASSWORD instead.
+ */
+function getMailTransporter() {
+  const gmailCfg = functions.config().gmail || {};
+  const user =
+    gmailCfg.email || process.env.GMAIL_USER || process.env.SMTP_USER || '';
+  const pass =
+    gmailCfg.password ||
+    process.env.GMAIL_APP_PASSWORD ||
+    process.env.SMTP_PASS ||
+    '';
+  if (!user || !pass) {
+    throw new Error(
+      'Mail not configured: set functions.config gmail.email and gmail.password',
+    );
+  }
+  return nodemailer.createTransport({
+    service: 'gmail',
+    auth: { user, pass },
+  });
+}
 
 const ADMIN_FCM_TOKEN = process.env.ADMIN_FCM_TOKEN || '';
 
@@ -864,13 +883,10 @@ exports.inactiveUserReminder = functions.pubsub
     return null;
   });
 
-const FEEDBACK_NOTIFY_TO =
-  process.env.FEEDBACK_EMAIL_TO || 'support@halforder.app';
-const DAILY_REPORT_TO =
-  process.env.DAILY_REPORT_EMAIL_TO || FEEDBACK_NOTIFY_TO;
-
-/** Assistant `feedback/{id}` onCreate → single email per doc. */
-exports.onFeedbackCreated = functions.firestore
+/**
+ * Firestore `feedback/{id}` onCreate → email support (one send per new doc).
+ */
+exports.sendFeedbackEmail = functions.firestore
   .document('feedback/{feedbackId}')
   .onCreate(async (snap) => {
     const d = snap.data() || {};
@@ -878,21 +894,24 @@ exports.onFeedbackCreated = functions.firestore
     const message = typeof d.message === 'string' ? d.message : '';
     const textBody = `User: ${userName}\nMessage: ${message}`;
     try {
-      await transporter.sendMail({
+      const transport = getMailTransporter();
+      await transport.sendMail({
         from: '"HalfOrder" <noreply@halforder.app>',
-        to: FEEDBACK_NOTIFY_TO,
+        to: SUPPORT_INBOX,
         subject: 'New Feedback',
         text: textBody,
       });
-      console.log('[onFeedbackCreated] sent', snap.id);
+      console.log('[sendFeedbackEmail] success', snap.id);
     } catch (err) {
-      console.error('[onFeedbackCreated] failed', snap.id, err);
+      console.error('[sendFeedbackEmail] failure', snap.id, err);
     }
     return null;
   });
 
-/** Daily report 14:00 America/Toronto. */
-exports.halfOrderDailyReport = functions.pubsub
+/**
+ * Scheduled daily metrics email — 14:00 America/Toronto.
+ */
+exports.dailyReport = functions.pubsub
   .schedule('0 14 * * *')
   .timeZone('America/Toronto')
   .onRun(async () => {
@@ -907,15 +926,16 @@ exports.halfOrderDailyReport = functions.pubsub
       const orders = ordersSnap.size;
       const feedback = feedbackSnap.size;
       const body = `Users: ${users}\nOrders: ${orders}\nFeedback: ${feedback}`;
-      await transporter.sendMail({
+      const transport = getMailTransporter();
+      await transport.sendMail({
         from: '"HalfOrder Reports" <noreply@halforder.app>',
-        to: DAILY_REPORT_TO,
+        to: SUPPORT_INBOX,
         subject: 'HalfOrder Daily Report',
         text: body,
       });
-      console.log('[halfOrderDailyReport] ok', { users, orders, feedback });
+      console.log('[dailyReport] success', { users, orders, feedback });
     } catch (err) {
-      console.error('[halfOrderDailyReport] failed', err);
+      console.error('[dailyReport] failure', err);
     }
     return null;
   });
