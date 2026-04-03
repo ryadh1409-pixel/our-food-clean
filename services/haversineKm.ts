@@ -2,6 +2,11 @@
 
 export type LatLng = { lat: number; lng: number };
 
+/** Alias for app code readability. */
+export function getDistanceKm(a: LatLng, b: LatLng): number {
+  return haversineDistanceKm(a, b);
+}
+
 export function haversineDistanceKm(a: LatLng, b: LatLng): number {
   const R = 6371;
   const dLat = ((b.lat - a.lat) * Math.PI) / 180;

@@ -6,11 +6,11 @@ import {
   type DocumentSnapshot,
 } from 'firebase/firestore';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import * as ExpoLinking from 'expo-linking';
 import {
   ActivityIndicator,
   Alert,
   Image,
-  Linking,
   ScrollView,
   StyleSheet,
   Text,
@@ -19,7 +19,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { useOrderHalfMembers } from '@/hooks/useOrderHalfMembers';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { theme } from '@/constants/theme';
 import { buildOrderWhatsAppInviteLink } from '@/lib/invite-link';
 import { ScreenFadeIn } from '@/components/ScreenFadeIn';
@@ -28,7 +28,17 @@ import { blockUser as blockUserProfile } from '@/services/block';
 import { hasBlockBetween } from '@/services/blocks';
 import { cancelHalfOrder } from '@/services/halfOrderCancel';
 import { auth, db } from '@/services/firebase';
-import { formatDistanceKm, haversineDistanceKm } from '@/services/haversineKm';
+import {
+  getDistanceKm,
+  formatDistanceKm,
+} from '@/services/haversineKm';
+import {
+  memberIdsFromOrderData,
+  normalizeParticipantRecords,
+  parseOrderHost,
+  type OrderHost,
+  type OrderParticipant,
+} from '@/services/orders';
 import { submitUserReport } from '@/services/userSafety';
 import {
   joinHalfOrderByOrderId,
@@ -40,13 +50,18 @@ import { normalizeParticipantsStrings } from '@/services/orderLifecycle';
 const PLACEHOLDER_FOOD_IMAGE =
   'https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=1200&q=80';
 
-const WHATSAPP_PREFILL = encodeURIComponent('Hey we matched on HalfOrder 🍕');
-
-function buildWhatsAppUrl(phone: string | null | undefined): string | null {
-  if (!phone || !phone.trim()) return null;
-  const digits = phone.replace(/\D/g, '');
-  if (!digits) return null;
-  return `https://wa.me/${digits}?text=${WHATSAPP_PREFILL}`;
+function openWhatsAppToMatch(
+  phone: string | null | undefined,
+  displayName: string,
+): boolean {
+  const digits = (phone ?? '').replace(/\D/g, '');
+  if (!digits) return false;
+  const first =
+    displayName.trim().split(/\s+/)[0] || displayName.trim() || 'there';
+  const text = `Hey ${first}, we matched on HalfOrder 🍕`;
+  const url = `https://wa.me/${digits}?text=${encodeURIComponent(text)}`;
+  void ExpoLinking.openURL(url).catch(() => {});
+  return true;
 }
 
 type OrderDetails = {
@@ -61,13 +76,11 @@ type OrderDetails = {
   distance: number;
   timeRemaining: number;
   createdBy: string;
-  /** HalfOrder swipe flow (`orders.users`). */
+  host: OrderHost | null;
+  participants: OrderParticipant[];
   usesHalfUsers?: boolean;
-  /** All member uids (HalfOrder `users` or legacy `participants`). */
   memberIds?: string[];
-  /** Present when row came from `food_cards` (swipe / admin cards). */
   foodCardStatus?: string;
-  /** HalfOrder lifecycle (`active` | `cancelled`). */
   orderStatus?: string;
   hostId?: string;
 };
@@ -80,13 +93,16 @@ function mapOrderDocument(snap: DocumentSnapshot): OrderDetails {
   const usersList = Array.isArray(d?.users)
     ? (d.users as unknown[]).filter((x): x is string => typeof x === 'string' && x.length > 0)
     : [];
-  const partCount = normalizeParticipantsStrings(d?.participants).length;
+  const richParticipants = normalizeParticipantRecords(d?.participants);
+  const partCountLegacy = normalizeParticipantsStrings(d?.participants).length;
   const peopleJoined =
     usersList.length > 0
       ? usersList.length
-      : partCount > 0
-        ? partCount
-        : Number(d?.peopleJoined ?? 1);
+      : richParticipants.length > 0
+        ? richParticipants.length
+        : partCountLegacy > 0
+          ? partCountLegacy
+          : Number(d?.peopleJoined ?? 1);
   const createdBy =
     typeof d?.createdBy === 'string' && d.createdBy
       ? d.createdBy
@@ -95,9 +111,18 @@ function mapOrderDocument(snap: DocumentSnapshot): OrderDetails {
     typeof d?.hostId === 'string' && d.hostId.trim()
       ? d.hostId.trim()
       : createdBy;
-  const participantsList = normalizeParticipantsStrings(d?.participants);
-  const memberIds =
-    usersList.length > 0 ? usersList : participantsList;
+  const memberIds = memberIdsFromOrderData(d);
+  let host = parseOrderHost(d?.host);
+  if (!host && richParticipants[0]) {
+    const p0 = richParticipants[0];
+    host = {
+      userId: p0.userId,
+      name: p0.name,
+      avatar: p0.avatar,
+      phone: p0.phone,
+      expoPushToken: p0.expoPushToken,
+    };
+  }
   const orderStatus =
     typeof d?.status === 'string' && d.status.trim() ? d.status.trim() : undefined;
   return {
@@ -116,6 +141,8 @@ function mapOrderDocument(snap: DocumentSnapshot): OrderDetails {
     timeRemaining: Number(d?.timeRemaining ?? 20),
     createdBy: String(createdBy),
     hostId: String(hostId),
+    host,
+    participants: richParticipants,
     usesHalfUsers: usersList.length > 0,
     memberIds,
     orderStatus,
@@ -143,6 +170,7 @@ function mapFoodCardDocument(snap: DocumentSnapshot): OrderDetails {
       : d.location
         ? 'Location on file'
         : 'Nearby';
+  const ownerId = String(d.ownerId ?? '');
   return {
     id: snap.id,
     foodName: String(d.title ?? 'Food card'),
@@ -154,7 +182,10 @@ function mapFoodCardDocument(snap: DocumentSnapshot): OrderDetails {
     location: loc,
     distance: 0,
     timeRemaining: timeRemainingMinutes || 1,
-    createdBy: String(d.ownerId ?? ''),
+    createdBy: ownerId,
+    host: null,
+    participants: [],
+    hostId: ownerId || undefined,
     foodCardStatus: typeof d.status === 'string' ? d.status : undefined,
   };
 }
@@ -293,29 +324,25 @@ export default function OrderDetailsScreen() {
     };
   }, [orderId]);
 
-  const halfOrderIdForMembers =
-    detailSource === 'order' && order?.usesHalfUsers ? order.id : '';
-  const { members: halfMembers } = useOrderHalfMembers(halfOrderIdForMembers);
-
-  const viewerUid = auth.currentUser?.uid ?? null;
+  const { uid: viewerUid, profile: viewerProfile } = useCurrentUser();
 
   const partnerUserId = useMemo(() => {
     if (!viewerUid || !order?.memberIds || order.memberIds.length < 2) return null;
     return order.memberIds.find((x) => x !== viewerUid) ?? null;
   }, [viewerUid, order?.memberIds]);
 
-  const partnerProfile = useMemo(() => {
-    if (!partnerUserId) return null;
-    return halfMembers.find((m) => m.userId === partnerUserId) ?? null;
-  }, [halfMembers, partnerUserId]);
+  const otherParticipant = useMemo(() => {
+    if (!partnerUserId || !order?.participants?.length) return null;
+    return (
+      order.participants.find((p) => p.userId === partnerUserId) ?? null
+    );
+  }, [order?.participants, partnerUserId]);
 
   const partnerDistanceKm = useMemo(() => {
-    if (!partnerProfile?.location || !viewerUid) return null;
-    const me = halfMembers.find((m) => m.userId === viewerUid);
-    if (!me?.location) return null;
-    const km = haversineDistanceKm(me.location, partnerProfile.location);
+    if (!otherParticipant?.location || !viewerProfile?.location) return null;
+    const km = getDistanceKm(viewerProfile.location, otherParticipant.location);
     return Number.isFinite(km) ? km : null;
-  }, [halfMembers, partnerProfile, viewerUid]);
+  }, [viewerProfile?.location, otherParticipant?.location]);
 
   const isHalfCancelled =
     order?.usesHalfUsers === true && order.orderStatus === 'cancelled';
@@ -466,20 +493,20 @@ export default function OrderDetailsScreen() {
   };
 
   const handleOpenWhatsApp = () => {
-    const url = buildWhatsAppUrl(partnerProfile?.phone);
-    if (!url) {
+    if (!otherParticipant) return;
+    const ok = openWhatsAppToMatch(
+      otherParticipant.phone,
+      otherParticipant.name,
+    );
+    if (!ok) {
       Alert.alert('No phone', 'This user has no phone number on file.');
-      return;
     }
-    void Linking.openURL(url).catch(() => {
-      Alert.alert('Could not open WhatsApp');
-    });
   };
 
   const handleWhatsAppOrderInvite = () => {
     if (!order?.id) return;
     const url = buildOrderWhatsAppInviteLink(order.id);
-    void Linking.openURL(url).catch(() => {
+    void ExpoLinking.openURL(url).catch(() => {
       Alert.alert('Could not open WhatsApp');
     });
   };
@@ -589,22 +616,32 @@ export default function OrderDetailsScreen() {
                 : `Distance: ${order.distance.toFixed(1)} km`}
           </Text>
           <Text style={styles.meta}>Location: {order.location}</Text>
-          <TouchableOpacity
-            onPress={() =>
-              order.createdBy
-                ? router.push({
-                    pathname: '/user/[id]',
-                    params: { id: order.createdBy },
-                  } as never)
-                : undefined
-            }
-            disabled={!order.createdBy}
-            activeOpacity={0.8}
-          >
-            <Text style={[styles.meta, styles.linkMeta]}>
-              Created by: {order.createdBy || 'Unknown'}
-            </Text>
-          </TouchableOpacity>
+          {detailSource === 'order' && order.usesHalfUsers && order.host ? (
+            <View style={styles.hostRow}>
+              {order.host.avatar ? (
+                <Image source={{ uri: order.host.avatar }} style={styles.hostAvatar} />
+              ) : (
+                <View style={[styles.hostAvatar, styles.hostAvatarPlaceholder]} />
+              )}
+              <View style={styles.hostTextCol}>
+                <Text style={styles.hostLabel}>Host</Text>
+                <TouchableOpacity
+                  onPress={() =>
+                    order.host?.userId
+                      ? router.push({
+                          pathname: '/user/[id]',
+                          params: { id: order.host.userId },
+                        } as never)
+                      : undefined
+                  }
+                  disabled={!order.host?.userId}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.hostName}>{order.host.name}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : null}
           <View style={styles.timerRow}>
             <Text style={styles.timerLabel}>Time remaining</Text>
             <Text style={styles.timerValue}>{countdownLabel}</Text>
@@ -620,7 +657,7 @@ export default function OrderDetailsScreen() {
         alreadyMember &&
         order.peopleJoined < 2 ? (
           <View style={styles.waitingCard}>
-            <Text style={styles.waitingTitle}>Waiting for second user…</Text>
+            <Text style={styles.waitingTitle}>Waiting for someone to join…</Text>
             <Text style={styles.waitingSub}>
               You will get a notification when someone joins. You can open chat anytime.
             </Text>
@@ -639,21 +676,24 @@ export default function OrderDetailsScreen() {
         order.peopleJoined >= 2 &&
         partnerUserId ? (
           <View style={styles.partnerCard}>
-            <Text style={styles.partnerSectionTitle}>Your match</Text>
+            <Text style={styles.partnerSectionTitle}>Other participant</Text>
             <View style={styles.partnerRow}>
-              {partnerProfile?.avatar ? (
-                <Image source={{ uri: partnerProfile.avatar }} style={styles.partnerAvatar} />
+              {otherParticipant?.avatar ? (
+                <Image
+                  source={{ uri: otherParticipant.avatar }}
+                  style={styles.partnerAvatar}
+                />
               ) : (
                 <View style={[styles.partnerAvatar, styles.partnerAvatarPlaceholder]} />
               )}
               <View style={styles.partnerTextCol}>
                 <Text style={styles.partnerName}>
-                  {partnerProfile?.name ?? 'Order partner'}
+                  {otherParticipant?.name ?? 'Order partner'}
                 </Text>
                 <Text style={styles.partnerMeta}>
                   {partnerDistanceKm != null
-                    ? `Distance: ${formatDistanceKm(partnerDistanceKm, 1)}`
-                    : 'Distance: —'}
+                    ? `📍 ${partnerDistanceKm.toFixed(1)} km away`
+                    : '📍 Distance unknown'}
                 </Text>
               </View>
             </View>
@@ -806,6 +846,20 @@ const styles = StyleSheet.create({
   },
   meta: { color: '#D1D5DB', fontSize: 14 },
   linkMeta: { textDecorationLine: 'underline' },
+  hostRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#232A35',
+  },
+  hostAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#1e293b' },
+  hostAvatarPlaceholder: { borderWidth: 1, borderColor: '#334155' },
+  hostTextCol: { flex: 1, gap: 2 },
+  hostLabel: { color: '#94A3B8', fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
+  hostName: { color: '#F8FAFC', fontSize: 16, fontWeight: '800' },
   timerRow: {
     marginTop: 8,
     flexDirection: 'row',

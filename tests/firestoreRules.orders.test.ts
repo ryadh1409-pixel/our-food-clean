@@ -251,9 +251,31 @@ describe('firestore rules: swipe usersAccepted + food matches', () => {
 
 describe('firestore rules: HalfOrder pair-join notified ack', () => {
   function halfOrderPairDoc() {
+    const ts = serverTimestamp();
     return {
       cardId: 'fc1',
       users: ['u1', 'u2'],
+      host: { userId: 'u1', name: 'User One', avatar: null, phone: null, expoPushToken: null },
+      participants: [
+        {
+          userId: 'u1',
+          name: 'User One',
+          avatar: null,
+          phone: null,
+          expoPushToken: null,
+          joinedAt: ts,
+          location: null,
+        },
+        {
+          userId: 'u2',
+          name: 'User Two',
+          avatar: null,
+          phone: null,
+          expoPushToken: null,
+          joinedAt: ts,
+          location: null,
+        },
+      ],
       status: 'active' as const,
       maxUsers: 2,
       createdBy: 'u1',
@@ -313,9 +335,31 @@ describe('firestore rules: HalfOrder pair-join notified ack', () => {
 
 describe('firestore rules: HalfOrder cancel + order_members', () => {
   function halfOrderActivePair() {
+    const ts = serverTimestamp();
     return {
       cardId: 'fc2',
       users: ['u1', 'u2'],
+      host: { userId: 'u1', name: 'User One', avatar: null, phone: null, expoPushToken: null },
+      participants: [
+        {
+          userId: 'u1',
+          name: 'User One',
+          avatar: null,
+          phone: null,
+          expoPushToken: null,
+          joinedAt: ts,
+          location: null,
+        },
+        {
+          userId: 'u2',
+          name: 'User Two',
+          avatar: null,
+          phone: null,
+          expoPushToken: null,
+          joinedAt: ts,
+          location: null,
+        },
+      ],
       status: 'active' as const,
       maxUsers: 2,
       createdBy: 'u1',

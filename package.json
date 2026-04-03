@@ -15,6 +15,7 @@
     "generate:app-icon": "node ./scripts/generate-app-icon.mjs",
     "seed:orders": "node --experimental-strip-types scripts/run-seed-orders.ts",
     "migrate:food-cards-waiting-to-active": "node --experimental-strip-types scripts/migrate-food-cards-waiting-to-active.ts",
+    "migrate:orders-users": "node --experimental-strip-types scripts/migrate-orders-populate-users.ts",
     "server": "node server.js"
   },
   "dependencies": {

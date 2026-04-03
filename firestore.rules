@@ -46,12 +46,25 @@ service cloud.firestore {
         );
     }
 
-    /** Order membership: legacy `participants` or HalfOrder `users`. */
+    /** HalfOrder / legacy: `users` uids or `participants` strings | maps with userId. */
+    function participantListContainsUid(parts, uid, idx) {
+      return idx >= parts.size()
+        || (
+          (parts[idx] is string && parts[idx] == uid)
+          || (
+            parts[idx] is map
+            && parts[idx].keys().hasAll(['userId', 'name'])
+            && parts[idx].userId == uid
+          )
+          || participantListContainsUid(parts, uid, idx + 1)
+        );
+    }
+
     function isOrderMember(orderData) {
       return isSignedIn()
         && (
-          request.auth.uid in orderData.get('participants', [])
-          || request.auth.uid in orderData.get('users', [])
+          request.auth.uid in orderData.get('users', [])
+          || participantListContainsUid(orderData.get('participants', []), request.auth.uid, 0)
         );
     }
 
@@ -63,7 +76,40 @@ service cloud.firestore {
         );
     }
 
-    /** HalfOrder: food-card swipe creates `orders` with `cardId` + `users`. */
+    function validOrderHostDoc(h) {
+      return h is map
+        && h.keys().hasAll(['userId', 'name'])
+        && h.userId is string
+        && h.name is string
+        && h.userId.size() > 0;
+    }
+
+    function validParticipantDoc(p) {
+      return p is map
+        && p.keys().hasAll(['userId', 'name'])
+        && p.userId is string
+        && p.name is string
+        && p.userId.size() > 0;
+    }
+
+    function allParticipantDocsValid(parts, idx) {
+      return idx >= parts.size()
+        || (
+          validParticipantDoc(parts[idx])
+          && allParticipantDocsValid(parts, idx + 1)
+        );
+    }
+
+    function countParticipantUserId(parts, uid, idx) {
+      return idx >= parts.size()
+        ? 0
+        : (
+          (parts[idx] is map && parts[idx].userId == uid ? 1 : 0)
+          + countParticipantUserId(parts, uid, idx + 1)
+        );
+    }
+
+    /** HalfOrder: food-card swipe creates `orders` with `cardId` + `users` + `host` + `participants`. */
     function isValidHalfOrderCreate() {
       return isSignedIn()
         && canCreateOrderBySafetyLimits()
@@ -74,6 +120,14 @@ service cloud.firestore {
         && request.resource.data.users.size() == 1
         && usersAllStrings(request.resource.data.users, 0)
         && request.auth.uid == request.resource.data.users[0]
+        && request.resource.data.host is map
+        && validOrderHostDoc(request.resource.data.host)
+        && request.resource.data.host.userId == request.auth.uid
+        && request.resource.data.participants is list
+        && request.resource.data.participants.size() == 1
+        && validParticipantDoc(request.resource.data.participants[0])
+        && request.resource.data.participants[0].userId == request.auth.uid
+        && allParticipantDocsValid(request.resource.data.participants, 0)
         && request.resource.data.status == 'active'
         && request.resource.data.maxUsers is int
         && request.resource.data.maxUsers >= 2
@@ -83,14 +137,19 @@ service cloud.firestore {
         && request.resource.data.createdAt != null;
     }
 
-    function isHalfOrderUsersJoinUpdate() {
+    /** +1 user and +1 participant map; host unchanged. */
+    function isHalfOrderParticipantIncrementalJoin() {
       return isSignedIn()
         && !isCurrentUserRestricted()
+        && resource.data.cardId is string
         && resource.data.get('users', []).size() > 0
-        && request.resource.data.diff(resource.data).changedKeys().hasOnly(['users'])
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly(['users', 'participants'])
         && request.resource.data.users is list
         && usersAllStrings(request.resource.data.users, 0)
+        && request.resource.data.participants is list
         && request.resource.data.users.size() == resource.data.get('users', []).size() + 1
+        && request.resource.data.participants.size()
+          == resource.data.get('participants', []).size() + 1
         && request.auth.uid in request.resource.data.users
         && !(request.auth.uid in resource.data.get('users', []))
         && request.resource.data.users.size() <= resource.data.get('maxUsers', 2)
@@ -98,7 +157,48 @@ service cloud.firestore {
         && request.resource.data.status == resource.data.status
         && request.resource.data.createdBy == resource.data.createdBy
         && request.resource.data.get('hostId', '')
-          == resource.data.get('hostId', '');
+          == resource.data.get('hostId', '')
+        && request.resource.data.maxUsers == resource.data.maxUsers
+        && (
+          !resource.data.keys().hasAny(['host'])
+          || request.resource.data.host == resource.data.host
+        )
+        && countParticipantUserId(
+          request.resource.data.participants, request.auth.uid, 0
+        ) == countParticipantUserId(
+          resource.data.get('participants', []), request.auth.uid, 0
+        ) + 1
+        && allParticipantDocsValid(request.resource.data.participants, 0);
+    }
+
+    /** Legacy order: empty participants, one user -> two users + two participant maps + host. */
+    function isHalfOrderParticipantBootstrapJoin() {
+      return isSignedIn()
+        && !isCurrentUserRestricted()
+        && resource.data.cardId is string
+        && resource.data.get('participants', []).size() == 0
+        && resource.data.get('users', []).size() == 1
+        && request.resource.data.diff(resource.data).changedKeys()
+          .hasOnly(['users', 'participants', 'host'])
+        && request.resource.data.users is list
+        && request.resource.data.users.size() == 2
+        && usersAllStrings(request.resource.data.users, 0)
+        && request.resource.data.participants is list
+        && request.resource.data.participants.size() == 2
+        && request.auth.uid in request.resource.data.users
+        && !(request.auth.uid in resource.data.get('users', []))
+        && request.resource.data.participants[0].userId == resource.data.users[0]
+        && request.resource.data.participants[1].userId == request.auth.uid
+        && validOrderHostDoc(request.resource.data.host)
+        && request.resource.data.host.userId == resource.data.users[0]
+        && validParticipantDoc(request.resource.data.participants[0])
+        && validParticipantDoc(request.resource.data.participants[1])
+        && request.resource.data.cardId == resource.data.cardId
+        && request.resource.data.status == resource.data.status
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.get('hostId', '')
+          == resource.data.get('hostId', '')
+        && request.resource.data.maxUsers == resource.data.maxUsers;
     }
 
     /** HalfOrder member cancels the match (notify others via Cloud Function). */
@@ -117,6 +217,11 @@ service cloud.firestore {
         && request.resource.data.get('hostId', '')
           == resource.data.get('hostId', '')
         && request.resource.data.maxUsers == resource.data.maxUsers
+        && request.resource.data.participants == resource.data.participants
+        && (
+          !resource.data.keys().hasAny(['host'])
+          || request.resource.data.host == resource.data.host
+        )
         && request.resource.data.diff(resource.data).changedKeys()
           .hasOnly(['status', 'cancelledBy', 'cancelledAt'])
         && request.resource.data.cancelledAt != null;
@@ -146,7 +251,12 @@ service cloud.firestore {
         && request.resource.data.createdBy == resource.data.createdBy
         && request.resource.data.get('hostId', '')
           == resource.data.get('hostId', '')
-        && request.resource.data.maxUsers == resource.data.maxUsers;
+        && request.resource.data.maxUsers == resource.data.maxUsers
+        && request.resource.data.participants == resource.data.participants
+        && (
+          !resource.data.keys().hasAny(['host'])
+          || request.resource.data.host == resource.data.host
+        );
     }
 
     function orderLinkTargetsCard(orderId, cardId) {
@@ -555,7 +665,8 @@ service cloud.firestore {
         || isCreatorOnlyNonJoinUpdate()
         || isSwipeAcceptUpdate()
         || isMarkOrderExpiredUpdate()
-        || isHalfOrderUsersJoinUpdate()
+        || isHalfOrderParticipantIncrementalJoin()
+        || isHalfOrderParticipantBootstrapJoin()
         || isHalfOrderCancelUpdate()
         || isOrderPairJoinNotifiedUpdate();
       allow delete: if isAdmin()

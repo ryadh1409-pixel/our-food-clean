@@ -5,8 +5,16 @@ import {
   postHalfOrderChatSystemMessage,
 } from '@/services/halfOrderChat';
 import { hasBlockBetween } from '@/services/blocks';
+import {
+  loadHalfOrderCreatorProfiles,
+  loadJoiningParticipantPayload,
+  normalizeOrderUserIds,
+  normalizeParticipantRecords,
+  planHalfOrderJoin,
+} from '@/services/orders';
 import { trySendPairJoinExpoPush } from '@/services/orderPairPushNotify';
 import { syncOrderMemberProfilesForOrder } from '@/services/orderMemberProfile';
+import { getPublicUserFields } from '@/services/users';
 import {
   addDoc,
   arrayUnion,
@@ -284,11 +292,6 @@ export type JoinOrderResult = {
   justBecamePair?: boolean;
 };
 
-function normalizeOrderUsers(raw: unknown): string[] {
-  if (!Array.isArray(raw)) return [];
-  return raw.filter((x): x is string => typeof x === 'string' && x.length > 0);
-}
-
 function buildHalfOrderFromCard(
   data: Record<string, unknown>,
   cardId: string,
@@ -364,6 +367,17 @@ export async function joinOrder(
 
   const cardRef = doc(db, FOOD_CARDS, trimmed);
 
+  const joinerParticipant = await loadJoiningParticipantPayload(authedUid);
+  if (!joinerParticipant) {
+    throw new Error('Could not load your profile to join.');
+  }
+
+  const creatorProfiles = await loadHalfOrderCreatorProfiles(authedUid);
+  if (!creatorProfiles) {
+    throw new Error('Could not load your profile to create this order.');
+  }
+
+  let halfOrderHostPrefetch: Awaited<ReturnType<typeof getPublicUserFields>> = null;
   const cardSnapPrejoin = await getDoc(cardRef);
   if (cardSnapPrejoin.exists()) {
     const d0 = cardSnapPrejoin.data() as Record<string, unknown>;
@@ -374,10 +388,16 @@ export async function joinOrder(
     if (oid0) {
       const o0 = await getDoc(doc(db, 'orders', oid0));
       if (o0.exists()) {
-        for (const m of normalizeOrderUsers(o0.data()?.users)) {
+        const od0 = o0.data() as Record<string, unknown>;
+        for (const m of normalizeOrderUserIds(od0.users)) {
           if (await hasBlockBetween(authedUid, m)) {
             throw new Error('You cannot join this order due to a block.');
           }
+        }
+        const uu = normalizeOrderUserIds(od0.users);
+        const pp = normalizeParticipantRecords(od0.participants);
+        if (pp.length === 0 && uu.length === 1) {
+          halfOrderHostPrefetch = await getPublicUserFields(uu[0]);
         }
       }
     }
@@ -416,10 +436,22 @@ export async function joinOrder(
       const oSnap = await tx.get(oRef);
       if (!oSnap.exists()) throw new Error('Order not found');
       const od = oSnap.data() as Record<string, unknown>;
-      const users = normalizeOrderUsers(od.users);
+      const users = normalizeOrderUserIds(od.users);
       const orderMax =
         typeof od.maxUsers === 'number' && od.maxUsers > 0 ? od.maxUsers : maxUsers;
-      if (users.includes(authedUid)) {
+      let hostForPlan = halfOrderHostPrefetch;
+      const partsLive = normalizeParticipantRecords(od.participants);
+      if (partsLive.length === 0 && users.length === 1 && !hostForPlan) {
+        hostForPlan = await getPublicUserFields(users[0]);
+      }
+      const joinPlan = planHalfOrderJoin({
+        orderData: od,
+        joinerUid: authedUid,
+        joinerParticipant: joinerParticipant,
+        orderMaxUsers: orderMax,
+        hostProfileIfBootstrapping: hostForPlan,
+      });
+      if (joinPlan.kind === 'already_member') {
         return {
           kind: 'joined_existing' as const,
           orderId: linkedOrderId,
@@ -428,10 +460,7 @@ export async function joinOrder(
           alreadyIn: true,
         };
       }
-      if (users.length >= orderMax) {
-        throw new Error('Order is full');
-      }
-      tx.update(oRef, { users: arrayUnion(authedUid) });
+      tx.update(oRef, joinPlan.fields);
       return {
         kind: 'joined_existing' as const,
         orderId: linkedOrderId,
@@ -442,7 +471,11 @@ export async function joinOrder(
     }
 
     const newRef = doc(collection(db, 'orders'));
-    tx.set(newRef, buildHalfOrderFromCard(data, trimmed, authedUid, maxUsers));
+    tx.set(newRef, {
+      ...buildHalfOrderFromCard(data, trimmed, authedUid, maxUsers),
+      host: creatorProfiles.host,
+      participants: [creatorProfiles.firstParticipant],
+    });
     tx.update(cardRef, { orderId: newRef.id });
     return {
       kind: 'created' as const,
@@ -452,7 +485,7 @@ export async function joinOrder(
   });
 
   const finalSnap = await getDoc(doc(db, 'orders', outcome.orderId));
-  const finalUsers = normalizeOrderUsers(finalSnap.data()?.users);
+  const finalUsers = normalizeOrderUserIds(finalSnap.data()?.users);
 
   await ensureHalfOrderChat(outcome.orderId, finalUsers);
   await syncOrderMemberProfilesForOrder(outcome.orderId, finalUsers);

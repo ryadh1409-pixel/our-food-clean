@@ -2,7 +2,6 @@
  * Join `orders/{orderId}` using `participants` + `joinedAtMap`, or HalfOrder `users` array.
  */
 import {
-  arrayUnion,
   doc,
   getDoc,
   runTransaction,
@@ -17,14 +16,17 @@ import {
   postHalfOrderChatSystemMessage,
 } from '@/services/halfOrderChat';
 import { auth, db } from '@/services/firebase';
+import {
+  memberIdsFromOrderData,
+  normalizeOrderUserIds,
+  normalizeParticipantRecords,
+  planHalfOrderJoin,
+  loadJoiningParticipantPayload,
+} from '@/services/orders';
 import { syncOrderMemberProfilesForOrder } from '@/services/orderMemberProfile';
 import { trySendPairJoinExpoPush } from '@/services/orderPairPushNotify';
 import { joinOrderWithParticipantRecord } from '@/services/orderLifecycle';
-
-function normalizeOrderUsersArray(raw: unknown): string[] {
-  if (!Array.isArray(raw)) return [];
-  return raw.filter((x): x is string => typeof x === 'string' && x.length > 0);
-}
+import { getPublicUserFields } from '@/services/users';
 
 /**
  * Join the current user to `orders/{orderId}`.
@@ -52,16 +54,11 @@ export async function joinOrder(orderId: string): Promise<void> {
     throw new Error('Order not found.');
   }
 
-  const preData = preSnap.data() as Record<string, unknown>;
-  const createdBy = typeof preData.createdBy === 'string' ? preData.createdBy : '';
-  if (createdBy && createdBy !== uid) {
-    if (await hasBlockBetween(uid, createdBy)) {
+  for (const m of memberIdsFromOrderData(preSnap.data())) {
+    if (m !== uid && (await hasBlockBetween(uid, m))) {
       throw new Error('You cannot join this order due to a block.');
     }
   }
-
-  console.log('UID:', uid);
-  console.log('ORDER PARTICIPANTS:', preData.participants);
 
   await joinOrderWithParticipantRecord(db, trimmedId, uid, {}, {
     requireOpenForJoin: false,
@@ -111,40 +108,56 @@ export async function joinHalfOrderByOrderId(orderId: string): Promise<{
   }
 
   const preData = preSnap.data() as Record<string, unknown>;
-  const usersFirst = normalizeOrderUsersArray(preData.users);
+  const usersFirst = normalizeOrderUserIds(preData.users);
   if (usersFirst.length === 0) {
     throw new Error('Use the standard join flow for this order.');
   }
 
-  const createdBy =
-    typeof preData.createdBy === 'string'
-      ? preData.createdBy
-      : usersFirst[0] ?? '';
-  if (createdBy && createdBy !== uid) {
-    if (await hasBlockBetween(uid, createdBy)) {
+  for (const m of memberIdsFromOrderData(preSnap.data())) {
+    if (m !== uid && (await hasBlockBetween(uid, m))) {
       throw new Error('You cannot join this order due to a block.');
     }
+  }
+
+  const joinerParticipant = await loadJoiningParticipantPayload(uid);
+  if (!joinerParticipant) {
+    throw new Error('Could not load your profile to join.');
+  }
+
+  let hostPrefetch: Awaited<ReturnType<typeof getPublicUserFields>> = null;
+  const ppPre = normalizeParticipantRecords(preData.participants);
+  if (ppPre.length === 0 && usersFirst.length === 1) {
+    hostPrefetch = await getPublicUserFields(usersFirst[0]);
   }
 
   const txResult = await runTransaction(db, async (transaction) => {
     const snap = await transaction.get(orderRef);
     if (!snap.exists()) throw new Error('Order no longer exists.');
     const d = snap.data() as Record<string, unknown>;
-    const users = normalizeOrderUsersArray(d.users);
+    const users = normalizeOrderUserIds(d.users);
     const maxPeople =
       typeof d.maxUsers === 'number' && d.maxUsers > 0 ? d.maxUsers : 2;
-    if (users.includes(uid)) {
+    let hostForPlan = hostPrefetch;
+    const partsLive = normalizeParticipantRecords(d.participants);
+    if (partsLive.length === 0 && users.length === 1 && !hostForPlan) {
+      hostForPlan = await getPublicUserFields(users[0]);
+    }
+    const plan = planHalfOrderJoin({
+      orderData: d,
+      joinerUid: uid,
+      joinerParticipant,
+      orderMaxUsers: maxPeople,
+      hostProfileIfBootstrapping: hostForPlan,
+    });
+    if (plan.kind === 'already_member') {
       return { tag: 'already' as const, priorCount: users.length };
     }
-    if (users.length >= maxPeople) {
-      throw new Error('Order is full.');
-    }
-    transaction.update(orderRef, { users: arrayUnion(uid) });
+    transaction.update(orderRef, plan.fields);
     return { tag: 'added' as const, priorCount: users.length };
   });
 
   const postSnap = await getDoc(orderRef);
-  const finalUsers = normalizeOrderUsersArray(postSnap.data()?.users);
+  const finalUsers = normalizeOrderUserIds(postSnap.data()?.users);
   await ensureHalfOrderChat(trimmedId, finalUsers);
   await syncOrderMemberProfilesForOrder(trimmedId, finalUsers);
 

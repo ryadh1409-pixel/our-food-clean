@@ -714,12 +714,15 @@ exports.sendMessageNotification = functions.firestore
     return null;
   });
 
-/** Prefer `participants` (contract), fall back to HalfOrder `users`. */
+/** Member uids: rich `participants` maps, legacy string `participants`, or HalfOrder `users`. */
 function orderMemberIds(data) {
-  const p = Array.isArray(data?.participants)
-    ? data.participants.filter((x) => typeof x === 'string')
-    : [];
-  if (p.length > 0) return p;
+  const p = Array.isArray(data?.participants) ? data.participants : [];
+  const ids = [];
+  for (const x of p) {
+    if (typeof x === 'string' && x) ids.push(x);
+    else if (x && typeof x === 'object' && typeof x.userId === 'string') ids.push(x.userId);
+  }
+  if (ids.length > 0) return ids;
   return Array.isArray(data?.users) ? data.users.filter((x) => typeof x === 'string') : [];
 }
 
