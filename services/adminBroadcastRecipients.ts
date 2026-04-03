@@ -9,6 +9,9 @@ export type AdminBroadcastTargetMode = 'all' | 'active_users';
 
 const ACTIVE_ROLLING_MS = 24 * 60 * 60 * 1000;
 
+/** Default rolling window for “active users” targeting (e.g. smart AI send). */
+export const ACTIVE_2H_MS = 2 * 60 * 60 * 1000;
+
 /** Expo push tokens normally look like ExponentPushToken[...]. */
 export function isLikelyExpoPushToken(raw: string): boolean {
   const t = raw.trim();
@@ -28,7 +31,7 @@ export function expoTokenFromUserFields(data: Record<string, unknown>): string |
   return null;
 }
 
-function lastActiveMs(data: Record<string, unknown>): number | null {
+export function lastActiveMs(data: Record<string, unknown>): number | null {
   const la = data.lastActive;
   if (la && typeof la === 'object' && la !== null && 'toMillis' in la) {
     const ms = (la as { toMillis?: () => number }).toMillis?.();
@@ -70,6 +73,11 @@ export function userLatLngFromDoc(data: Record<string, unknown>): LatLng | null 
 
 export type CollectRecipientsOptions = {
   targetMode: AdminBroadcastTargetMode;
+  /**
+   * Rolling window when `targetMode === 'active_users'` (default 24h).
+   * Use {@link ACTIVE_2H_MS} for “recently active” smart sends.
+   */
+  activeWindowMs?: number;
   /** When set > 0, require user coords within this distance of `center`. */
   radiusKm?: number | null;
   center?: LatLng | null;
@@ -84,7 +92,11 @@ export function collectBroadcastRecipientTokens(
   options: CollectRecipientsOptions,
 ): { tokens: string[]; skippedNoToken: number; skippedFilter: number } {
   const now = options.nowMs ?? Date.now();
-  const activeCutoff = now - ACTIVE_ROLLING_MS;
+  const activeWindow =
+    options.targetMode === 'active_users'
+      ? (options.activeWindowMs ?? ACTIVE_ROLLING_MS)
+      : ACTIVE_ROLLING_MS;
+  const activeCutoff = now - activeWindow;
   const radius =
     typeof options.radiusKm === 'number' &&
     options.radiusKm > 0 &&

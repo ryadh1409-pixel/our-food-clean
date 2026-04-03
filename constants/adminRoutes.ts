@@ -16,4 +16,5 @@ export const adminRoutes = {
   complaints: '/admin/complaints',
   /** Broadcast push to all / targeted users (Expo push). */
   sendNotification: '/admin/broadcast',
+  aiInsights: '/admin/ai-insights',
 } as const;

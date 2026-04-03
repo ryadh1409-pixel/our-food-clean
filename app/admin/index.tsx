@@ -450,6 +450,13 @@ export default function AdminScreen() {
             <View style={styles.navSection}>
               <TouchableOpacity
                 style={styles.navButton}
+                onPress={() => router.push(adminRoutes.aiInsights as never)}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.navButtonText}>AI Insights</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.navButton}
                 onPress={() => router.push(adminRoutes.sendNotification as never)}
                 activeOpacity={0.85}
               >
