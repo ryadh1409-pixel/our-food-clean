@@ -128,7 +128,14 @@ service cloud.firestore {
         && validParticipantDoc(request.resource.data.participants[0])
         && request.resource.data.participants[0].userId == request.auth.uid
         && allParticipantDocsValid(request.resource.data.participants, 0)
-        && request.resource.data.status == 'active'
+        && (
+          request.resource.data.status == 'waiting'
+          || request.resource.data.status == 'active'
+        )
+        && (
+          !request.resource.data.keys().hasAny(['matchWaitDeadlineAt'])
+          || request.resource.data.matchWaitDeadlineAt is int
+        )
         && request.resource.data.maxUsers is int
         && request.resource.data.maxUsers >= 2
         && request.resource.data.maxUsers <= 20
@@ -137,13 +144,12 @@ service cloud.firestore {
         && request.resource.data.createdAt != null;
     }
 
-    /** +1 user and +1 participant map; host unchanged. */
+    /** +1 user and +1 participant map; host unchanged. Optional status -> matched when pair forms. */
     function isHalfOrderParticipantIncrementalJoin() {
       return isSignedIn()
         && !isCurrentUserRestricted()
         && resource.data.cardId is string
         && resource.data.get('users', []).size() > 0
-        && request.resource.data.diff(resource.data).changedKeys().hasOnly(['users', 'participants'])
         && request.resource.data.users is list
         && usersAllStrings(request.resource.data.users, 0)
         && request.resource.data.participants is list
@@ -154,7 +160,6 @@ service cloud.firestore {
         && !(request.auth.uid in resource.data.get('users', []))
         && request.resource.data.users.size() <= resource.data.get('maxUsers', 2)
         && request.resource.data.cardId == resource.data.cardId
-        && request.resource.data.status == resource.data.status
         && request.resource.data.createdBy == resource.data.createdBy
         && request.resource.data.get('hostId', '')
           == resource.data.get('hostId', '')
@@ -168,7 +173,23 @@ service cloud.firestore {
         ) == countParticipantUserId(
           resource.data.get('participants', []), request.auth.uid, 0
         ) + 1
-        && allParticipantDocsValid(request.resource.data.participants, 0);
+        && allParticipantDocsValid(request.resource.data.participants, 0)
+        && (
+          (
+            request.resource.data.diff(resource.data).changedKeys()
+              .hasOnly(['users', 'participants'])
+            && request.resource.data.status == resource.data.status
+          )
+          || (
+            request.resource.data.diff(resource.data).changedKeys()
+              .hasOnly(['users', 'participants', 'status'])
+            && request.resource.data.status == 'matched'
+            && (
+              resource.data.status == 'waiting'
+              || resource.data.status == 'active'
+            )
+          )
+        );
     }
 
     /** Legacy order: empty participants, one user -> two users + two participant maps + host. */
@@ -178,8 +199,6 @@ service cloud.firestore {
         && resource.data.cardId is string
         && resource.data.get('participants', []).size() == 0
         && resource.data.get('users', []).size() == 1
-        && request.resource.data.diff(resource.data).changedKeys()
-          .hasOnly(['users', 'participants', 'host'])
         && request.resource.data.users is list
         && request.resource.data.users.size() == 2
         && usersAllStrings(request.resource.data.users, 0)
@@ -194,11 +213,26 @@ service cloud.firestore {
         && validParticipantDoc(request.resource.data.participants[0])
         && validParticipantDoc(request.resource.data.participants[1])
         && request.resource.data.cardId == resource.data.cardId
-        && request.resource.data.status == resource.data.status
         && request.resource.data.createdBy == resource.data.createdBy
         && request.resource.data.get('hostId', '')
           == resource.data.get('hostId', '')
-        && request.resource.data.maxUsers == resource.data.maxUsers;
+        && request.resource.data.maxUsers == resource.data.maxUsers
+        && (
+          (
+            request.resource.data.diff(resource.data).changedKeys()
+              .hasOnly(['users', 'participants', 'host'])
+            && request.resource.data.status == resource.data.status
+          )
+          || (
+            request.resource.data.diff(resource.data).changedKeys()
+              .hasOnly(['users', 'participants', 'host', 'status'])
+            && request.resource.data.status == 'matched'
+            && (
+              resource.data.status == 'waiting'
+              || resource.data.status == 'active'
+            )
+          )
+        );
     }
 
     /** HalfOrder member cancels the match (notify others via Cloud Function). */
@@ -207,7 +241,11 @@ service cloud.firestore {
         && !isCurrentUserRestricted()
         && resource.data.cardId is string
         && resource.data.cardId.size() > 0
-        && resource.data.status == 'active'
+        && (
+          resource.data.status == 'waiting'
+          || resource.data.status == 'matched'
+          || resource.data.status == 'active'
+        )
         && request.resource.data.status == 'cancelled'
         && request.auth.uid in resource.data.get('users', [])
         && request.resource.data.cancelledBy == request.auth.uid
@@ -222,9 +260,68 @@ service cloud.firestore {
           !resource.data.keys().hasAny(['host'])
           || request.resource.data.host == resource.data.host
         )
+        && request.resource.data.cancelledAt != null
+        && (
+          request.resource.data.diff(resource.data).changedKeys()
+            .hasOnly(['status', 'cancelledBy', 'cancelledAt'])
+          || request.resource.data.diff(resource.data).changedKeys()
+            .hasOnly(['status', 'cancelledBy', 'cancelledAt', 'cancelReason'])
+        )
+        && (
+          !request.resource.data.keys().hasAny(['cancelReason'])
+          || request.resource.data.cancelReason is string
+        );
+    }
+
+    /** matched -> active when opening chat. */
+    function isHalfOrderMarkActiveUpdate() {
+      return isSignedIn()
+        && !isCurrentUserRestricted()
+        && resource.data.cardId is string
+        && resource.data.cardId.size() > 0
+        && resource.data.status == 'matched'
+        && request.resource.data.status == 'active'
+        && request.auth.uid in resource.data.get('users', [])
+        && request.resource.data.users == resource.data.users
+        && request.resource.data.participants == resource.data.participants
+        && request.resource.data.cardId == resource.data.cardId
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.get('hostId', '')
+          == resource.data.get('hostId', '')
+        && request.resource.data.maxUsers == resource.data.maxUsers
+        && (
+          !resource.data.keys().hasAny(['host'])
+          || request.resource.data.host == resource.data.host
+        )
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly(['status']);
+    }
+
+    /** Mark half order done. */
+    function isHalfOrderCompleteUpdate() {
+      return isSignedIn()
+        && !isCurrentUserRestricted()
+        && resource.data.cardId is string
+        && resource.data.cardId.size() > 0
+        && (
+          resource.data.status == 'matched'
+          || resource.data.status == 'active'
+        )
+        && request.resource.data.status == 'completed'
+        && request.auth.uid in resource.data.get('users', [])
+        && request.resource.data.users == resource.data.users
+        && request.resource.data.participants == resource.data.participants
+        && request.resource.data.cardId == resource.data.cardId
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.get('hostId', '')
+          == resource.data.get('hostId', '')
+        && request.resource.data.maxUsers == resource.data.maxUsers
+        && (
+          !resource.data.keys().hasAny(['host'])
+          || request.resource.data.host == resource.data.host
+        )
+        && request.resource.data.completedAt != null
         && request.resource.data.diff(resource.data).changedKeys()
-          .hasOnly(['status', 'cancelledBy', 'cancelledAt'])
-        && request.resource.data.cancelledAt != null;
+          .hasOnly(['status', 'completedAt']);
     }
 
     function isOrderMemberByOrderId(orderId) {
@@ -243,8 +340,15 @@ service cloud.firestore {
         && request.auth.uid in resource.data.get('users', [])
         && resource.data.get('notified', false) != true
         && request.resource.data.notified == true
-        && request.resource.data.diff(resource.data).changedKeys()
-          .hasOnly(['notified', 'notifiedAt'])
+        && (
+          request.resource.data.diff(resource.data).changedKeys()
+            .hasOnly(['notified', 'notifiedAt'])
+          || (
+            request.resource.data.diff(resource.data).changedKeys()
+              .hasOnly(['notified', 'notifiedAt', 'notificationSent'])
+            && request.resource.data.notificationSent == true
+          )
+        )
         && request.resource.data.users == resource.data.users
         && request.resource.data.cardId == resource.data.cardId
         && request.resource.data.status == resource.data.status
@@ -556,6 +660,24 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).changedKeys().hasOnly(['lastMessage', 'lastMessageAt']);
     }
 
+    function isChatReadsUpdate(chatId) {
+      return isSignedIn()
+        && isChatDocMember(chatId)
+        && request.resource.data.orderId == resource.data.orderId
+        && request.resource.data.users == resource.data.users
+        && request.resource.data.participants == resource.data.participants
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.reads is map
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly(['reads'])
+        && (
+          !resource.data.keys().hasAny(['reads'])
+          || (
+            resource.data.reads is map
+            && request.resource.data.reads.keys().hasAll(resource.data.reads.keys())
+          )
+        );
+    }
+
     match /chats/{chatId} {
       allow read: if isAdmin() || isChatDocMember(chatId);
       allow create: if isAdmin()
@@ -571,7 +693,8 @@ service cloud.firestore {
         );
       allow update: if isAdmin()
         || isChatUsersAppendUpdate(chatId)
-        || isChatLastMessagePatch(chatId);
+        || isChatLastMessagePatch(chatId)
+        || isChatReadsUpdate(chatId);
       allow delete: if isAdmin();
 
       match /messages/{messageId} {
@@ -668,6 +791,8 @@ service cloud.firestore {
         || isHalfOrderParticipantIncrementalJoin()
         || isHalfOrderParticipantBootstrapJoin()
         || isHalfOrderCancelUpdate()
+        || isHalfOrderMarkActiveUpdate()
+        || isHalfOrderCompleteUpdate()
         || isOrderPairJoinNotifiedUpdate();
       allow delete: if isAdmin()
         || (

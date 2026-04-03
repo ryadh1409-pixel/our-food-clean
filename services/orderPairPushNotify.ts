@@ -91,12 +91,14 @@ export async function trySendPairJoinExpoPush(
       if (users.length !== 2) return;
       if (!users.includes(jid)) return;
       if (d.notified === true) return;
+      if (d.notificationSent === true) return;
       if (d.pairJoinPushSent === true) return;
       const other = users.find((u) => u !== jid);
       if (!other) return;
 
       tx.update(ref, {
         notified: true,
+        notificationSent: true,
         notifiedAt: serverTimestamp(),
       });
       recipientUid = other;

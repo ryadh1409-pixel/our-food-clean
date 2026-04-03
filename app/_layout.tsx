@@ -22,7 +22,7 @@ import {
     logNotificationOpened,
     logNotificationReceived,
 } from '@/services/notificationTracking';
-import { startExpiredOrdersCleanup } from '@/services/orders';
+import { startExpiredOrdersCleanup } from '@/services/orderExpiryClient';
 import {
   configureExpoPushNotificationHandler,
   requestNotificationPermissionOnAppLaunch,

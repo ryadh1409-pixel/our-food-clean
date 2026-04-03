@@ -1,9 +1,18 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
-import { addDoc, doc as firestoreDoc, updateDoc } from 'firebase/firestore';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  addDoc,
+  collection,
+  doc as firestoreDoc,
+  getDoc,
+  onSnapshot,
+  orderBy,
+  query,
+  updateDoc,
+} from 'firebase/firestore';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   KeyboardAvoidingView,
   Platform,
@@ -15,7 +24,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { friendlyErrorMessage } from '@/lib/friendlyError';
 import { auth, db } from '@/services/firebase';
+import { markHalfOrderChatActive } from '@/services/halfOrderLifecycle';
 
 /** Firestore message doc shape varies; listener spreads `doc.data()`. */
 type ChatMessage = { id: string } & Record<string, unknown>;
@@ -23,6 +34,22 @@ type ChatMessage = { id: string } & Record<string, unknown>;
 function paramToId(raw: string | string[] | undefined): string {
   if (raw == null) return '';
   return String(Array.isArray(raw) ? raw[0] : raw);
+}
+
+function formatMessageTime(createdAt: unknown): string {
+  const n =
+    typeof createdAt === 'number' && Number.isFinite(createdAt)
+      ? createdAt
+      : null;
+  if (n == null) return '';
+  try {
+    return new Date(n).toLocaleTimeString(undefined, {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return '';
+  }
 }
 
 export default function ChatByIdScreen() {
@@ -34,12 +61,19 @@ export default function ChatByIdScreen() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  /** null = chat doc not loaded yet */
   const [chatExists, setChatExists] = useState<boolean | null>(null);
   const [hasSyncedMessages, setHasSyncedMessages] = useState(false);
+  const [chatReads, setChatReads] = useState<Record<string, number>>({});
+  const [peerUid, setPeerUid] = useState<string | null>(null);
   const bootstrapAttemptedRef = useRef(false);
   const aiInsertAttemptedRef = useRef(false);
   const listRef = useRef<FlatList<ChatMessage>>(null);
+
+  const scrollToEnd = useCallback(() => {
+    requestAnimationFrame(() => {
+      listRef.current?.scrollToEnd({ animated: true });
+    });
+  }, []);
 
   useEffect(() => {
     if (!id) {
@@ -72,10 +106,32 @@ export default function ChatByIdScreen() {
         setError(null);
         setChatExists(true);
         setLoading(false);
+        const d = snap.data();
+        const readsRaw = d?.reads;
+        setChatReads(
+          readsRaw && typeof readsRaw === 'object' && readsRaw !== null
+            ? (readsRaw as Record<string, number>)
+            : {},
+        );
+        const uid = auth.currentUser?.uid;
+        const users = Array.isArray(d?.users)
+          ? (d.users as unknown[]).filter((x): x is string => typeof x === 'string')
+          : [];
+        const part = Array.isArray(d?.participants)
+          ? (d.participants as unknown[]).filter((x): x is string => typeof x === 'string')
+          : [];
+        const list = users.length > 0 ? users : part;
+        const other = uid ? list.find((x) => x !== uid) ?? null : null;
+        setPeerUid(other);
       }
     });
     return () => unsub();
   }, [id]);
+
+  useEffect(() => {
+    if (!id || chatExists !== true) return;
+    void markHalfOrderChatActive(id);
+  }, [id, chatExists]);
 
   useEffect(() => {
     if (!id) return;
@@ -90,14 +146,38 @@ export default function ChatByIdScreen() {
         id: doc.id,
         ...doc.data(),
       }));
-
-      console.log('Messages updated:', msgs);
       setMessages(msgs);
       setHasSyncedMessages(true);
+      scrollToEnd();
     });
 
     return () => unsubscribe();
-  }, [id]);
+  }, [id, scrollToEnd]);
+
+  useEffect(() => {
+    if (!id || chatExists !== true || !hasSyncedMessages) return;
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const ref = firestoreDoc(db, 'chats', id);
+        const snap = await getDoc(ref);
+        if (!snap.exists() || cancelled) return;
+        const data = snap.data();
+        const prev =
+          data?.reads && typeof data.reads === 'object' && data.reads !== null
+            ? (data.reads as Record<string, number>)
+            : {};
+        await updateDoc(ref, { reads: { ...prev, [uid]: Date.now() } });
+      } catch {
+        /* offline / rules */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id, chatExists, hasSyncedMessages, messages.length]);
 
   useEffect(() => {
     if (!id || chatExists !== true || !hasSyncedMessages || messages.length > 0 || bootstrapAttemptedRef.current) {
@@ -142,16 +222,18 @@ export default function ChatByIdScreen() {
       }).catch(() => {
         aiInsertAttemptedRef.current = false;
       });
-      console.log('AI inserted from chat screen');
     }
   }, [id, messages]);
 
   useEffect(() => {
     if (messages.length === 0) return;
-    listRef.current?.scrollToEnd({ animated: true });
-  }, [messages.length]);
+    scrollToEnd();
+  }, [messages.length, scrollToEnd]);
 
-  const canSend = useMemo(() => text.trim().length > 0 && !sending && !!id, [text, sending, id]);
+  const canSend = useMemo(
+    () => text.trim().length > 0 && !sending && !!id,
+    [text, sending, id],
+  );
 
   const onSend = async () => {
     if (!canSend) return;
@@ -163,7 +245,10 @@ export default function ChatByIdScreen() {
       await addDoc(collection(db, 'chats', id, 'messages'), {
         text: payload,
         senderId: uid,
-        userName: auth.currentUser?.displayName || auth.currentUser?.email?.split('@')[0] || 'User',
+        userName:
+          auth.currentUser?.displayName ||
+          auth.currentUser?.email?.split('@')[0] ||
+          'User',
         createdAt: Date.now(),
       });
       await updateDoc(firestoreDoc(db, 'chats', id), {
@@ -171,6 +256,8 @@ export default function ChatByIdScreen() {
         lastMessageAt: Date.now(),
       }).catch(() => {});
       setText('');
+    } catch (e) {
+      Alert.alert('Could not send', friendlyErrorMessage(e));
     } finally {
       setSending(false);
     }
@@ -178,7 +265,10 @@ export default function ChatByIdScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()}>
             <Text style={styles.back}>Back</Text>
@@ -197,15 +287,42 @@ export default function ChatByIdScreen() {
             data={messages}
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.listContent}
+            onContentSizeChange={scrollToEnd}
             renderItem={({ item }) => {
               const senderId = String(item.senderId ?? '');
-              const mine = senderId === auth.currentUser?.uid;
+              const isSystem = senderId === 'system' || item['system'] === true;
+              const mine = !isSystem && senderId === auth.currentUser?.uid;
               const label = String(item.userName ?? item.sender ?? 'User');
               const body = String(item.text ?? '');
+              const createdAt = item.createdAt;
+              const timeLabel = formatMessageTime(createdAt);
+              const ts =
+                typeof createdAt === 'number' && Number.isFinite(createdAt)
+                  ? createdAt
+                  : 0;
+              const showSeen =
+                mine &&
+                !!peerUid &&
+                ts > 0 &&
+                (chatReads[peerUid] ?? 0) >= ts;
               return (
-                <View style={[styles.bubble, mine ? styles.mine : styles.theirs]}>
-                  <Text style={styles.name}>{label}</Text>
+                <View
+                  style={[styles.bubble, mine ? styles.mine : styles.theirs]}
+                >
+                  {!isSystem ? (
+                    <Text style={styles.name}>{label}</Text>
+                  ) : null}
                   <Text style={styles.msg}>{body}</Text>
+                  {!isSystem ? (
+                    <View style={styles.metaRow}>
+                      {timeLabel ? (
+                        <Text style={styles.msgTime}>{timeLabel}</Text>
+                      ) : null}
+                      {showSeen ? (
+                        <Text style={styles.seenLabel}>Seen</Text>
+                      ) : null}
+                    </View>
+                  ) : null}
                 </View>
               );
             }}
@@ -228,8 +345,12 @@ export default function ChatByIdScreen() {
             onSubmitEditing={onSend}
             editable={!sending}
           />
-          <TouchableOpacity style={[styles.sendBtn, !canSend && styles.disabled]} onPress={onSend} disabled={!canSend}>
-            <Text style={styles.sendText}>{sending ? '...' : 'Send'}</Text>
+          <TouchableOpacity
+            style={[styles.sendBtn, !canSend && styles.disabled]}
+            onPress={onSend}
+            disabled={!canSend}
+          >
+            <Text style={styles.sendText}>{sending ? '…' : 'Send'}</Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -257,9 +378,41 @@ const styles = StyleSheet.create({
   theirs: { alignSelf: 'flex-start', backgroundColor: '#141922' },
   name: { color: '#6EE7B7', fontSize: 12, fontWeight: '700', marginBottom: 4 },
   msg: { color: '#F3F4F6', fontSize: 14 },
-  inputRow: { flexDirection: 'row', gap: 8, padding: 10, borderTopWidth: 1, borderTopColor: '#1F2937' },
-  input: { flex: 1, minHeight: 44, borderRadius: 12, borderWidth: 1, borderColor: '#232A35', color: '#F8FAFC', paddingHorizontal: 12, backgroundColor: '#141922' },
-  sendBtn: { minHeight: 44, minWidth: 68, borderRadius: 12, backgroundColor: '#34D399', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 14 },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 6,
+    justifyContent: 'flex-end',
+  },
+  msgTime: { color: '#6B7280', fontSize: 11 },
+  seenLabel: { color: '#34D399', fontSize: 11, fontWeight: '600' },
+  inputRow: {
+    flexDirection: 'row',
+    gap: 8,
+    padding: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#1F2937',
+  },
+  input: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#232A35',
+    color: '#F8FAFC',
+    paddingHorizontal: 12,
+    backgroundColor: '#141922',
+  },
+  sendBtn: {
+    minHeight: 44,
+    minWidth: 68,
+    borderRadius: 12,
+    backgroundColor: '#34D399',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+  },
   sendText: { color: '#052E1A', fontWeight: '800' },
   disabled: { opacity: 0.6 },
   empty: { color: '#9CA3AF' },

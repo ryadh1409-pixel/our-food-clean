@@ -8,6 +8,7 @@ import {
   type Timestamp,
 } from 'firebase/firestore';
 
+import { ORDER_STATUS } from '@/constants/orderStatus';
 import { getPublicUserFields, type PublicUserFields } from '@/services/users';
 
 export type OrderHost = {
@@ -128,6 +129,16 @@ export type HalfOrderJoinPlan =
   | { kind: 'already_member' }
   | { kind: 'update'; fields: Record<string, unknown> };
 
+function withMatchedStatusWhenPair(
+  fields: Record<string, unknown>,
+  usersBeforeCount: number,
+): Record<string, unknown> {
+  if (usersBeforeCount >= 1 && usersBeforeCount + 1 >= 2) {
+    return { ...fields, status: ORDER_STATUS.MATCHED };
+  }
+  return fields;
+}
+
 /**
  * Build Firestore `update` fields for HalfOrder join (users + participants + optional host bootstrap).
  */
@@ -156,23 +167,25 @@ export function planHalfOrderJoin(args: {
     }
     const host = publicUserToOrderHost(hp);
     const p0 = publicUserToOrderParticipantWrite(hp, serverTimestamp());
+    const fields = {
+      users: arrayUnion(args.joinerUid),
+      participants: [p0, args.joinerParticipant],
+      host,
+    };
     return {
       kind: 'update',
-      fields: {
-        users: arrayUnion(args.joinerUid),
-        participants: [p0, args.joinerParticipant],
-        host,
-      },
+      fields: withMatchedStatusWhenPair(fields, users.length),
     };
   }
 
   if (parts.length === users.length) {
+    const fields = {
+      users: arrayUnion(args.joinerUid),
+      participants: arrayUnion(args.joinerParticipant),
+    };
     return {
       kind: 'update',
-      fields: {
-        users: arrayUnion(args.joinerUid),
-        participants: arrayUnion(args.joinerParticipant),
-      },
+      fields: withMatchedStatusWhenPair(fields, users.length),
     };
   }
 

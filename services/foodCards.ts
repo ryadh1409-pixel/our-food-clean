@@ -1,4 +1,8 @@
 import { ADMIN_UID } from '@/constants/adminUid';
+import {
+  HALF_ORDER_MATCH_WAIT_MS,
+  ORDER_STATUS,
+} from '@/constants/orderStatus';
 import { auth, db } from '@/services/firebase';
 import {
   ensureHalfOrderChat,
@@ -307,10 +311,12 @@ function buildHalfOrderFromCard(
   const restaurant =
     typeof data.restaurantName === 'string' ? data.restaurantName.trim() : '';
 
+  const now = Date.now();
   return {
     cardId,
     users: [uid],
-    status: 'active',
+    status: ORDER_STATUS.WAITING,
+    matchWaitDeadlineAt: now + HALF_ORDER_MATCH_WAIT_MS,
     maxUsers,
     createdBy: uid,
     hostId: uid,

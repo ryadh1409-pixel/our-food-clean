@@ -1,10 +1,12 @@
 import { useAuth } from '@/services/AuthContext';
 import { db } from '@/services/firebase';
+import { friendlyErrorMessage } from '@/lib/friendlyError';
 import {
   deriveLifecycleForViewer,
   formatOrderCountdown,
   leaveOrderParticipant,
 } from '@/services/orderLifecycle';
+import { cancelHalfOrder } from '@/services/halfOrderCancel';
 import { BlurView } from 'expo-blur';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -215,11 +217,21 @@ export default function OrdersScreen() {
     router.push(`/order/${orderId}` as const);
   };
 
-  const activeOrders = orders.filter(
-    (order) =>
-      order.status !== 'cancelled' && order.status !== 'completed',
+  const statusLower = (s: string) => s.trim().toLowerCase();
+  const activeOrders = orders.filter((order) => {
+    const s = statusLower(order.status);
+    return (
+      s !== 'cancelled' &&
+      s !== 'completed' &&
+      s !== 'expired'
+    );
+  });
+  const completedOrders = orders.filter(
+    (order) => statusLower(order.status) === 'completed',
   );
-  const cancelledOrders = orders.filter((order) => order.status === 'cancelled');
+  const cancelledOrders = orders.filter(
+    (order) => statusLower(order.status) === 'cancelled',
+  );
 
   const handleCancelOrLeave = (item: OrderItem) => {
     if (!uid || cancellingId) return;
@@ -239,14 +251,15 @@ export default function OrdersScreen() {
             onPress: async () => {
               setCancellingId(item.id);
               try {
-                await updateDoc(doc(db, 'orders', item.id), {
-                  status: 'cancelled',
-                });
+                if (item.usesHalf) {
+                  await cancelHalfOrder(item.id);
+                } else {
+                  await updateDoc(doc(db, 'orders', item.id), {
+                    status: 'cancelled',
+                  });
+                }
               } catch (e) {
-                Alert.alert(
-                  'Error',
-                  e instanceof Error ? e.message : 'Could not cancel.',
-                );
+                Alert.alert('Error', friendlyErrorMessage(e));
               } finally {
                 setCancellingId(null);
               }
@@ -267,10 +280,7 @@ export default function OrdersScreen() {
           try {
             await leaveOrderParticipant(db, item.id, uid);
           } catch (e) {
-            Alert.alert(
-              'Error',
-              e instanceof Error ? e.message : 'Could not leave.',
-            );
+            Alert.alert('Error', friendlyErrorMessage(e));
           } finally {
             setCancellingId(null);
           }
@@ -293,11 +303,15 @@ export default function OrdersScreen() {
     const lifecycleLabel =
       lifecycle === 'cancelled'
         ? 'cancelled'
-        : lifecycle === 'waiting'
-          ? 'waiting'
-          : lifecycle === 'expired'
-            ? 'expired'
-            : 'active';
+        : lifecycle === 'completed'
+          ? 'completed'
+          : lifecycle === 'waiting'
+            ? 'waiting'
+            : lifecycle === 'matched'
+              ? 'matched'
+              : lifecycle === 'expired'
+                ? 'expired'
+                : 'active';
     const userCount = item.usesHalf ? item.halfUsers.length : item.participants.length;
     const countdownLabel =
       lifecycleParticipants.includes(u) &&
@@ -517,20 +531,29 @@ export default function OrdersScreen() {
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
         >
-          <Text style={styles.sectionTitle}>Active Orders</Text>
+          <Text style={styles.sectionTitle}>Active</Text>
           {activeOrders.length > 0 ? (
             activeOrders.map((order) => (
               <View key={order.id}>{renderOrderCard(order)}</View>
             ))
           ) : (
             <Text style={styles.emptySectionText}>
-              No active orders yet — start one and others can join
+              No active orders — waiting, matched, or in-progress chats appear here
             </Text>
           )}
 
+          {completedOrders.length > 0 ? (
+            <>
+              <Text style={styles.sectionTitleMuted}>Completed</Text>
+              {completedOrders.map((order) => (
+                <View key={order.id}>{renderOrderCard(order, true)}</View>
+              ))}
+            </>
+          ) : null}
+
           {cancelledOrders.length > 0 ? (
             <>
-              <Text style={styles.sectionTitleMuted}>Cancelled Orders</Text>
+              <Text style={styles.sectionTitleMuted}>Cancelled</Text>
               {cancelledOrders.map((order) => (
                 <View key={order.id}>{renderOrderCard(order, true)}</View>
               ))}

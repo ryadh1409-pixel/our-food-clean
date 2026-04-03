@@ -22,11 +22,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { theme } from '@/constants/theme';
 import { buildOrderWhatsAppInviteLink } from '@/lib/invite-link';
+import { friendlyErrorMessage } from '@/lib/friendlyError';
 import { ScreenFadeIn } from '@/components/ScreenFadeIn';
 import { ShimmerSkeleton } from '@/components/ShimmerSkeleton';
 import { blockUser } from '@/services/block';
 import { hasBlockBetween } from '@/services/blocks';
 import { cancelHalfOrder } from '@/services/halfOrderCancel';
+import { completeHalfOrder } from '@/services/halfOrderLifecycle';
 import { auth, db } from '@/services/firebase';
 import {
   getDistanceKm,
@@ -202,6 +204,7 @@ export default function OrderDetailsScreen() {
   const [joining, setJoining] = useState(false);
   const [blocking, setBlocking] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [completing, setCompleting] = useState(false);
   const [countdownSec, setCountdownSec] = useState(0);
   const [isBlocked, setIsBlocked] = useState(false);
   const prevJoinedCountRef = useRef<number | null>(null);
@@ -483,9 +486,8 @@ export default function OrderDetailsScreen() {
       );
       router.push(`/order/${order.id}` as never);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Failed to join order.';
-      console.error('[order join]', msg, e);
-      Alert.alert('Join failed', msg);
+      console.error('[order join]', e);
+      Alert.alert('Join failed', friendlyErrorMessage(e));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(
         () => {},
       );
@@ -511,8 +513,7 @@ export default function OrderDetailsScreen() {
               setIsBlocked(true);
               Alert.alert('Blocked', 'User has been blocked.');
             } catch (e) {
-              const msg = e instanceof Error ? e.message : 'Failed to block user.';
-              Alert.alert('Block failed', msg);
+              Alert.alert('Block failed', friendlyErrorMessage(e));
             } finally {
               setBlocking(false);
             }
@@ -563,13 +564,35 @@ export default function OrderDetailsScreen() {
               });
               Alert.alert('Thanks', 'We received your report.');
             } catch (e) {
-              const msg = e instanceof Error ? e.message : 'Could not submit report.';
-              Alert.alert('Report failed', msg);
+              Alert.alert('Report failed', friendlyErrorMessage(e));
             }
           })();
         },
       })),
       { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
+
+  const handleCompleteOrder = () => {
+    if (!order?.usesHalfUsers || !order.id) return;
+    Alert.alert('Mark complete?', 'This order will move to Completed.', [
+      { text: 'Not now', style: 'cancel' },
+      {
+        text: 'Complete',
+        onPress: () => {
+          void (async () => {
+            setCompleting(true);
+            try {
+              await completeHalfOrder(order.id);
+              Alert.alert('Done', 'Order marked complete.');
+            } catch (e) {
+              Alert.alert('Error', friendlyErrorMessage(e));
+            } finally {
+              setCompleting(false);
+            }
+          })();
+        },
+      },
     ]);
   };
 
@@ -590,8 +613,7 @@ export default function OrderDetailsScreen() {
                 await cancelHalfOrder(order.id);
                 Alert.alert('Cancelled', 'This half order was cancelled.');
               } catch (e) {
-                const msg = e instanceof Error ? e.message : 'Could not cancel.';
-                Alert.alert('Cancel failed', msg);
+                Alert.alert('Cancel failed', friendlyErrorMessage(e));
               } finally {
                 setCancelling(false);
               }
@@ -759,6 +781,12 @@ export default function OrderDetailsScreen() {
             <View style={styles.secondaryActionsRow}>
               <TouchableOpacity onPress={handleReportUser} disabled={!partnerIdForSafety}>
                 <Text style={styles.secondaryActionLink}>Report</Text>
+              </TouchableOpacity>
+              <Text style={styles.secondaryDot}>·</Text>
+              <TouchableOpacity onPress={handleCompleteOrder} disabled={completing}>
+                <Text style={styles.secondaryActionLink}>
+                  {completing ? '…' : 'Complete'}
+                </Text>
               </TouchableOpacity>
               <Text style={styles.secondaryDot}>·</Text>
               <TouchableOpacity onPress={handleWhatsAppOrderInvite}>

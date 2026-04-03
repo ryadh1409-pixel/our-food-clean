@@ -46,9 +46,11 @@ export function remainingMsAfterJoin(
 
 export type LifecycleDisplayStatus =
   | 'waiting'
+  | 'matched'
   | 'active'
   | 'expired'
-  | 'cancelled';
+  | 'cancelled'
+  | 'completed';
 
 export function deriveLifecycleForViewer(input: {
   uid: string;
@@ -63,16 +65,56 @@ export function deriveLifecycleForViewer(input: {
   joinedAtMs: number | null;
 } {
   const { uid, createdBy, participants, joinedAtMap, orderStatus, now } = input;
-  if (orderStatus === 'cancelled') {
+  const st = orderStatus.trim().toLowerCase();
+  if (st === 'cancelled') {
     return {
       lifecycle: 'cancelled',
       remainingMs: null,
       joinedAtMs: null,
     };
   }
-  if (orderStatus === 'expired') {
+  if (st === 'completed') {
+    return {
+      lifecycle: 'completed',
+      remainingMs: null,
+      joinedAtMs: null,
+    };
+  }
+  if (st === 'expired') {
     return {
       lifecycle: 'expired',
+      remainingMs: null,
+      joinedAtMs: null,
+    };
+  }
+  if (st === 'waiting') {
+    return {
+      lifecycle: 'waiting',
+      remainingMs: null,
+      joinedAtMs: null,
+    };
+  }
+  if (st === 'matched') {
+    return {
+      lifecycle: 'matched',
+      remainingMs: null,
+      joinedAtMs: null,
+    };
+  }
+  if (st === 'active') {
+    if (
+      participants.includes(uid) &&
+      participants.length === 1 &&
+      uid === createdBy
+    ) {
+      return {
+        lifecycle: 'waiting',
+        remainingMs: null,
+        joinedAtMs: null,
+      };
+    }
+    return {
+      lifecycle: 'active',
       remainingMs: null,
       joinedAtMs: null,
     };

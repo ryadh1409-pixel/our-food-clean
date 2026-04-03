@@ -34,6 +34,7 @@ export async function cancelHalfOrder(orderId: string): Promise<void> {
   await updateDoc(ref, {
     status: 'cancelled',
     cancelledBy: uid,
+    cancelReason: 'user',
     cancelledAt: serverTimestamp(),
   });
 }

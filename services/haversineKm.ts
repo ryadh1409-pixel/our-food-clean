@@ -2,8 +2,11 @@
 
 export type LatLng = { lat: number; lng: number };
 
-/** Alias for app code readability. */
-export function getDistanceKm(a: LatLng, b: LatLng): number {
+/** Alias for app code readability. Safe if inputs are missing (returns NaN). */
+export function getDistanceKm(a: LatLng | null | undefined, b: LatLng | null | undefined): number {
+  if (!a || !b) return NaN;
+  if (!Number.isFinite(a.lat) || !Number.isFinite(a.lng)) return NaN;
+  if (!Number.isFinite(b.lat) || !Number.isFinite(b.lng)) return NaN;
   return haversineDistanceKm(a, b);
 }
 

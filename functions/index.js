@@ -675,6 +675,7 @@ exports.sendMessageNotification = functions.firestore
   .document('chats/{chatId}/messages/{messageId}')
   .onCreate(async (snap, context) => {
     const data = snap.data() || {};
+    if (data.notificationSent === true) return null;
     const senderId = typeof data.senderId === 'string' ? data.senderId : null;
     if (!senderId || senderId === 'system') return null;
     if (data.sender === 'ai') return null;
@@ -738,22 +739,40 @@ exports.joinCancelledNotification = functions.firestore
     const orderId = context.params.orderId;
 
     if (before.status !== 'cancelled' && after.status === 'cancelled') {
+      if (after.cancelPushSent === true) return null;
       const members = orderMemberIds(after);
       const cancelledBy =
         typeof after.cancelledBy === 'string' && after.cancelledBy
           ? after.cancelledBy
           : null;
-      const targets = cancelledBy
-        ? members.filter((id) => id && id !== cancelledBy)
-        : members.filter(Boolean);
+      const cancelReason =
+        typeof after.cancelReason === 'string' ? after.cancelReason : '';
+
+      let targets = [];
+      let title = 'Order cancelled';
+      let body = 'The other person cancelled this half order.';
+
+      if (cancelReason === 'wait_timeout') {
+        title = 'HalfOrder';
+        body = 'No one joined your order.';
+        targets = members.filter(Boolean);
+      } else if (cancelledBy) {
+        targets = members.filter((id) => id && id !== cancelledBy);
+      } else {
+        targets = members.filter(Boolean);
+      }
+
       if (targets.length > 0) {
-        await notifyUsersExpo(
-          db,
-          targets,
-          'Order cancelled',
-          'The other person cancelled this half order.',
-          { type: 'order_cancelled', orderId },
-        );
+        await notifyUsersExpo(db, targets, title, body, {
+          type: 'order_cancelled',
+          orderId,
+        });
+      }
+
+      try {
+        await change.after.ref.update({ cancelPushSent: true });
+      } catch (e) {
+        console.warn('[joinCancelledNotification] cancelPushSent', e?.message || e);
       }
       return null;
     }
