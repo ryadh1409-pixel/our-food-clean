@@ -35,6 +35,20 @@ export function publicUserToOrderHost(u: PublicUserFields): OrderHost {
   };
 }
 
+/** Hydrate order UI when `participants` are uid strings and `users` holds membership. */
+export function publicUserFieldsToOrderParticipant(
+  u: PublicUserFields,
+): OrderParticipant {
+  return {
+    userId: u.userId,
+    name: u.name,
+    avatar: u.avatar,
+    phone: u.phone,
+    expoPushToken: u.expoPushToken,
+    location: u.location,
+  };
+}
+
 /**
  * Rich participant row for `orders.participants` (no `joinedAt` — Firestore forbids
  * `serverTimestamp()` inside array elements; use `joinedAtMap.{userId}` instead).

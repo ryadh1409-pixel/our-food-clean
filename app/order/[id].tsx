@@ -56,9 +56,11 @@ import {
   memberIdsFromOrderData,
   normalizeParticipantRecords,
   parseOrderHost,
+  publicUserFieldsToOrderParticipant,
   type OrderHost,
   type OrderParticipant,
 } from '@/services/orders';
+import { getPublicUserFields } from '@/services/users';
 import { submitUserReport } from '@/services/userSafety';
 import {
   joinHalfOrderByOrderId,
@@ -250,6 +252,10 @@ export default function OrderDetailsScreen() {
   const [emailInviteOpen, setEmailInviteOpen] = useState(false);
   const [emailInviteInput, setEmailInviteInput] = useState('');
   const [emailInviteSending, setEmailInviteSending] = useState(false);
+  const [participantProfiles, setParticipantProfiles] = useState<
+    Record<string, OrderParticipant>
+  >({});
+  const [participantsHydrating, setParticipantsHydrating] = useState(false);
   const prevJoinedCountRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -369,7 +375,86 @@ export default function OrderDetailsScreen() {
     };
   }, [orderId]);
 
+  useEffect(() => {
+    setParticipantProfiles({});
+    setParticipantsHydrating(false);
+  }, [orderId]);
+
+  const memberIdsKey =
+    order?.usesHalfUsers && order.memberIds?.length
+      ? [...order.memberIds].sort().join(',')
+      : '';
+
+  useEffect(() => {
+    if (detailSource !== 'order' || !order?.usesHalfUsers) {
+      setParticipantProfiles({});
+      setParticipantsHydrating(false);
+      return;
+    }
+    if (!order.memberIds?.length) {
+      setParticipantsHydrating(false);
+      return;
+    }
+
+    let cancelled = false;
+    setParticipantsHydrating(true);
+    const uids = [...new Set(order.memberIds)];
+    const fallbackParticipants = order.participants;
+
+    void (async () => {
+      const updates: Record<string, OrderParticipant> = {};
+      await Promise.all(
+        uids.map(async (uid) => {
+          const row = await getPublicUserFields(uid);
+          if (cancelled) return;
+          if (row) {
+            updates[uid] = publicUserFieldsToOrderParticipant(row);
+          } else {
+            const stub = fallbackParticipants.find((p) => p.userId === uid);
+            updates[uid] = stub ?? {
+              userId: uid,
+              name: 'Member',
+              avatar: null,
+              phone: null,
+              expoPushToken: null,
+              location: null,
+            };
+          }
+        }),
+      );
+      if (cancelled) return;
+      setParticipantProfiles(updates);
+      setParticipantsHydrating(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [detailSource, order?.id, memberIdsKey, order?.usesHalfUsers]);
+
   const { uid: viewerUid, profile: viewerProfile } = useCurrentUser();
+
+  const displayParticipants = useMemo((): OrderParticipant[] => {
+    if (!order) return [];
+    if (!order.usesHalfUsers || !order.memberIds?.length) {
+      return order.participants;
+    }
+    return order.memberIds.map((uid) => {
+      const cached = participantProfiles[uid];
+      if (cached) return cached;
+      const fromOrder = order.participants.find((p) => p.userId === uid);
+      return (
+        fromOrder ?? {
+          userId: uid,
+          name: 'Member',
+          avatar: null,
+          phone: null,
+          expoPushToken: null,
+          location: null,
+        }
+      );
+    });
+  }, [order, participantProfiles]);
 
   useFocusEffect(
     useCallback(() => {
@@ -381,23 +466,23 @@ export default function OrderDetailsScreen() {
   const halfParticipantCount = useMemo(() => {
     if (!order?.usesHalfUsers) return 0;
     const n = Math.max(
-      order.participants.length,
+      displayParticipants.length,
       order.memberIds?.length ?? 0,
       order.peopleJoined,
     );
     return Math.min(n, Math.max(1, order.maxPeople));
   }, [
     order?.usesHalfUsers,
-    order?.participants.length,
+    displayParticipants.length,
     order?.memberIds,
     order?.peopleJoined,
     order?.maxPeople,
   ]);
 
   const otherUser = useMemo(() => {
-    if (!viewerUid || !order?.participants?.length) return undefined;
-    return order.participants.find((p) => p.userId !== viewerUid);
-  }, [viewerUid, order?.participants]);
+    if (!viewerUid || !displayParticipants.length) return undefined;
+    return displayParticipants.find((p) => p.userId !== viewerUid);
+  }, [viewerUid, displayParticipants]);
 
   const partnerIdForSafety = useMemo(() => {
     if (otherUser?.userId) return otherUser.userId;
@@ -426,7 +511,7 @@ export default function OrderDetailsScreen() {
     const count = Math.min(
       Math.max(1, order.maxPeople),
       Math.max(
-        order.participants.length,
+        displayParticipants.length,
         order.memberIds?.length ?? 0,
         order.peopleJoined,
       ),
@@ -438,7 +523,7 @@ export default function OrderDetailsScreen() {
     }
   }, [
     order?.peopleJoined,
-    order?.participants,
+    displayParticipants.length,
     order?.memberIds,
     order?.maxPeople,
     order?.id,
@@ -741,16 +826,24 @@ export default function OrderDetailsScreen() {
         order.usesHalfUsers &&
         alreadyMember &&
         !isHalfCancelled ? (
-          <OrderCardView
-            participants={order.participants.map((p) => ({
-              userId: p.userId,
-              name: p.name,
-              avatar: p.avatar,
-            }))}
-            maxUsers={order.maxPeople}
-            status={order.orderStatus}
-            viewerUserId={viewerUid}
-          />
+          <View>
+            <OrderCardView
+              participants={displayParticipants.map((p) => ({
+                userId: p.userId,
+                name: p.name,
+                avatar: p.avatar,
+              }))}
+              maxUsers={order.maxPeople}
+              status={order.orderStatus}
+              viewerUserId={viewerUid}
+            />
+            {participantsHydrating ? (
+              <View style={styles.participantsLoadingRow}>
+                <ActivityIndicator size="small" color={theme.colors.primary} />
+                <Text style={styles.participantsLoadingText}>Loading profiles…</Text>
+              </View>
+            ) : null}
+          </View>
         ) : null}
         <Text style={styles.price}>
           {formatFoodCardSharingPriceLine(order.pricePerPerson)}
@@ -874,11 +967,11 @@ export default function OrderDetailsScreen() {
               {viewerUid ? (
                 <>
                   <View style={styles.partnerDualItem}>
-                    {order.participants.find((p) => p.userId === viewerUid)
+                    {displayParticipants.find((p) => p.userId === viewerUid)
                       ?.avatar ? (
                       <Image
                         source={{
-                          uri: order.participants.find(
+                          uri: displayParticipants.find(
                             (p) => p.userId === viewerUid,
                           )!.avatar!,
                         }}
@@ -893,7 +986,7 @@ export default function OrderDetailsScreen() {
                       >
                         <Text style={styles.partnerAvatarLetter}>
                           {(
-                            order.participants.find((p) => p.userId === viewerUid)
+                            displayParticipants.find((p) => p.userId === viewerUid)
                               ?.name ?? 'Y'
                           )
                             .charAt(0)
@@ -925,7 +1018,7 @@ export default function OrderDetailsScreen() {
                   </View>
                 )}
                 <Text style={styles.partnerDualName} numberOfLines={1}>
-                  {otherUser?.name ?? 'Partner'}
+                  {otherUser?.name ?? 'Member'}
                 </Text>
               </View>
             </View>
@@ -1132,6 +1225,17 @@ const styles = StyleSheet.create({
   aiDescOrderWrap: {
     marginTop: 4,
     marginBottom: 4,
+  },
+  participantsLoadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 10,
+  },
+  participantsLoadingText: {
+    color: '#94A3B8',
+    fontSize: 13,
   },
   price: { color: '#6EE7B7', fontSize: 18, fontWeight: '700', marginTop: 6, marginBottom: 14 },
   card: {
