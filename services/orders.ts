@@ -122,7 +122,21 @@ export function normalizeParticipantRecords(raw: unknown): OrderParticipant[] {
 
 export function normalizeOrderUserIds(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
-  return raw.filter((x): x is string => typeof x === 'string' && x.length > 0);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const x of raw) {
+    let id: string | null = null;
+    if (typeof x === 'string' && x.trim()) id = x.trim();
+    else if (x && typeof x === 'object') {
+      const u = (x as Record<string, unknown>).userId;
+      if (typeof u === 'string' && u.trim()) id = u.trim();
+    }
+    if (id && !seen.has(id)) {
+      seen.add(id);
+      out.push(id);
+    }
+  }
+  return out;
 }
 
 export type HalfOrderJoinPlan =

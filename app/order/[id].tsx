@@ -1,4 +1,5 @@
 import { useFocusEffect } from '@react-navigation/native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import * as Linking from 'expo-linking';
@@ -39,6 +40,7 @@ import { theme } from '@/constants/theme';
 import { buildOrderWhatsAppInviteLink } from '@/lib/invite-link';
 import { friendlyErrorMessage } from '@/lib/friendlyError';
 import { AIDescription } from '@/components/AIDescription';
+import { OrderCardView } from '@/components/OrderCardView';
 import { ScreenFadeIn } from '@/components/ScreenFadeIn';
 import { ShimmerSkeleton } from '@/components/ShimmerSkeleton';
 import { blockUser } from '@/services/block';
@@ -713,6 +715,21 @@ export default function OrderDetailsScreen() {
             containerStyle={styles.aiDescOrderWrap}
           />
         ) : null}
+        {detailSource === 'order' &&
+        order.usesHalfUsers &&
+        alreadyMember &&
+        !isHalfCancelled ? (
+          <OrderCardView
+            participants={order.participants.map((p) => ({
+              userId: p.userId,
+              name: p.name,
+              avatar: p.avatar,
+            }))}
+            maxUsers={order.maxPeople}
+            status={order.orderStatus}
+            viewerUserId={viewerUid}
+          />
+        ) : null}
         <Text style={styles.price}>${order.pricePerPerson.toFixed(2)} per person</Text>
         <View style={styles.card}>
           <Text style={styles.meta}>Total: ${order.totalPrice.toFixed(2)}</Text>
@@ -788,68 +805,124 @@ export default function OrderDetailsScreen() {
         order.usesHalfUsers &&
         alreadyMember &&
         halfParticipantCount === 1 ? (
-          <View style={styles.waitingCard}>
-            <Text style={styles.waitingCentered}>
-              Invite a friend to join faster 🚀
-            </Text>
-            <TouchableOpacity
-              style={styles.inviteWhatsAppBtnSubtle}
-              onPress={handleWhatsAppOrderInvite}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.inviteWhatsAppBtnSubtleText}>Invite via WhatsApp</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.inviteEmailBtnSubtle}
-              onPress={() => setEmailInviteOpen(true)}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.inviteWhatsAppBtnSubtleText}>
-                Invite by email (sends link)
+          <LinearGradient
+            colors={['rgba(251,191,36,0.15)', 'rgba(20,25,34,1)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.waitingCardGradient}
+          >
+            <View style={styles.waitingCard}>
+              <Text style={styles.waitingEmoji}>✨</Text>
+              <Text style={styles.waitingTitle}>Almost there</Text>
+              <Text style={styles.waitingCentered}>
+                Share this order so someone can join your half — you’ll match in
+                chat as soon as they hop in.
               </Text>
-            </TouchableOpacity>
-          </View>
+              <TouchableOpacity
+                style={styles.invitePrimaryBtn}
+                onPress={handleWhatsAppOrderInvite}
+                activeOpacity={0.88}
+              >
+                <Text style={styles.invitePrimaryBtnText}>Invite via WhatsApp</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.inviteSecondaryBtn}
+                onPress={() => setEmailInviteOpen(true)}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.inviteSecondaryBtnText}>Invite by email</Text>
+              </TouchableOpacity>
+            </View>
+          </LinearGradient>
         ) : null}
         {detailSource === 'order' &&
         order.usesHalfUsers &&
         alreadyMember &&
         halfParticipantCount === 2 ? (
           <View style={styles.partnerCard}>
-            <Text style={styles.matchedWithLabel}>Matched with</Text>
-            <View style={styles.partnerCardInner}>
-              {otherUser?.avatar ? (
-                <Image
-                  source={{ uri: otherUser.avatar }}
-                  style={styles.partnerAvatarLarge}
-                />
-              ) : (
-                <View
-                  style={[
-                    styles.partnerAvatarLarge,
-                    styles.partnerAvatarPlaceholder,
-                  ]}
-                />
-              )}
-              <Text style={styles.partnerNameBold}>
-                {otherUser?.name ?? 'Order partner'}
-              </Text>
-              <Text style={styles.partnerMeta}>
-                {partnerDistanceKm != null
-                  ? `📍 ${partnerDistanceKm.toFixed(1)} km away`
-                  : '📍 Distance unknown'}
-              </Text>
-              <Text style={styles.inviteMoreHint}>
-                Invite another friend and earn more 💸
-              </Text>
+            <Text style={styles.matchedWithLabel}>Your match</Text>
+            <View style={styles.partnerDualRow}>
+              {viewerUid ? (
+                <>
+                  <View style={styles.partnerDualItem}>
+                    {order.participants.find((p) => p.userId === viewerUid)
+                      ?.avatar ? (
+                      <Image
+                        source={{
+                          uri: order.participants.find(
+                            (p) => p.userId === viewerUid,
+                          )!.avatar!,
+                        }}
+                        style={styles.partnerAvatarMed}
+                      />
+                    ) : (
+                      <View
+                        style={[
+                          styles.partnerAvatarMed,
+                          styles.partnerAvatarPlaceholder,
+                        ]}
+                      >
+                        <Text style={styles.partnerAvatarLetter}>
+                          {(
+                            order.participants.find((p) => p.userId === viewerUid)
+                              ?.name ?? 'Y'
+                          )
+                            .charAt(0)
+                            .toUpperCase()}
+                        </Text>
+                      </View>
+                    )}
+                    <Text style={styles.partnerDualName}>You</Text>
+                  </View>
+                  <Text style={styles.partnerHeartBetween}>♥</Text>
+                </>
+              ) : null}
+              <View style={styles.partnerDualItem}>
+                {otherUser?.avatar ? (
+                  <Image
+                    source={{ uri: otherUser.avatar }}
+                    style={styles.partnerAvatarMed}
+                  />
+                ) : (
+                  <View
+                    style={[
+                      styles.partnerAvatarMed,
+                      styles.partnerAvatarPlaceholder,
+                    ]}
+                  >
+                    <Text style={styles.partnerAvatarLetter}>
+                      {(otherUser?.name ?? '?').charAt(0).toUpperCase()}
+                    </Text>
+                  </View>
+                )}
+                <Text style={styles.partnerDualName} numberOfLines={1}>
+                  {otherUser?.name ?? 'Partner'}
+                </Text>
+              </View>
             </View>
-            <View style={styles.primaryActionsRow}>
-              <TouchableOpacity
-                style={styles.primaryActionBtn}
-                onPress={() => router.push(`/chat/${order.id}` as never)}
-                activeOpacity={0.85}
+            <Text style={styles.partnerMeta}>
+              {partnerDistanceKm != null
+                ? `${formatDistanceKm(partnerDistanceKm, 1)} away`
+                : 'Distance unavailable'}
+            </Text>
+            <TouchableOpacity
+              activeOpacity={0.9}
+              onPress={() => router.push(`/chat/${order.id}` as never)}
+              style={styles.partnerChatCtaWrap}
+            >
+              <LinearGradient
+                colors={['#34D399', '#059669']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.partnerChatCta}
               >
-                <Text style={styles.primaryActionBtnText}>Chat</Text>
-              </TouchableOpacity>
+                <Text style={styles.partnerChatCtaText}>Open chat</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+            <Text style={styles.inviteMoreHint}>
+              Coordinate pickup, then complete the order when you’re done.
+            </Text>
+            <View style={styles.primaryActionsRow}>
               <TouchableOpacity
                 style={styles.primaryActionBtn}
                 onPress={openWhatsApp}
@@ -1137,37 +1210,54 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     alignSelf: 'stretch',
   },
-  waitingCard: {
+  waitingCardGradient: {
     marginTop: 20,
-    paddingVertical: 28,
-    paddingHorizontal: 20,
-    borderRadius: 16,
-    backgroundColor: '#141922',
-    borderWidth: 1,
-    borderColor: '#232A35',
+    borderRadius: 18,
+    padding: 1,
+  },
+  waitingCard: {
+    paddingVertical: 26,
+    paddingHorizontal: 22,
+    borderRadius: 17,
+    backgroundColor: '#131820',
     alignItems: 'center',
   },
+  waitingEmoji: { fontSize: 32, marginBottom: 8 },
+  waitingTitle: {
+    color: '#FEF3C7',
+    fontSize: 20,
+    fontWeight: '800',
+    marginBottom: 10,
+  },
   waitingCentered: {
-    color: '#9CA3AF',
-    fontSize: 16,
-    fontWeight: '600',
+    color: 'rgba(226,232,240,0.88)',
+    fontSize: 15,
+    fontWeight: '500',
     textAlign: 'center',
     lineHeight: 22,
+    marginBottom: 20,
   },
-  inviteWhatsAppBtnSubtle: {
-    marginTop: 18,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
+  invitePrimaryBtn: {
+    width: '100%',
+    backgroundColor: '#25D366',
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
   },
-  inviteEmailBtnSubtle: {
-    marginTop: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
+  invitePrimaryBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+    fontSize: 16,
   },
-  inviteWhatsAppBtnSubtleText: {
+  inviteSecondaryBtn: {
+    marginTop: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+  },
+  inviteSecondaryBtnText: {
     color: '#7dd3fc',
     fontWeight: '700',
-    fontSize: 14,
+    fontSize: 15,
   },
   emailModalBackdrop: {
     flex: 1,
@@ -1229,7 +1319,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#141922',
     borderWidth: 1,
     borderColor: '#232A35',
-    gap: 16,
+    gap: 14,
   },
   matchedWithLabel: {
     color: '#94A3B8',
@@ -1239,23 +1329,71 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     textAlign: 'center',
   },
-  partnerCardInner: {
+  partnerDualRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'center',
+    gap: 14,
+    marginTop: 4,
   },
-  partnerAvatarLarge: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+  partnerDualItem: { alignItems: 'center', width: 88 },
+  partnerAvatarMed: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     backgroundColor: '#1e293b',
+    borderWidth: 3,
+    borderColor: 'rgba(52,211,153,0.35)',
   },
-  partnerAvatarPlaceholder: { borderWidth: 1, borderColor: '#334155' },
-  partnerNameBold: { color: '#F8FAFC', fontSize: 18, fontWeight: 'bold' },
-  partnerMeta: { color: '#9CA3AF', fontSize: 14 },
+  partnerAvatarPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderColor: '#334155',
+  },
+  partnerAvatarLetter: {
+    color: '#E2E8F0',
+    fontSize: 28,
+    fontWeight: '800',
+  },
+  partnerHeartBetween: {
+    color: '#34D399',
+    fontSize: 22,
+    fontWeight: '700',
+    marginBottom: 28,
+  },
+  partnerDualName: {
+    marginTop: 8,
+    color: '#F8FAFC',
+    fontSize: 14,
+    fontWeight: '700',
+    textAlign: 'center',
+    maxWidth: 88,
+  },
+  partnerMeta: {
+    color: '#9CA3AF',
+    fontSize: 14,
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  partnerChatCtaWrap: {
+    width: '100%',
+    marginTop: 4,
+    borderRadius: 14,
+    overflow: 'hidden',
+  },
+  partnerChatCta: {
+    paddingVertical: 15,
+    alignItems: 'center',
+  },
+  partnerChatCtaText: {
+    color: '#052E1A',
+    fontSize: 17,
+    fontWeight: '900',
+  },
   inviteMoreHint: {
     color: '#94A3B8',
-    fontSize: 14,
-    marginTop: 12,
+    fontSize: 13,
+    lineHeight: 18,
     textAlign: 'center',
   },
   primaryActionsRow: {

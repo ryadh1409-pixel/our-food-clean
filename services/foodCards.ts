@@ -1,3 +1,8 @@
+import {
+  ADMIN_FOOD_CARD_SLOT_IDS,
+  FOOD_CARD_ORDER_MAX_USERS,
+  isAdminFoodCardSlotId,
+} from '@/constants/adminFoodCards';
 import { ADMIN_UID } from '@/constants/adminUid';
 import { PAYMENT_DISCLAIMER_CHAT_MATCHED } from '@/constants/paymentDisclaimer';
 import {
@@ -15,21 +20,22 @@ import {
   loadHalfOrderCreatorProfiles,
   loadJoiningParticipantPayload,
   normalizeOrderUserIds,
-  normalizeParticipantRecords,
-  planHalfOrderJoin,
 } from '@/services/orders';
 import { trySendPairJoinExpoPush } from '@/services/orderPairPushNotify';
 import { syncOrderMemberProfilesForOrder } from '@/services/orderMemberProfile';
+import {
+  fetchJoinableOrderIdsForCard,
+  loadHostProfileForOrderJoin,
+  transactionJoinHalfOrderForCard,
+} from '@/services/foodCardSlotOrders';
 import { applyHalfOrderPairReferralRewards } from '@/services/referralRewards';
-import { getPublicUserFields } from '@/services/users';
+import type { PublicUserFields } from '@/services/users';
 import {
   addDoc,
-  arrayUnion,
   collection,
-  deleteDoc,
   doc,
+  documentId,
   getDoc,
-  getDocs,
   onSnapshot,
   query,
   runTransaction,
@@ -38,11 +44,14 @@ import {
   Timestamp,
   updateDoc,
   where,
+  type DocumentSnapshot,
   type QuerySnapshot,
 } from 'firebase/firestore';
 
 export type FoodCard = {
   id: string;
+  /** Catalog slot 1–10 when using admin slots. */
+  slotNumber?: number;
   title: string;
   /** Optional AI-written blurb for the dish (shown in deck + detail). */
   aiDescription?: string;
@@ -54,7 +63,9 @@ export type FoodCard = {
   createdAt: Timestamp | null;
   expiresAt: number;
   /** Deck listing: only `active` is joinable (see `isFoodCardJoinDisabled`). */
-  status: 'active' | 'matched' | 'full';
+  status: 'active' | 'matched' | 'full' | 'inactive';
+  /** Admin slot flag — when false, card is hidden (handled before mapping). */
+  active?: boolean;
   ownerId?: string;
   /** HalfOrder: links to `orders/{orderId}`. */
   orderId?: string | null;
@@ -112,6 +123,87 @@ function coerceExpiresAtMs(raw: unknown): number {
   return 0;
 }
 
+function mapSlotOrLegacyFoodCard(
+  d: QueryDocumentSnapshot,
+): FoodCard | null {
+  const data = d.data() as Record<string, unknown>;
+  const aiDesc =
+    typeof data.aiDescription === 'string' && data.aiDescription.trim()
+      ? data.aiDescription.trim()
+      : undefined;
+
+  if (typeof data.active === 'boolean') {
+    if (!data.active) return null;
+    const price = Number(data.price) || 0;
+    const split =
+      typeof data.splitPrice === 'number' && data.splitPrice > 0
+        ? data.splitPrice
+        : price > 0
+          ? price / 2
+          : 0;
+    const slotNum =
+      typeof data.id === 'number' && data.id >= 1 && data.id <= 10
+        ? data.id
+        : Number.parseInt(d.id, 10);
+    return {
+      id: d.id,
+      slotNumber: Number.isFinite(slotNum) ? slotNum : undefined,
+      title: String(data.title ?? '').trim() || 'Menu item',
+      image:
+        typeof data.image === 'string' && data.image.trim()
+          ? data.image.trim()
+          : '',
+      restaurantName:
+        typeof data.restaurantName === 'string' && data.restaurantName.trim()
+          ? data.restaurantName.trim()
+          : 'HalfOrder',
+      price,
+      splitPrice: split,
+      location: null,
+      createdAt: (data.createdAt as Timestamp | null) ?? null,
+      expiresAt: Number.MAX_SAFE_INTEGER,
+      status: 'active',
+      active: true,
+      orderId: null,
+      maxUsers: 2,
+      aiDescription: aiDesc,
+    };
+  }
+
+  const status = typeof data.status === 'string' ? data.status : '';
+  if (!isActiveFoodCardStatus(status)) return null;
+  const expiresAt = coerceExpiresAtMs(data.expiresAt);
+  if (expiresAt <= Date.now()) return null;
+
+  const oid =
+    typeof data.orderId === 'string' && data.orderId.trim()
+      ? data.orderId.trim()
+      : null;
+
+  return {
+    id: d.id,
+    title: String(data.title ?? ''),
+    image: typeof data.image === 'string' ? data.image : '',
+    restaurantName:
+      typeof data.restaurantName === 'string' ? data.restaurantName : '',
+    price: Number(data.price) || 0,
+    splitPrice: Number(data.splitPrice) || 0,
+    location:
+      data.location && typeof data.location === 'object'
+        ? (data.location as FoodCard['location'])
+        : null,
+    createdAt: (data.createdAt as Timestamp | null) ?? null,
+    expiresAt,
+    status: status as FoodCard['status'],
+    ownerId: typeof data.ownerId === 'string' ? data.ownerId : undefined,
+    orderId: oid,
+    maxUsers: typeof data.maxUsers === 'number' ? data.maxUsers : 2,
+    user1: data.user1 as FoodCard['user1'],
+    user2: data.user2 as FoodCard['user2'],
+    aiDescription: aiDesc,
+  };
+}
+
 /**
  * Admin metrics / caps: count visible deck cards from one `getDocs(collection('food_cards'))`
  * (no composite index). Matches swipe deck rules: `active` and `expiresAt > nowMs`.
@@ -123,6 +215,10 @@ export function countVisibleActiveFoodCardsInSnapshot(
   let n = 0;
   for (const d of snap.docs) {
     const data = d.data();
+    if (typeof data?.active === 'boolean') {
+      if (data.active) n += 1;
+      continue;
+    }
     if (data?.status !== 'active') continue;
     if (coerceExpiresAtMs(data?.expiresAt) > nowMs) n += 1;
   }
@@ -142,51 +238,24 @@ export function countFoodCardsWithStatus(
 }
 
 /**
- * Real-time listener for the swipe/browse deck: **`food_cards`**, `status == "active"` only
- * (single-field query — no composite index). Drops expired rows client-side.
+ * Real-time listener: admin catalog slots `1`–`10` only. Active slots use `active: true`.
  */
 export function subscribeActiveFoodCards(
   onData: (cards: FoodCard[]) => void,
   onError?: (err: Error) => void,
 ): () => void {
   return onSnapshot(
-    query(collection(db, FOOD_CARDS), where('status', '==', 'active')),
+    query(
+      collection(db, FOOD_CARDS),
+      where(documentId(), 'in', [...ADMIN_FOOD_CARD_SLOT_IDS]),
+    ),
     (snap) => {
-      const now = Date.now();
-      const raw = snap.docs.map((d) => {
-        const data = d.data() as Omit<FoodCard, 'id' | 'expiresAt'> & {
-          expiresAt?: unknown;
-          orderId?: unknown;
-        };
-        const expiresAt = coerceExpiresAtMs(data.expiresAt);
-        const oid =
-          typeof data.orderId === 'string' && data.orderId.trim()
-            ? data.orderId.trim()
-            : null;
-        const aiDesc =
-          typeof data.aiDescription === 'string' && data.aiDescription.trim()
-            ? data.aiDescription.trim()
-            : undefined;
-        return {
-          id: d.id,
-          ...data,
-          orderId: oid,
-          expiresAt,
-          aiDescription: aiDesc,
-        } as FoodCard;
-      });
-      console.log(
-        `[food_cards] onSnapshot status==active rawDocs=${snap.size} (expiry filtered client-side)`,
-      );
-      raw.forEach((c) => {
-        console.log(
-          `[food_cards] card id=${c.id} status=${String(c.status)} expiresAt=${c.expiresAt}`,
-        );
-      });
-      const cards = raw.filter((card) => (card.expiresAt ?? 0) > now);
-      console.log(
-        `[food_cards] visibleAfterClientExpiryCheck count=${cards.length}`,
-      );
+      const byId = new Map(snap.docs.map((d) => [d.id, d]));
+      const cards = ADMIN_FOOD_CARD_SLOT_IDS.map((sid) => byId.get(sid))
+        .filter((d): d is DocumentSnapshot => d != null)
+        .map((d) => mapSlotOrLegacyFoodCard(d))
+        .filter((c): c is FoodCard => c != null);
+      console.log(`[food_cards] slot snapshot count=${cards.length}`);
       onData(cards);
     },
     (e) => {
@@ -372,19 +441,20 @@ export function isFoodCardJoinDisabled(
 ): boolean {
   if (!uid) return true;
   if (uid === ADMIN_UID) return true;
-  if (isCardOwnedByUser(card, uid)) return true;
-  const cap =
-    typeof card.maxUsers === 'number' && card.maxUsers > 0 ? card.maxUsers : 2;
-  if (!isActiveFoodCardStatus(card.status)) return true;
-  if ((card.expiresAt ?? 0) <= Date.now()) return true;
+  const slot = isAdminFoodCardSlotId(card.id);
+  if (!slot && isCardOwnedByUser(card, uid)) return true;
+  if (card.active === false) return true;
+  if (!slot) {
+    if (!isActiveFoodCardStatus(card.status)) return true;
+    if ((card.expiresAt ?? 0) <= Date.now()) return true;
+  }
   const orderUsers = orderUsersHint ?? null;
   if (orderUsers?.includes(uid)) return true;
-  if (orderUsers != null && orderUsers.length >= cap) return true;
   return false;
 }
 
 /**
- * HalfOrder join: create or update `orders` with `users` + `cardId`, set `food_cards.orderId`, sync `chats/{orderId}`.
+ * HalfOrder join: find or create `orders/{orderId}` for `cardId` (catalog slot). Does not write `food_cards.orderId`.
  */
 export async function joinOrder(
   cardId: string,
@@ -409,122 +479,81 @@ export async function joinOrder(
     throw new Error('Could not load your profile to create this order.');
   }
 
-  let halfOrderHostPrefetch: Awaited<ReturnType<typeof getPublicUserFields>> = null;
-  const cardSnapPrejoin = await getDoc(cardRef);
-  if (cardSnapPrejoin.exists()) {
-    const d0 = cardSnapPrejoin.data() as Record<string, unknown>;
-    const oid0 =
-      typeof d0.orderId === 'string' && d0.orderId.trim()
-        ? d0.orderId.trim()
-        : '';
-    if (oid0) {
-      const o0 = await getDoc(doc(db, 'orders', oid0));
-      if (o0.exists()) {
-        const od0 = o0.data() as Record<string, unknown>;
-        for (const m of normalizeOrderUserIds(od0.users)) {
-          if (await hasBlockBetween(authedUid, m)) {
-            throw new Error('You cannot join this order due to a block.');
-          }
-        }
-        const uu = normalizeOrderUserIds(od0.users);
-        const pp = normalizeParticipantRecords(od0.participants);
-        if (pp.length === 0 && uu.length === 1) {
-          halfOrderHostPrefetch = await getPublicUserFields(uu[0]);
-        }
-      }
-    }
-  }
+  const cardSnapPre = await getDoc(cardRef);
+  if (!cardSnapPre.exists()) throw new Error('Card not found');
+  const cardDataPre = cardSnapPre.data() as Record<string, unknown>;
 
-  const outcome = await runTransaction(db, async (tx) => {
-    const cardSnap = await tx.get(cardRef);
-    if (!cardSnap.exists()) throw new Error('Card not found');
-
-    const data = cardSnap.data() as Record<string, unknown>;
-    const status = typeof data.status === 'string' ? data.status : '';
+  if (typeof cardDataPre.active === 'boolean') {
+    if (!cardDataPre.active) throw new Error('This card is not available');
+  } else {
+    const status =
+      typeof cardDataPre.status === 'string' ? cardDataPre.status : '';
     if (!isActiveFoodCardStatus(status)) {
       throw new Error('This order is not open for joining');
     }
-
-    const ownerId = typeof data.ownerId === 'string' ? data.ownerId : '';
+    if (coerceExpiresAtMs(cardDataPre.expiresAt) <= Date.now()) {
+      throw new Error('This card has expired');
+    }
+    const ownerId =
+      typeof cardDataPre.ownerId === 'string' ? cardDataPre.ownerId : '';
     if (ownerId && ownerId === authedUid) {
       throw new Error('You cannot join your own card');
     }
-    const u1 = data.user1 as { uid?: string } | null | undefined;
+    const u1 = cardDataPre.user1 as { uid?: string } | null | undefined;
     if (u1 && typeof u1.uid === 'string' && u1.uid === authedUid) {
       throw new Error('You cannot join your own card');
     }
+  }
 
-    const maxUsers =
-      typeof data.maxUsers === 'number' && data.maxUsers > 0 ? data.maxUsers : 2;
+  const maxUsers = Math.min(
+    typeof cardDataPre.maxUsers === 'number' && cardDataPre.maxUsers > 0
+      ? cardDataPre.maxUsers
+      : FOOD_CARD_ORDER_MAX_USERS,
+    FOOD_CARD_ORDER_MAX_USERS,
+  );
 
-    const linkedOrderIdRaw = data.orderId;
-    const linkedOrderId =
-      typeof linkedOrderIdRaw === 'string' && linkedOrderIdRaw.trim()
-        ? linkedOrderIdRaw.trim()
-        : '';
+  const candidateOrderIds = await fetchJoinableOrderIdsForCard(trimmed);
 
-    if (linkedOrderId) {
-      const oRef = doc(db, 'orders', linkedOrderId);
-      const oSnap = await tx.get(oRef);
-      if (!oSnap.exists()) throw new Error('Order not found');
-      const od = oSnap.data() as Record<string, unknown>;
-      const users = normalizeOrderUserIds(od.users);
-      const orderMax =
-        typeof od.maxUsers === 'number' && od.maxUsers > 0 ? od.maxUsers : maxUsers;
-      let hostForPlan = halfOrderHostPrefetch;
-      const partsLive = normalizeParticipantRecords(od.participants);
-      if (partsLive.length === 0 && users.length === 1 && !hostForPlan) {
-        hostForPlan = await getPublicUserFields(users[0]);
+  for (const orderIdTry of candidateOrderIds) {
+    const oSnap = await getDoc(doc(db, 'orders', orderIdTry));
+    if (!oSnap.exists()) continue;
+    const od0 = oSnap.data() as Record<string, unknown>;
+    for (const m of normalizeOrderUserIds(od0.users)) {
+      if (await hasBlockBetween(authedUid, m)) {
+        throw new Error('You cannot join this order due to a block.');
       }
-      const joinPlan = planHalfOrderJoin({
-        orderData: od,
-        joinerUid: authedUid,
-        joinerParticipant: joinerParticipant,
-        orderMaxUsers: orderMax,
-        hostProfileIfBootstrapping: hostForPlan,
-      });
-      if (joinPlan.kind === 'already_member') {
-        return {
-          kind: 'joined_existing' as const,
-          orderId: linkedOrderId,
-          maxUsers: orderMax,
-          priorUserCount: users.length,
-          alreadyIn: true,
-        };
-      }
-      tx.update(oRef, joinPlan.fields);
-      return {
-        kind: 'joined_existing' as const,
-        orderId: linkedOrderId,
-        maxUsers: orderMax,
-        priorUserCount: users.length,
-        alreadyIn: false,
-      };
     }
+    const uu0 = normalizeOrderUserIds(od0.users);
+    const pp0 = Array.isArray(od0.participants) ? od0.participants.length : 0;
+    let hostPrefetch: PublicUserFields | null = null;
+    if (uu0.length === 1 && pp0 === 0) {
+      hostPrefetch = await loadHostProfileForOrderJoin(orderIdTry);
+    }
+    let txOutcome: Awaited<
+      ReturnType<typeof transactionJoinHalfOrderForCard>
+    >;
+    try {
+      txOutcome = await transactionJoinHalfOrderForCard({
+        orderId: orderIdTry,
+        cardId: trimmed,
+        joinerUid: authedUid,
+        joinerParticipant,
+        hostProfilePrefetch: hostPrefetch,
+      });
+    } catch {
+      continue;
+    }
+    if (txOutcome.kind === 'skip') continue;
 
-    const newRef = doc(collection(db, 'orders'));
-    tx.set(newRef, {
-      ...buildHalfOrderFromCard(data, trimmed, authedUid, maxUsers),
-      host: creatorProfiles.host,
-      participants: [creatorProfiles.firstParticipant],
-    });
-    tx.update(cardRef, { orderId: newRef.id });
-    return {
-      kind: 'created' as const,
-      orderId: newRef.id,
-      maxUsers,
-    };
-  });
+    const outcome = txOutcome;
+    const finalSnap = await getDoc(doc(db, 'orders', outcome.orderId));
+    const finalUsers = normalizeOrderUserIds(finalSnap.data()?.users);
 
-  const finalSnap = await getDoc(doc(db, 'orders', outcome.orderId));
-  const finalUsers = normalizeOrderUserIds(finalSnap.data()?.users);
+    await ensureHalfOrderChat(outcome.orderId, finalUsers);
+    await syncOrderMemberProfilesForOrder(outcome.orderId, finalUsers);
 
-  await ensureHalfOrderChat(outcome.orderId, finalUsers);
-  await syncOrderMemberProfilesForOrder(outcome.orderId, finalUsers);
-
-  let justBecamePair = false;
-  if (outcome.kind === 'joined_existing' && !outcome.alreadyIn) {
-    if (outcome.priorUserCount === 1 && finalUsers.length >= 2) {
+    let justBecamePair = false;
+    if (!outcome.alreadyIn && outcome.priorUserCount === 1 && finalUsers.length >= 2) {
       justBecamePair = true;
       await postHalfOrderChatSystemMessage(
         outcome.orderId,
@@ -537,10 +566,55 @@ export async function joinOrder(
       void trySendPairJoinExpoPush(outcome.orderId, authedUid);
       void applyHalfOrderPairReferralRewards(outcome.orderId, authedUid);
     }
+
+    return {
+      alreadyJoined: outcome.alreadyIn,
+      isFull: finalUsers.length >= outcome.maxUsers,
+      orderId: outcome.orderId,
+      justBecamePair,
+    };
   }
 
-  const alreadyJoined =
-    outcome.kind === 'joined_existing' && outcome.alreadyIn === true;
+  const outcome = await runTransaction(db, async (tx) => {
+    const cardSnap = await tx.get(cardRef);
+    if (!cardSnap.exists()) throw new Error('Card not found');
+    const data = cardSnap.data() as Record<string, unknown>;
+    if (typeof data.active === 'boolean') {
+      if (!data.active) throw new Error('This card is not available');
+    } else {
+      const st = typeof data.status === 'string' ? data.status : '';
+      if (!isActiveFoodCardStatus(st)) {
+        throw new Error('This order is not open for joining');
+      }
+      const ownerId = typeof data.ownerId === 'string' ? data.ownerId : '';
+      if (ownerId && ownerId === authedUid) {
+        throw new Error('You cannot join your own card');
+      }
+      const u1 = data.user1 as { uid?: string } | null | undefined;
+      if (u1 && typeof u1.uid === 'string' && u1.uid === authedUid) {
+        throw new Error('You cannot join your own card');
+      }
+    }
+    const mu = Math.min(
+      typeof data.maxUsers === 'number' && data.maxUsers > 0
+        ? data.maxUsers
+        : FOOD_CARD_ORDER_MAX_USERS,
+      FOOD_CARD_ORDER_MAX_USERS,
+    );
+    const newRef = doc(collection(db, 'orders'));
+    tx.set(newRef, {
+      ...buildHalfOrderFromCard(data, trimmed, authedUid, mu),
+      host: creatorProfiles.host,
+      participants: [creatorProfiles.firstParticipant],
+    });
+    return { kind: 'created' as const, orderId: newRef.id, maxUsers: mu };
+  });
+
+  const finalSnap = await getDoc(doc(db, 'orders', outcome.orderId));
+  const finalUsers = normalizeOrderUserIds(finalSnap.data()?.users);
+
+  await ensureHalfOrderChat(outcome.orderId, finalUsers);
+  await syncOrderMemberProfilesForOrder(outcome.orderId, finalUsers);
 
   if (outcome.kind === 'created') {
     const oData = finalSnap.data() as Record<string, unknown> | undefined;
@@ -557,14 +631,14 @@ export async function joinOrder(
   }
 
   return {
-    alreadyJoined,
+    alreadyJoined: false,
     isFull: finalUsers.length >= outcome.maxUsers,
     orderId: outcome.orderId,
-    justBecamePair,
+    justBecamePair: false,
   };
 }
 
-export async function createFoodCard(input: {
+export async function createFoodCard(_input: {
   title: string;
   image: string;
   restaurantName: string;
@@ -573,101 +647,14 @@ export async function createFoodCard(input: {
   latitude?: number | null;
   longitude?: number | null;
   aiDescription?: string;
-}) {
-  const uid = auth.currentUser?.uid ?? '';
-  if (!uid || uid !== ADMIN_UID) throw new Error('Admin only');
-  const cardsSnap = await getDocs(collection(db, FOOD_CARDS));
-  if (countVisibleActiveFoodCardsInSnapshot(cardsSnap) >= 10) {
-    throw new Error('Max 10 active cards');
-  }
-  const now = Date.now();
-  const aiDesc =
-    typeof input.aiDescription === 'string' && input.aiDescription.trim()
-      ? input.aiDescription.trim()
-      : undefined;
-  return addDoc(collection(db, FOOD_CARDS), {
-    title: input.title.trim(),
-    image: input.image.trim(),
-    restaurantName: input.restaurantName.trim(),
-    ...(aiDesc ? { aiDescription: aiDesc } : {}),
-    price: input.price,
-    splitPrice: input.splitPrice,
-    location:
-      input.latitude != null && input.longitude != null
-        ? { latitude: input.latitude, longitude: input.longitude }
-        : null,
-    ownerId: uid,
-    maxUsers: 2,
-    createdAt: serverTimestamp(),
-    expiresAt: foodCardExpiresAtFromNow(now),
-    status: 'active',
-    user1: null,
-    user2: null,
-  });
-}
-
-async function duplicateCard(cardId: string) {
-  const snap = await getDoc(doc(db, FOOD_CARDS, cardId));
-  if (!snap.exists()) return;
-  const data = snap.data();
-  const now = Date.now();
-  const owner =
-    typeof data.ownerId === 'string' && data.ownerId
-      ? data.ownerId
-      : auth.currentUser?.uid ?? '';
-  const dupAi =
-    typeof data.aiDescription === 'string' && data.aiDescription.trim()
-      ? data.aiDescription.trim()
-      : undefined;
-  await addDoc(collection(db, FOOD_CARDS), {
-    title: data.title ?? 'Food card',
-    image: data.image ?? '',
-    restaurantName: data.restaurantName ?? '',
-    ...(dupAi ? { aiDescription: dupAi } : {}),
-    price: Number(data.price) || 0,
-    splitPrice: Number(data.splitPrice) || 0,
-    location: data.location ?? null,
-    ownerId: owner,
-    maxUsers: 2,
-    createdAt: serverTimestamp(),
-    expiresAt: foodCardExpiresAtFromNow(now),
-    status: 'active',
-    user1: null,
-    user2: null,
-    regeneratedFrom: cardId,
-  });
+}): Promise<never> {
+  throw new Error(
+    'Food cards are fixed slots 1–10. Use the admin Food Cards dashboard.',
+  );
 }
 
 export async function runFoodCardAutomationOnce(): Promise<void> {
-  const now = Date.now();
-  const activeDeckSnap = await getDocs(queryAllActiveFoodCards());
-  const matchedSnap = await getDocs(
-    query(collection(db, FOOD_CARDS), where('status', '==', 'matched')),
-  );
-
-  const tasks: Promise<unknown>[] = [];
-  activeDeckSnap.docs.forEach((d) => {
-    const data = d.data();
-    if (typeof data.expiresAt === 'number' && data.expiresAt <= now) {
-      tasks.push(
-        duplicateCard(d.id).finally(() => deleteDoc(doc(db, FOOD_CARDS, d.id))),
-      );
-    }
-  });
-  matchedSnap.docs.forEach((d) => {
-    const data = d.data();
-    if (!data.regenerated) {
-      tasks.push(
-        duplicateCard(d.id).finally(() =>
-          updateDoc(doc(db, FOOD_CARDS, d.id), {
-            regenerated: true,
-            adminNotification: `Match completed: ${data.title ?? 'Food'} - 2 users joined`,
-          }),
-        ),
-      );
-    }
-  });
-  if (tasks.length) await Promise.allSettled(tasks);
+  /** Catalog slots are persistent; no expiry churn. */
 }
 
 export async function skipFoodCard(_cardId: string): Promise<void> {
@@ -675,8 +662,5 @@ export async function skipFoodCard(_cardId: string): Promise<void> {
 }
 
 export function startFoodCardAutomation(): () => void {
-  const id = setInterval(() => {
-    runFoodCardAutomationOnce().catch(() => {});
-  }, 60 * 1000);
-  return () => clearInterval(id);
+  return () => {};
 }

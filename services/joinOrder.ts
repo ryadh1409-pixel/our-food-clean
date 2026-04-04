@@ -26,6 +26,10 @@ import {
 import { syncOrderMemberProfilesForOrder } from '@/services/orderMemberProfile';
 import { trySendPairJoinExpoPush } from '@/services/orderPairPushNotify';
 import { joinOrderWithParticipantRecord } from '@/services/orderLifecycle';
+import {
+  FOOD_CARD_ORDER_MAX_USERS,
+  isAdminFoodCardSlotId,
+} from '@/constants/adminFoodCards';
 import { PAYMENT_DISCLAIMER_CHAT_MATCHED } from '@/constants/paymentDisclaimer';
 import { applyHalfOrderPairReferralRewards } from '@/services/referralRewards';
 import { getPublicUserFields } from '@/services/users';
@@ -137,12 +141,28 @@ export async function joinHalfOrderByOrderId(orderId: string): Promise<{
     if (!snap.exists()) throw new Error('Order no longer exists.');
     const d = snap.data() as Record<string, unknown>;
     const users = normalizeOrderUserIds(d.users);
-    const maxPeople =
+    const cardIdRaw = typeof d.cardId === 'string' ? d.cardId.trim() : '';
+    const rawMax =
       typeof d.maxUsers === 'number' && d.maxUsers > 0 ? d.maxUsers : 2;
+    const maxPeople = isAdminFoodCardSlotId(cardIdRaw)
+      ? Math.min(rawMax, FOOD_CARD_ORDER_MAX_USERS)
+      : rawMax;
     let hostForPlan = hostPrefetch;
     const partsLive = normalizeParticipantRecords(d.participants);
-    if (partsLive.length === 0 && users.length === 1 && !hostForPlan) {
-      hostForPlan = await getPublicUserFields(users[0]);
+    if (
+      partsLive.length === 0 &&
+      users.length === 1 &&
+      !hostForPlan &&
+      users[0]
+    ) {
+      const uRef = doc(db, 'users', users[0]);
+      const uSnap = await transaction.get(uRef);
+      if (uSnap.exists()) {
+        hostForPlan = mapRawUserDocument(
+          users[0],
+          uSnap.data() as Record<string, unknown>,
+        );
+      }
     }
     const plan = planHalfOrderJoin({
       orderData: d,

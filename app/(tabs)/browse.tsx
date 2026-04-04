@@ -3,15 +3,15 @@ import {
   PAYMENT_MATCH_ALERT_TITLE,
 } from '@/constants/paymentDisclaimer';
 import { theme } from '@/constants/theme';
+import { FoodCardGrid } from '@/components/FoodCardGrid';
 import { useAuth } from '@/services/AuthContext';
-import { db } from '@/services/firebase';
 import {
   isFoodCardJoinDisabled,
   joinOrder,
   subscribeActiveFoodCards,
   type FoodCard,
 } from '@/services/foodCards';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { subscribeJoinHintsForFoodCard } from '@/services/foodCardSlotOrders';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
@@ -19,7 +19,6 @@ import {
   ActivityIndicator,
   Alert,
   Image,
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -49,40 +48,31 @@ function BrowseFoodCardRow({
   onJoin: (c: FoodCard) => void;
   router: ReturnType<typeof useRouter>;
 }) {
-  const [orderUsers, setOrderUsers] = useState<string[] | null>(null);
-  useEffect(() => {
-    if (!card.orderId) {
-      setOrderUsers(null);
-      return;
-    }
-    const unsub = onSnapshot(
-      doc(db, 'orders', card.orderId),
-      (s) => {
-        const raw = s.data()?.users;
-        setOrderUsers(
-          Array.isArray(raw)
-            ? raw.filter((x): x is string => typeof x === 'string' && x.length > 0)
-            : [],
-        );
-      },
-      () => setOrderUsers(null),
-    );
-    return () => unsub();
-  }, [card.orderId]);
+  const [joinHint, setJoinHint] = useState<{
+    primaryOpenUsers: string[];
+    anyOpenOrderMemberIds: string[];
+  } | null>(null);
 
-  const cap =
-    typeof card.maxUsers === 'number' && card.maxUsers > 0 ? card.maxUsers : 2;
+  useEffect(() => {
+    return subscribeJoinHintsForFoodCard(card.id, setJoinHint);
+  }, [card.id]);
+
   const joinBusy = joiningId === card.id;
   const joinDisabled =
-    joinBusy || (!!uid && isFoodCardJoinDisabled(card, uid, orderUsers));
-  const detailPath = card.orderId ?? card.id;
-  const alreadyIn = !!(uid && card.orderId && orderUsers?.includes(uid));
-  const atCapacity =
-    orderUsers != null && orderUsers.length >= cap;
+    joinBusy ||
+    (!!uid &&
+      isFoodCardJoinDisabled(
+        card,
+        uid,
+        joinHint?.anyOpenOrderMemberIds ?? null,
+      ));
+  const detailPath = card.id;
+  const alreadyIn = !!(
+    uid && joinHint?.anyOpenOrderMemberIds.includes(uid)
+  );
   let joinLabel = '❤️ Join';
   if (!uid) joinLabel = 'Sign in to join';
   else if (alreadyIn) joinLabel = 'Joined';
-  else if (atCapacity) joinLabel = 'Full';
 
   return (
     <View style={styles.card}>
@@ -104,7 +94,7 @@ function BrowseFoodCardRow({
         <Text style={styles.meta}>
           ${card.splitPrice.toFixed(2)} each · total ${card.price.toFixed(2)}
         </Text>
-        <Text style={styles.meta}>Expires in 45 minutes</Text>
+        <Text style={styles.meta}>HalfOrder share · up to 2 people</Text>
         <TouchableOpacity
           style={styles.detailsRow}
           activeOpacity={0.88}
@@ -194,37 +184,39 @@ export default function BrowseScreen() {
           <ActivityIndicator color="#34D399" />
           <Text style={styles.loadingHint}>Loading food cards…</Text>
         </View>
+      ) : cards.length === 0 ? (
+        listError ? (
+          <View style={styles.emptyWrap}>
+            <Text style={styles.empty}>
+              Could not load food cards. Check your connection.
+            </Text>
+            <TouchableOpacity
+              style={styles.retryBtn}
+              onPress={() => setRetryKey((k) => k + 1)}
+            >
+              <Text style={styles.retryText}>Try again</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.centered}>
+            <Text style={styles.empty}>No active food cards yet. Check back soon.</Text>
+          </View>
+        )
       ) : (
-        <ScrollView contentContainerStyle={styles.content}>
-          {cards.length === 0 ? (
-            listError ? (
-              <View style={styles.emptyWrap}>
-                <Text style={styles.empty}>
-                  Could not load food cards. Check your connection.
-                </Text>
-                <TouchableOpacity
-                  style={styles.retryBtn}
-                  onPress={() => setRetryKey((k) => k + 1)}
-                >
-                  <Text style={styles.retryText}>Try again</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <Text style={styles.empty}>No active food cards yet. Check back soon.</Text>
-            )
-          ) : (
-            cards.map((card) => (
-              <BrowseFoodCardRow
-                key={card.id}
-                card={card}
-                uid={user?.uid}
-                joiningId={joiningId}
-                onJoin={onJoin}
-                router={router}
-              />
-            ))
+        <FoodCardGrid
+          data={cards}
+          keyExtractor={(c) => c.id}
+          contentContainerStyle={styles.content}
+          renderItem={(card) => (
+            <BrowseFoodCardRow
+              card={card}
+              uid={user?.uid}
+              joiningId={joiningId}
+              onJoin={onJoin}
+              router={router}
+            />
           )}
-        </ScrollView>
+        />
       )}
     </SafeAreaView>
   );

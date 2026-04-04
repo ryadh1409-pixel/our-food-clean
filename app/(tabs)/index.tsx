@@ -1,3 +1,4 @@
+import { isAdminFoodCardSlotId } from '@/constants/adminFoodCards';
 import { isAdminUser } from '@/constants/adminUid';
 import {
   PAYMENT_MATCH_ALERT_MESSAGE,
@@ -5,7 +6,6 @@ import {
 } from '@/constants/paymentDisclaimer';
 import { theme } from '@/constants/theme';
 import { useAuth } from '@/services/AuthContext';
-import { db } from '@/services/firebase';
 import { getHiddenUserIds } from '@/services/block';
 import {
   isFoodCardJoinDisabled,
@@ -14,9 +14,9 @@ import {
   subscribeActiveFoodCards,
   type FoodCard,
 } from '@/services/foodCards';
+import { subscribeJoinHintsForFoodCard } from '@/services/foodCardSlotOrders';
 import { subscribeActiveFoodTemplates } from '@/services/foodTemplates';
 import type { FoodTemplate } from '@/types/food';
-import { doc, onSnapshot } from 'firebase/firestore';
 import { AIDescription } from '@/components/AIDescription';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -128,40 +128,37 @@ export default function SwipeScreen() {
   }, [cards, adminPreview, uid, hiddenUserIds]);
   const topCard = deckCards[0] ?? null;
   const secondCard = deckCards[1] ?? null;
-  const [topOrderUsers, setTopOrderUsers] = useState<string[] | null>(null);
+  const [topJoinHint, setTopJoinHint] = useState<{
+    primaryOpenUsers: string[];
+    anyOpenOrderMemberIds: string[];
+  } | null>(null);
 
   useEffect(() => {
-    if (!topCard?.orderId) {
-      setTopOrderUsers(null);
+    if (!topCard?.id) {
+      setTopJoinHint(null);
       return;
     }
-    const oid = topCard.orderId;
-    const unsub = onSnapshot(
-      doc(db, 'orders', oid),
-      (s) => {
-        if (!s.exists()) {
-          setTopOrderUsers(null);
-          return;
-        }
-        const raw = s.data()?.users;
-        setTopOrderUsers(
-          Array.isArray(raw)
-            ? raw.filter((x): x is string => typeof x === 'string' && x.length > 0)
-            : [],
-        );
-      },
-      () => setTopOrderUsers(null),
-    );
-    return () => unsub();
-  }, [topCard?.orderId]);
+    return subscribeJoinHintsForFoodCard(topCard.id, setTopJoinHint);
+  }, [topCard?.id]);
 
   /** Block swipe / primary join when signed in but cannot join this card (already in, full, admin, own card, etc.). */
   const joinBlockedForUser =
     !!uid &&
     !!topCard &&
-    isFoodCardJoinDisabled(topCard, uid, topOrderUsers);
+    isFoodCardJoinDisabled(
+      topCard,
+      uid,
+      topJoinHint?.anyOpenOrderMemberIds ?? null,
+    );
   const joinPrimaryDisabled =
     !topCard || joining || (!!uid && joinBlockedForUser);
+
+  const matchDeckHint = useMemo(() => {
+    if (!uid || !topJoinHint) return null;
+    if (topJoinHint.anyOpenOrderMemberIds.includes(uid)) return 'joined' as const;
+    if (topJoinHint.primaryOpenUsers.length >= 1) return 'waiting' as const;
+    return 'open' as const;
+  }, [uid, topJoinHint]);
 
   const removeCardById = (cardId: string) => {
     setCards((prev) => prev.filter((c) => c.id !== cardId));
@@ -178,7 +175,9 @@ export default function SwipeScreen() {
     }
     const card = cards.find((c) => c.id === targetId) ?? topCard;
     const hint =
-      card && topCard && card.id === topCard.id ? topOrderUsers : null;
+      card && topCard && card.id === topCard.id
+        ? topJoinHint?.anyOpenOrderMemberIds ?? null
+        : null;
     if (!card || isFoodCardJoinDisabled(card, joinUid, hint)) return;
     setJoining(true);
     try {
@@ -192,7 +191,6 @@ export default function SwipeScreen() {
       if (result.justBecamePair) {
         Alert.alert(PAYMENT_MATCH_ALERT_TITLE, PAYMENT_MATCH_ALERT_MESSAGE);
       }
-      removeCardById(targetId);
       router.push(`/order/${result.orderId}` as never);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Could not join this card.';
@@ -427,7 +425,12 @@ export default function SwipeScreen() {
                   ? 'Location included on this card'
                   : 'Location not listed on this card'}
               </Text>
-              <Text style={styles.timer}>Ends in {formatTimer(topCard.expiresAt + tick * 0)}</Text>
+              {isAdminFoodCardSlotId(topCard.id) ||
+              topCard.expiresAt > 1e15 ? null : (
+                <Text style={styles.timer}>
+                  Ends in {formatTimer(topCard.expiresAt + tick * 0)}
+                </Text>
+              )}
               <TouchableOpacity
                 activeOpacity={0.88}
                 onPress={() =>
@@ -454,17 +457,35 @@ export default function SwipeScreen() {
                   <Text style={styles.inlineJoinText}>
                     {!uid
                       ? 'Sign in to join'
-                      : topCard.orderId &&
-                          topOrderUsers?.includes(uid)
+                      : topJoinHint?.anyOpenOrderMemberIds.includes(uid)
                         ? 'Joined'
-                        : topOrderUsers != null &&
-                            topOrderUsers.length >= (topCard.maxUsers ?? 2)
-                          ? 'Full'
-                          : '❤️ Join order'}
+                        : '❤️ Join order'}
                   </Text>
                 )}
               </TouchableOpacity>
-              {topCard.user1 ? (
+              {!uid ? (
+                <Text style={styles.waitingText}>
+                  Sign in to join this share and get matched with a partner.
+                </Text>
+              ) : matchDeckHint === 'joined' ? (
+                <View style={[styles.matchPill, styles.matchPillJoined]}>
+                  <Text style={styles.matchPillText}>
+                    You’re in — open details for your order
+                  </Text>
+                </View>
+              ) : matchDeckHint === 'waiting' ? (
+                <View style={[styles.matchPill, styles.matchPillWaiting]}>
+                  <Text style={styles.matchPillText}>
+                    Someone’s waiting — join to complete the pair
+                  </Text>
+                </View>
+              ) : matchDeckHint === 'open' ? (
+                <View style={styles.matchPill}>
+                  <Text style={styles.matchPillText}>
+                    Be the first to join this share
+                  </Text>
+                </View>
+              ) : topCard.user1 ? (
                 <View style={styles.hostRow}>
                   {topCard.user1.photo ? (
                     <Image source={{ uri: topCard.user1.photo }} style={styles.avatar} />
@@ -475,7 +496,7 @@ export default function SwipeScreen() {
                 </View>
               ) : (
                 <Text style={styles.waitingText}>
-                  Join this card to see host details when an order is created
+                  Join to create an order and get matched.
                 </Text>
               )}
             </View>
@@ -510,14 +531,9 @@ export default function SwipeScreen() {
               {!uid
                 ? 'Sign in'
                 : topCard &&
-                    topCard.orderId &&
-                    topOrderUsers?.includes(uid)
+                    topJoinHint?.anyOpenOrderMemberIds.includes(uid)
                   ? 'Joined'
-                  : topCard &&
-                      topOrderUsers != null &&
-                      topOrderUsers.length >= (topCard.maxUsers ?? 2)
-                    ? 'Full'
-                    : '❤️ Join'}
+                  : '❤️ Join'}
             </Text>
           )}
         </TouchableOpacity>
@@ -635,9 +651,33 @@ const styles = StyleSheet.create({
   },
   detailsBtnText: { color: '#6EE7B7', fontWeight: '800', fontSize: 15 },
   hostRow: { marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  avatar: { width: 26, height: 26, borderRadius: 13, backgroundColor: '#1f2937' },
+  avatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#1f2937' },
   avatarPlaceholder: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)' },
   hostName: { color: '#D1FAE5', fontWeight: '700' },
+  matchPill: {
+    marginTop: 12,
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    backgroundColor: 'rgba(148,163,184,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.22)',
+  },
+  matchPillWaiting: {
+    backgroundColor: 'rgba(251,191,36,0.12)',
+    borderColor: 'rgba(251,191,36,0.35)',
+  },
+  matchPillJoined: {
+    backgroundColor: 'rgba(52,211,153,0.14)',
+    borderColor: 'rgba(52,211,153,0.35)',
+  },
+  matchPillText: {
+    color: 'rgba(248,250,252,0.92)',
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'center',
+    lineHeight: 18,
+  },
   waitingText: { color: 'rgba(248,250,252,0.72)', marginTop: 8, fontWeight: '600' },
   inlineJoinBtn: {
     marginTop: 12,

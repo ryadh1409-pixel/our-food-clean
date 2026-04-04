@@ -3,6 +3,7 @@ import {
   AdminFoodCatalogList,
   AdminFoodCatalogProvider,
 } from './components/AdminFoodCatalog';
+import { AdminCardsDashboard } from './components/AdminCardsDashboard';
 import { adminRoutes } from '@/constants/adminRoutes';
 import { ADMIN_PANEL_EMAIL, isAdminUser } from '@/constants/adminUid';
 import { adminError, adminLog } from '@/lib/admin/adminDebug';
@@ -68,16 +69,6 @@ export default function AdminScreen() {
     totalMatches: number;
     completedOrders: number;
   } | null>(null);
-
-  const [title, setTitle] = useState('');
-  const [restaurantName, setRestaurantName] = useState('');
-  const [price, setPrice] = useState('');
-  const [splitPrice, setSplitPrice] = useState('');
-  const [location, setLocation] = useState('');
-  const [description, setDescription] = useState('');
-  const [imageUrl, setImageUrl] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [uploading, setUploading] = useState(false);
 
   const isAdmin = isAdminUser(user);
 
@@ -174,105 +165,6 @@ export default function AdminScreen() {
     fetchMetrics();
   };
 
-  const pickImage = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert('Permission required', 'Allow photo access to upload card images.');
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      quality: 0.82,
-    });
-    if (result.canceled || !result.assets[0]?.uri) return;
-
-    try {
-      setUploading(true);
-      const uri = result.assets[0].uri;
-      const response = await fetch(uri);
-      const blob = await response.blob();
-      const uid = auth.currentUser?.uid ?? 'admin';
-      const path = `foodCards/${uid}/${Date.now()}.jpg`;
-      const storageRef = ref(storage, path);
-      await uploadBytes(storageRef, blob);
-      const url = await getDownloadURL(storageRef);
-      setImageUrl(url);
-    } catch (e) {
-      Alert.alert(
-        'Upload failed',
-        e instanceof Error ? e.message : 'Could not upload image',
-      );
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const onSaveCard = async () => {
-    if (!isAdmin) {
-      Alert.alert('Access denied', 'Only admin can create food cards.');
-      return;
-    }
-    const total = Number(price);
-    const split = Number(splitPrice);
-    if (!title.trim() || !restaurantName.trim() || !imageUrl.trim()) {
-      Alert.alert('Missing fields', 'Title, restaurant, and image are required.');
-      return;
-    }
-    if (!Number.isFinite(total) || total <= 0 || !Number.isFinite(split) || split <= 0) {
-      Alert.alert('Invalid values', 'Use valid positive prices.');
-      return;
-    }
-
-    const ownerId = user?.uid;
-    if (!ownerId) {
-      Alert.alert('Error', 'No admin user id.');
-      return;
-    }
-
-    setSaving(true);
-    try {
-      const cardsCap = await getDocs(collection(db, 'food_cards'));
-      if (countVisibleActiveFoodCardsInSnapshot(cardsCap) >= 10) {
-        Alert.alert('Limit reached', 'Maximum 10 active cards allowed.');
-        return;
-      }
-      const now = Date.now();
-      const aiTrim = aiDescription.trim();
-      await addDoc(collection(db, 'food_cards'), {
-        title: title.trim(),
-        image: imageUrl.trim(),
-        restaurantName: restaurantName.trim(),
-        description: description.trim() || '',
-        ...(aiTrim ? { aiDescription: aiTrim } : {}),
-        price: total,
-        splitPrice: split,
-        location: location.trim() || null,
-        ownerId,
-        maxUsers: 2,
-        createdAt: serverTimestamp(),
-        expiresAt: foodCardExpiresAtFromNow(now),
-        status: 'active',
-        user1: null,
-        user2: null,
-      });
-      setTitle('');
-      setRestaurantName('');
-      setPrice('');
-      setSplitPrice('');
-      setLocation('');
-      setDescription('');
-      setAiDescription('');
-      setImageUrl('');
-      fetchMetrics();
-      Alert.alert('Saved', 'Food card created successfully.');
-    } catch (e) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Could not save card');
-    } finally {
-      setSaving(false);
-    }
-  };
-
   if (!user) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
@@ -347,50 +239,11 @@ export default function AdminScreen() {
             ) : null}
 
             <View style={styles.card}>
-              <Text style={styles.sectionTitle}>Create Food Card (Swipe)</Text>
-          <TouchableOpacity style={styles.imageButton} onPress={pickImage} disabled={uploading}>
-            <Text style={styles.imageButtonText}>{uploading ? 'Uploading...' : 'Upload Image'}</Text>
-          </TouchableOpacity>
-          {imageUrl ? <Image source={{ uri: imageUrl }} style={styles.preview} /> : null}
-          <TextInput style={styles.input} placeholder="Title" placeholderTextColor={COLORS.textMuted} value={title} onChangeText={setTitle} />
-          <TextInput style={styles.input} placeholder="Restaurant Name" placeholderTextColor={COLORS.textMuted} value={restaurantName} onChangeText={setRestaurantName} />
-          <TextInput style={styles.input} placeholder="Venue notes (optional)" placeholderTextColor={COLORS.textMuted} value={description} onChangeText={setDescription} multiline />
-          <TextInput style={[styles.input, styles.inputMultiline]} placeholder="AI description (shown on card)" placeholderTextColor={COLORS.textMuted} value={aiDescription} onChangeText={setAiDescription} multiline />
-          <TouchableOpacity
-            style={[styles.genAiBtn, aiGenerating && styles.genAiBtnDisabled]}
-            disabled={aiGenerating || !title.trim() || !restaurantName.trim()}
-            onPress={() => {
-              void (async () => {
-                setAiGenerating(true);
-                try {
-                  const gen = await generateFoodCardAiDescription({
-                    title: title.trim(),
-                    restaurantName: restaurantName.trim(),
-                    adminDescription: description.trim() || undefined,
-                  });
-                  if (gen) setAiDescription(gen);
-                  else {
-                    Alert.alert(
-                      'Could not generate',
-                      'Add EXPO_PUBLIC_OPENAI_API_KEY (or expo.extra.openaiApiKey) and try again, or type a description manually.',
-                    );
-                  }
-                } finally {
-                  setAiGenerating(false);
-                }
-              })();
-            }}
-          >
-            <Text style={styles.genAiBtnText}>
-              {aiGenerating ? 'Generating…' : 'Generate AI description'}
-            </Text>
-          </TouchableOpacity>
-          <TextInput style={styles.input} placeholder="Total Price" placeholderTextColor={COLORS.textMuted} value={price} onChangeText={setPrice} keyboardType="decimal-pad" />
-          <TextInput style={styles.input} placeholder="Split Price" placeholderTextColor={COLORS.textMuted} value={splitPrice} onChangeText={setSplitPrice} keyboardType="decimal-pad" />
-          <TextInput style={styles.input} placeholder="Location" placeholderTextColor={COLORS.textMuted} value={location} onChangeText={setLocation} />
-              <TouchableOpacity style={styles.saveBtn} onPress={onSaveCard} disabled={saving}>
-                <Text style={styles.saveText}>{saving ? 'Saving...' : 'Save Card'}</Text>
-              </TouchableOpacity>
+              <Text style={styles.sectionTitle}>Food cards (10 slots)</Text>
+              <Text style={styles.cardHint}>
+                Edit cards 1–10. Toggle active to show or hide in the app.
+              </Text>
+              <AdminCardsDashboard />
             </View>
 
             {metrics ? (
@@ -550,48 +403,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: COLORS.textMuted,
   },
-  imageButton: {
-    height: 46,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#34D399',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  imageButtonText: { color: '#A7F3D0', fontWeight: '700' },
-  preview: { width: '100%', height: 180, borderRadius: 14, marginBottom: 12 },
-  input: {
-    backgroundColor: '#11161F',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-    color: '#F8FAFC',
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    marginBottom: 10,
-  },
-  inputMultiline: { minHeight: 88, textAlignVertical: 'top' },
-  genAiBtn: {
-    marginBottom: 12,
-    paddingVertical: 12,
-    borderRadius: 10,
-    backgroundColor: 'rgba(99,102,241,0.25)',
-    borderWidth: 1,
-    borderColor: 'rgba(129,140,248,0.5)',
-    alignItems: 'center',
-  },
-  genAiBtnDisabled: { opacity: 0.55 },
-  genAiBtnText: { color: '#C7D2FE', fontWeight: '700', fontSize: 14 },
-  saveBtn: {
-    marginTop: 6,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: '#34D399',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  saveText: { color: '#07241A', fontWeight: '800' },
   navSection: { marginTop: 24, gap: 12 },
   navButton: {
     backgroundColor: COLORS.primary,
