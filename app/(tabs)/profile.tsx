@@ -116,7 +116,6 @@ function mapUsersCollectionToProfile(
   photoURL: string | null;
   phone: string;
   notificationsEnabled: boolean;
-  ordersCount: number;
   averageRating: number;
   totalRatings: number;
 } {
@@ -129,7 +128,6 @@ function mapUsersCollectionToProfile(
       photoURL,
       phone: '',
       notificationsEnabled: true,
-      ordersCount: 0,
       averageRating: 0,
       totalRatings: 0,
     };
@@ -147,18 +145,12 @@ function mapUsersCollectionToProfile(
       ? data.phone.trim()
       : '';
 
-  const orders =
-    typeof data.ordersCount === 'number' && Number.isFinite(data.ordersCount)
-      ? data.ordersCount
-      : 0;
-
   return {
     displayName: fromDoc || authDisplay,
     emailFromDoc,
     photoURL,
     phone,
     notificationsEnabled: data.notificationsEnabled !== false,
-    ordersCount: orders,
     averageRating: pickRatingAverage(data),
     totalRatings: pickRatingCount(data),
   };
@@ -219,7 +211,6 @@ export default function ProfileScreen() {
   const [nameErrorMessage, setNameErrorMessage] = useState('');
   const [initialDisplayName, setInitialDisplayName] = useState('');
   const [initialPhone, setInitialPhone] = useState('');
-  const [ordersCount, setOrdersCount] = useState<number>(0);
   const [averageRating, setAverageRating] = useState(0);
   const [totalRatings, setTotalRatings] = useState(0);
   /** `users/{uid}.email` when set; UI falls back to Auth email. */
@@ -262,7 +253,6 @@ export default function ProfileScreen() {
         setDisplayNameInput(mapped.displayName);
         setInitialDisplayName(mapped.displayName);
         setNotificationsEnabled(mapped.notificationsEnabled);
-        setOrdersCount(mapped.ordersCount);
         setAverageRating(mapped.averageRating);
         setTotalRatings(mapped.totalRatings);
         setEmailFromFirestore(mapped.emailFromDoc);
@@ -279,7 +269,6 @@ export default function ProfileScreen() {
         setDisplayNameInput(mapped.displayName);
         setInitialDisplayName(mapped.displayName);
         setNotificationsEnabled(mapped.notificationsEnabled);
-        setOrdersCount(mapped.ordersCount);
         setAverageRating(mapped.averageRating);
         setTotalRatings(mapped.totalRatings);
         setEmailFromFirestore(mapped.emailFromDoc);
@@ -841,13 +830,6 @@ export default function ProfileScreen() {
                 </View>
               </View>
             </View>
-
-            <View style={dynamicStyles.divider} />
-
-            <Text style={dynamicStyles.label}>Tax gifts earned</Text>
-            <Text style={dynamicStyles.statLine}>
-              🎁 {Math.floor(ordersCount / 3)} (every 3 completed orders)
-            </Text>
           </View>
 
           <Text style={dynamicStyles.sectionHeading}>Notifications</Text>
@@ -1295,11 +1277,6 @@ function createDynamicStyles(pal: Palette, isDarkMode: boolean) {
       fontSize: 12,
       color: pal.textTertiary,
       fontWeight: '500',
-    },
-    statLine: {
-      fontSize: 15,
-      fontWeight: '600',
-      color: pal.text,
     },
     rowBetween: {
       flexDirection: 'row',
