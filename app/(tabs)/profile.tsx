@@ -4,10 +4,13 @@ import { ScreenHeader } from '@/components/ScreenHeader';
 import { isAdminUser } from '@/constants/adminUid';
 import { shadows, theme } from '@/constants/theme';
 import {
-  formatUserDateOfBirthLong,
-  isValidOptionalIsoDate,
-  normalizeDateOfBirthFromFirestore,
-} from '@/lib/formatUserDateOfBirth';
+  displayFromStoredProfilePhone,
+  isCompleteNaProfilePhone,
+  isIncompleteNaProfilePhone,
+  isProfilePhoneStorageEmpty,
+  profilePhoneForFirestore,
+  profileWhatsAppOnChangeText,
+} from '@/lib/profileWhatsAppPhone';
 import { useTrustScore } from '@/hooks/useTrustScore';
 import { useAuth } from '@/services/AuthContext';
 import {
@@ -23,11 +26,12 @@ import { uploadProfilePhoto } from '@/services/profilePhoto';
 import { submitReport, type ReportReason } from '@/services/reports';
 import { moderateUserContent } from '@/utils/contentModeration';
 import { logError } from '@/utils/errorLogger';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { updateProfile, type User } from '@firebase/auth';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import { useRouter, type Href } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import {
   deleteField,
@@ -115,7 +119,6 @@ function mapUsersCollectionToProfile(
   ordersCount: number;
   averageRating: number;
   totalRatings: number;
-  dateOfBirthIso: string;
 } {
   const authDisplay = authUser?.displayName?.trim() ?? '';
   const photoURL = resolvePhotoURL(data, authUser);
@@ -129,7 +132,6 @@ function mapUsersCollectionToProfile(
       ordersCount: 0,
       averageRating: 0,
       totalRatings: 0,
-      dateOfBirthIso: '',
     };
   }
 
@@ -159,7 +161,6 @@ function mapUsersCollectionToProfile(
     ordersCount: orders,
     averageRating: pickRatingAverage(data),
     totalRatings: pickRatingCount(data),
-    dateOfBirthIso: normalizeDateOfBirthFromFirestore(data.dateOfBirth),
   };
 }
 
@@ -218,8 +219,6 @@ export default function ProfileScreen() {
   const [nameErrorMessage, setNameErrorMessage] = useState('');
   const [initialDisplayName, setInitialDisplayName] = useState('');
   const [initialPhone, setInitialPhone] = useState('');
-  const [dateOfBirthInput, setDateOfBirthInput] = useState('');
-  const [initialDateOfBirth, setInitialDateOfBirth] = useState('');
   const [ordersCount, setOrdersCount] = useState<number>(0);
   const [averageRating, setAverageRating] = useState(0);
   const [totalRatings, setTotalRatings] = useState(0);
@@ -268,10 +267,9 @@ export default function ProfileScreen() {
         setTotalRatings(mapped.totalRatings);
         setEmailFromFirestore(mapped.emailFromDoc);
         setPhotoURL(mapped.photoURL);
-        setPhone(mapped.phone);
-        setInitialPhone(mapped.phone);
-        setDateOfBirthInput(mapped.dateOfBirthIso);
-        setInitialDateOfBirth(mapped.dateOfBirthIso);
+        const phoneDisp = displayFromStoredProfilePhone(mapped.phone);
+        setPhone(phoneDisp);
+        setInitialPhone(phoneDisp);
 
         setProfileLoading(false);
       },
@@ -286,10 +284,9 @@ export default function ProfileScreen() {
         setTotalRatings(mapped.totalRatings);
         setEmailFromFirestore(mapped.emailFromDoc);
         setPhotoURL(mapped.photoURL);
-        setPhone(mapped.phone);
-        setInitialPhone(mapped.phone);
-        setDateOfBirthInput(mapped.dateOfBirthIso);
-        setInitialDateOfBirth(mapped.dateOfBirthIso);
+        const phoneDisp = displayFromStoredProfilePhone(mapped.phone);
+        setPhone(phoneDisp);
+        setInitialPhone(phoneDisp);
         setProfileLoading(false);
       },
     );
@@ -325,8 +322,30 @@ export default function ProfileScreen() {
   const handleSaveDisplayName = async () => {
     if (savingName) return;
     const trimmed = displayNameInput.trim();
-    const trimmedPhone = phone.trim();
     if (!uid) return;
+
+    const phoneDigits = profilePhoneForFirestore(phone);
+    const initialDigits = profilePhoneForFirestore(initialPhone);
+    const phoneChanged = phoneDigits !== initialDigits;
+    const phoneTreatEmpty = isProfilePhoneStorageEmpty(phone);
+
+    if (phoneChanged) {
+      if (!phoneTreatEmpty && !isCompleteNaProfilePhone(phone)) {
+        Alert.alert(
+          'Phone number',
+          'Enter a complete WhatsApp number (10 digits after +1), or clear the field to only +1.',
+        );
+        return;
+      }
+    }
+
+    const trimmedPhone = phoneChanged
+      ? phoneTreatEmpty
+        ? ''
+        : phoneDigits
+      : isProfilePhoneStorageEmpty(initialDigits)
+        ? ''
+        : initialDigits;
     const currentUser = auth.currentUser;
     if (!currentUser) {
       const msg = 'Not signed in. Please sign in again.';
@@ -343,14 +362,6 @@ export default function ProfileScreen() {
       Alert.alert('Display name', mod.reason);
       return;
     }
-    const dobTrim = dateOfBirthInput.trim();
-    if (!isValidOptionalIsoDate(dobTrim)) {
-      Alert.alert(
-        'Date of birth',
-        'Use YYYY-MM-DD (e.g. 1989-06-12) or leave blank.',
-      );
-      return;
-    }
     if (nameFeedbackClearRef.current != null) {
       clearTimeout(nameFeedbackClearRef.current);
       nameFeedbackClearRef.current = null;
@@ -363,8 +374,6 @@ export default function ProfileScreen() {
       const userRef = doc(db, 'users', uid);
       await updateProfile(currentUser, { displayName: mod.text });
       await currentUser.reload();
-      console.log('DISPLAY NAME:', auth.currentUser?.displayName);
-      console.log('UPDATED NAME:', auth.currentUser?.displayName);
       await setDoc(
         userRef,
         {
@@ -372,18 +381,15 @@ export default function ProfileScreen() {
           name: mod.text,
           avatar: currentUser.photoURL ?? null,
           phone: trimmedPhone,
-          ...(dobTrim
-            ? { dateOfBirth: dobTrim }
-            : { dateOfBirth: deleteField() }),
+          dateOfBirth: deleteField(),
         },
         { merge: true },
       );
       setDisplayNameInput(mod.text);
       setInitialDisplayName(mod.text);
-      setPhone(trimmedPhone);
-      setInitialPhone(trimmedPhone);
-      setDateOfBirthInput(dobTrim);
-      setInitialDateOfBirth(dobTrim);
+      const nextDisp = displayFromStoredProfilePhone(trimmedPhone);
+      setPhone(nextDisp);
+      setInitialPhone(nextDisp);
       setNameSaved(true);
       setNameSuccessMessage('Name updated');
       nameFeedbackClearRef.current = setTimeout(() => {
@@ -598,8 +604,7 @@ export default function ProfileScreen() {
     !savingName &&
     displayNameInput.trim().length > 0 &&
     (displayNameInput.trim() !== initialDisplayName.trim() ||
-      phone.trim() !== initialPhone.trim() ||
-      dateOfBirthInput.trim() !== initialDateOfBirth.trim());
+      phone.trim() !== initialPhone.trim());
   const saveButtonLabel = savingName ? 'Saving…' : nameSaved ? 'Saved ✓' : 'Save name';
   const initialLetter = displayName.slice(0, 1).toUpperCase() || '?';
 
@@ -669,7 +674,7 @@ export default function ProfileScreen() {
   return (
     <SafeAreaView style={dynamicStyles.container} edges={['top']}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
-      <KeyboardToolbar focusedIndex={focusedInputIndex} totalInputs={3} />
+      <KeyboardToolbar focusedIndex={focusedInputIndex} totalInputs={2} />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -743,11 +748,11 @@ export default function ProfileScreen() {
 
           <TouchableOpacity
             style={dynamicStyles.quickAction}
-            onPress={() => router.push('/subscribe' as Href)}
+            onPress={() => router.push('/privacy')}
             activeOpacity={0.85}
           >
-            <MaterialIcons name="workspace-premium" size={24} color={pal.primary} />
-            <Text style={dynamicStyles.quickActionText}>HalfOrder Plus</Text>
+            <MaterialIcons name="privacy-tip" size={24} color={pal.primary} />
+            <Text style={dynamicStyles.quickActionText}>Privacy Policy</Text>
             <MaterialIcons name="chevron-right" size={22} color={pal.textTertiary} />
           </TouchableOpacity>
 
@@ -767,43 +772,34 @@ export default function ProfileScreen() {
               }
               onFocus={() => setFocusedInputIndex(0)}
             />
-            <Text style={dynamicStyles.label}>WhatsApp Number</Text>
-            <TextInput
-              style={dynamicStyles.input}
-              value={phone}
-              onChangeText={setPhone}
-              placeholder="Enter WhatsApp number"
-              placeholderTextColor={pal.textTertiary}
-              keyboardType="phone-pad"
-              editable={!savingName}
-              inputAccessoryViewID={
-                Platform.OS === 'ios' ? KEYBOARD_TOOLBAR_NATIVE_ID : undefined
-              }
-              onFocus={() => setFocusedInputIndex(1)}
-            />
-            <Text style={dynamicStyles.label}>Date of birth</Text>
-            <TextInput
-              style={dynamicStyles.input}
-              value={dateOfBirthInput}
-              onChangeText={setDateOfBirthInput}
-              placeholder="YYYY-MM-DD (optional)"
-              placeholderTextColor={pal.textTertiary}
-              editable={!savingName}
-              autoCapitalize="none"
-              keyboardType="numbers-and-punctuation"
-              inputAccessoryViewID={
-                Platform.OS === 'ios' ? KEYBOARD_TOOLBAR_NATIVE_ID : undefined
-              }
-              onFocus={() => setFocusedInputIndex(2)}
-            />
-            {(() => {
-              const dobPreview = dateOfBirthInput.trim()
-                ? formatUserDateOfBirthLong(dateOfBirthInput.trim())
-                : null;
-              return dobPreview ? (
-                <Text style={dynamicStyles.dobFormatted}>{dobPreview}</Text>
-              ) : null;
-            })()}
+            <Text style={dynamicStyles.label}>WhatsApp (for coordination)</Text>
+            <View style={dynamicStyles.phoneFieldShell}>
+              <MaterialCommunityIcons
+                name="whatsapp"
+                size={24}
+                color="#25D366"
+                style={dynamicStyles.phoneFieldIcon}
+              />
+              <TextInput
+                style={dynamicStyles.phoneFieldInput}
+                value={phone}
+                onChangeText={(t) => setPhone(profileWhatsAppOnChangeText(t))}
+                placeholder="+1 437 000 0000"
+                placeholderTextColor={pal.textTertiary}
+                keyboardType="phone-pad"
+                editable={!savingName}
+                inputAccessoryViewID={
+                  Platform.OS === 'ios' ? KEYBOARD_TOOLBAR_NATIVE_ID : undefined
+                }
+                onFocus={() => setFocusedInputIndex(1)}
+              />
+            </View>
+            <Text style={dynamicStyles.phoneFieldHint}>
+              Used only to coordinate pickup
+              {isIncompleteNaProfilePhone(phone)
+                ? ' · Enter all 10 digits after +1.'
+                : ''}
+            </Text>
             <TouchableOpacity
               style={[
                 dynamicStyles.primaryButton,
@@ -1215,12 +1211,34 @@ function createDynamicStyles(pal: Palette, isDarkMode: boolean) {
       backgroundColor: pal.inputBg,
       marginBottom: 12,
     },
-    dobFormatted: {
-      fontSize: 15,
-      fontWeight: '600',
-      color: pal.textSecondary,
-      marginTop: -8,
-      marginBottom: 12,
+    phoneFieldShell: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: pal.border,
+      borderRadius: theme.radius.input,
+      backgroundColor: pal.inputBg,
+      marginBottom: 8,
+      paddingHorizontal: 14,
+      minHeight: 52,
+    },
+    phoneFieldIcon: {
+      marginRight: 4,
+    },
+    phoneFieldInput: {
+      flex: 1,
+      paddingVertical: 14,
+      paddingLeft: 6,
+      fontSize: 16,
+      color: pal.text,
+      marginBottom: 0,
+    },
+    phoneFieldHint: {
+      fontSize: 12,
+      fontWeight: '500',
+      color: pal.textTertiary,
+      marginBottom: 14,
+      lineHeight: 17,
     },
     primaryButton: {
       backgroundColor: pal.primary,

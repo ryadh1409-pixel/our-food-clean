@@ -54,8 +54,9 @@ function AvatarFace({
     );
   }
 
-  const initial =
-    participant.name?.trim()?.charAt(0)?.toUpperCase() ?? '?';
+  const initial = participant.name?.trim()
+    ? participant.name.trim().charAt(0).toUpperCase()
+    : '?';
 
   return (
     <View style={styles.avatarWrap}>

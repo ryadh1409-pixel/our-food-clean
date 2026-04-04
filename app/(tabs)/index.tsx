@@ -4,6 +4,7 @@ import {
   PAYMENT_MATCH_ALERT_MESSAGE,
   PAYMENT_MATCH_ALERT_TITLE,
 } from '@/constants/paymentDisclaimer';
+import { safeAlertBody, USER_ERROR_JOIN } from '@/lib/userFacingErrors';
 import { theme } from '@/constants/theme';
 import { useAuth } from '@/services/AuthContext';
 import { getHiddenUserIds } from '@/services/block';
@@ -190,24 +191,25 @@ export default function SwipeScreen() {
     try {
       const result = await joinOrder(targetId, joinUid);
       if (!result.ok) {
-        if (!result.silent && result.message) {
-          Alert.alert('Could not join', result.message);
+        if (!result.silent) {
+          Alert.alert('Unable to join', safeAlertBody(result.message, USER_ERROR_JOIN));
         }
         return;
       }
-      console.log('[swipe] joinOrder result:', {
-        cardId: targetId,
-        orderId: result.orderId,
-        alreadyJoined: result.alreadyJoined,
-        isFull: result.isFull,
-      });
+      if (__DEV__) {
+        console.log('[swipe] joinOrder result:', {
+          cardId: targetId,
+          orderId: result.orderId,
+          alreadyJoined: result.alreadyJoined,
+          isFull: result.isFull,
+        });
+      }
       if (result.justBecamePair) {
         Alert.alert(PAYMENT_MATCH_ALERT_TITLE, PAYMENT_MATCH_ALERT_MESSAGE);
       }
       router.push(`/order/${result.orderId}` as never);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Could not join this card.';
-      Alert.alert('Could not join', msg);
+      Alert.alert('Unable to join', USER_ERROR_JOIN);
     } finally {
       setJoining(false);
     }

@@ -39,6 +39,11 @@ import {
 import { theme } from '@/constants/theme';
 import { buildOrderWhatsAppInviteLink } from '@/lib/invite-link';
 import { friendlyErrorMessage } from '@/lib/friendlyError';
+import { safeAlertBody, USER_ERROR_JOIN } from '@/lib/userFacingErrors';
+import {
+  openWhatsAppWithMessage,
+  WHATSAPP_MATCH_DEFAULT_MESSAGE,
+} from '@/lib/whatsapp';
 import { AIDescription } from '@/components/AIDescription';
 import { OrderCardView } from '@/components/OrderCardView';
 import { ScreenFadeIn } from '@/components/ScreenFadeIn';
@@ -79,17 +84,13 @@ import { claimReferralInboxRewards } from '@/services/referralRewards';
 const PLACEHOLDER_FOOD_IMAGE =
   'https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=1200&q=80';
 
-function openWhatsAppToUser(
-  phone: string | null | undefined,
-  displayName: string,
-): boolean {
-  const digits = (phone ?? '').replace(/\D/g, '');
-  if (!digits) return false;
-  const name = displayName.trim() || 'there';
-  const text = `Hey ${name} 🍕`;
-  const url = `https://wa.me/${digits}?text=${encodeURIComponent(text)}`;
-  void Linking.openURL(url).catch(() => {});
-  return true;
+async function withOneRetry<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch {
+    await new Promise<void>((r) => setTimeout(r, 450));
+    return await fn();
+  }
 }
 
 type OrderDetails = {
@@ -590,8 +591,11 @@ export default function OrderDetailsScreen() {
       if (detailSource === 'food_card') {
         const result = await joinFoodCardOrder(order.id, uid);
         if (!result.ok) {
-          if (!result.silent && result.message) {
-            Alert.alert('Join failed', result.message);
+          if (!result.silent) {
+            Alert.alert(
+              'Unable to join',
+              safeAlertBody(result.message, USER_ERROR_JOIN),
+            );
           }
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(
             () => {},
@@ -608,7 +612,7 @@ export default function OrderDetailsScreen() {
         return;
       }
       if (order.usesHalfUsers) {
-        const half = await joinHalfOrderByOrderId(order.id);
+        const half = await withOneRetry(() => joinHalfOrderByOrderId(order.id));
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(
           () => {},
         );
@@ -618,14 +622,16 @@ export default function OrderDetailsScreen() {
         router.push(`/order/${order.id}` as never);
         return;
       }
-      await joinFirestoreOrder(order.id);
+      await withOneRetry(() => joinFirestoreOrder(order.id));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(
         () => {},
       );
       router.push(`/order/${order.id}` as never);
     } catch (e) {
-      console.error('[order join]', e);
-      Alert.alert('Join failed', friendlyErrorMessage(e));
+      if (__DEV__) {
+        console.warn('[order join]', e);
+      }
+      Alert.alert('Unable to join', friendlyErrorMessage(e));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(
         () => {},
       );
@@ -662,19 +668,29 @@ export default function OrderDetailsScreen() {
   };
 
   const openWhatsApp = () => {
-    const displayName = otherUser?.name ?? 'there';
     const phone = otherUser?.phone;
-    const ok = openWhatsAppToUser(phone, displayName);
-    if (!ok) {
-      Alert.alert('No phone', 'This user has no phone number on file.');
-    }
+    void (async () => {
+      const ok = await openWhatsAppWithMessage(
+        phone,
+        WHATSAPP_MATCH_DEFAULT_MESSAGE,
+      );
+      if (!ok) {
+        Alert.alert(
+          'Unable to open WhatsApp',
+          'Add a WhatsApp number to your match’s profile, or use in-app chat.',
+        );
+      }
+    })();
   };
 
   const handleWhatsAppOrderInvite = () => {
     if (!order?.id) return;
     const url = buildOrderWhatsAppInviteLink(order.id);
     void Linking.openURL(url).catch(() => {
-      Alert.alert('Could not open WhatsApp');
+      Alert.alert(
+        'Unable to open WhatsApp',
+        'Something went wrong. Please try again.',
+      );
     });
   };
 
@@ -749,7 +765,7 @@ export default function OrderDetailsScreen() {
               await completeHalfOrder(order.id);
               Alert.alert('Done', 'Order marked complete.');
             } catch (e) {
-              Alert.alert('Error', friendlyErrorMessage(e));
+              Alert.alert('Something went wrong', friendlyErrorMessage(e));
             } finally {
               setCompleting(false);
             }
@@ -911,6 +927,10 @@ export default function OrderDetailsScreen() {
               </Text>
               <Text style={styles.paymentDisclaimerSafety}>
                 {PAYMENT_DISCLAIMER_SAFETY}
+              </Text>
+              <Text style={styles.facilitationNote}>
+                HalfOrder only facilitates matching. Users are responsible for
+                transactions.
               </Text>
             </View>
           </View>
@@ -1127,23 +1147,28 @@ export default function OrderDetailsScreen() {
           }
           activeOpacity={0.85}
         >
-          <Text style={styles.joinButtonText}>
-            {joining
-              ? 'Joining...'
-              : alreadyMember
-                ? 'Joined'
-                : isHalfCancelled
-                  ? 'Cancelled'
-                  : isBlocked
-                    ? 'Blocked'
-                    : detailSource === 'food_card' &&
-                        order.foodCardStatus != null &&
-                        order.foodCardStatus !== 'active'
-                      ? 'Not available'
-                      : remainingSpots <= 0
-                        ? 'Order Full'
-                        : 'Join Order'}
-          </Text>
+          <View style={styles.joinButtonInner}>
+            {joining ? (
+              <ActivityIndicator size="small" color="#020617" style={styles.joinSpinner} />
+            ) : null}
+            <Text style={styles.joinButtonText}>
+              {joining
+                ? 'Joining…'
+                : alreadyMember
+                  ? 'Joined'
+                  : isHalfCancelled
+                    ? 'Cancelled'
+                    : isBlocked
+                      ? 'Blocked'
+                      : detailSource === 'food_card' &&
+                          order.foodCardStatus != null &&
+                          order.foodCardStatus !== 'active'
+                        ? 'Not available'
+                        : remainingSpots <= 0
+                          ? 'Order Full'
+                          : 'Join Order'}
+            </Text>
+          </View>
         </TouchableOpacity>
       </ScrollView>
       </ScreenFadeIn>
@@ -1296,6 +1321,13 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     fontWeight: '500',
   },
+  facilitationNote: {
+    color: '#64748b',
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: '600',
+    marginTop: 4,
+  },
   foodCardInlineDisclaimer: {
     alignSelf: 'stretch',
     marginTop: 4,
@@ -1320,6 +1352,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   joinButtonDisabled: { opacity: 0.6 },
+  joinButtonInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  joinSpinner: { marginRight: 10 },
   joinButtonText: { color: '#052E1A', fontSize: 16, fontWeight: '800' },
   blockButton: {
     marginTop: 10,

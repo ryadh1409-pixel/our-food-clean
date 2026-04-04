@@ -83,6 +83,14 @@ export const JOIN_ORDER_USER_FACING_MESSAGES = new Set([
   'Order is full',
   'Host profile could not be loaded for this order.',
   'Order data out of sync. Try again shortly.',
+  'You must be signed in to join an order.',
+  'Order not found.',
+  'Invalid order.',
+  'Use the standard join flow for this order.',
+  'Order no longer exists.',
+  'Your account has been restricted. You cannot join orders.',
+  'Order is already full.',
+  'Order is not open',
 ]);
 
 export function isJoinOrderUserFacingError(error: unknown): boolean {

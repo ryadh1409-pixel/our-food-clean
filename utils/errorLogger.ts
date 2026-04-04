@@ -1,3 +1,4 @@
+import { friendlyErrorMessage } from '@/lib/friendlyError';
 import { Alert } from 'react-native';
 
 type LogErrorOptions = {
@@ -6,24 +7,16 @@ type LogErrorOptions = {
 };
 
 /**
- * Global error logger for HalfOrder. Logs the real error to console
- * and optionally shows a user-facing alert so crashes are not silent.
+ * Logs the error (dev details) and shows a safe user message only — never raw SDK text.
  */
 export function logError(error: unknown, options?: LogErrorOptions): void {
-  console.error('HalfOrder Error:', error);
+  if (__DEV__) {
+    console.error('HalfOrder Error:', error);
+  }
 
   const showAlert = options?.alert !== false;
 
   if (!showAlert) return;
 
-  const message =
-    error && typeof error === 'object' && 'message' in error
-      ? String((error as { message: string }).message)
-      : null;
-
-  if (message) {
-    Alert.alert('Error', message);
-  } else {
-    Alert.alert('Error', 'Unexpected error occurred');
-  }
+  Alert.alert('Something went wrong', friendlyErrorMessage(error));
 }

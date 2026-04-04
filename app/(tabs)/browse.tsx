@@ -6,6 +6,7 @@ import { theme } from '@/constants/theme';
 import { FoodCardGrid } from '@/components/FoodCardGrid';
 import { useAuth } from '@/services/AuthContext';
 import { FoodCardPaymentDisclaimer } from '@/components/FoodCardPaymentDisclaimer';
+import { safeAlertBody, USER_ERROR_JOIN } from '@/lib/userFacingErrors';
 import {
   formatFoodCardSharingPriceLine,
   isFoodCardJoinDisabled,
@@ -172,8 +173,8 @@ export default function BrowseScreen() {
     try {
       const result = await joinOrder(card.id, uid);
       if (!result.ok) {
-        if (!result.silent && result.message) {
-          Alert.alert('Could not join', result.message);
+        if (!result.silent) {
+          Alert.alert('Unable to join', safeAlertBody(result.message, USER_ERROR_JOIN));
         }
         return;
       }
@@ -182,8 +183,7 @@ export default function BrowseScreen() {
       }
       router.push(`/order/${result.orderId}` as never);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Could not join this card.';
-      Alert.alert('Could not join', msg);
+      Alert.alert('Unable to join', USER_ERROR_JOIN);
     } finally {
       setJoiningId(null);
     }

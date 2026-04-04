@@ -41,10 +41,10 @@ function parseLocation(d: Record<string, unknown>): { lat: number; lng: number }
 
 function resolveName(d: Record<string, unknown>): string {
   const n =
-    (typeof d.name === 'string' && d.name.trim() ? d.name.trim() : '') ||
     (typeof d.displayName === 'string' && d.displayName.trim()
       ? d.displayName.trim()
-      : '');
+      : '') ||
+    (typeof d.name === 'string' && d.name.trim() ? d.name.trim() : '');
   const email = typeof d.email === 'string' ? d.email.trim() : '';
   const local = email.includes('@') ? (email.split('@')[0]?.trim() ?? '') : '';
   return n || local || 'Someone';

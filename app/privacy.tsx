@@ -33,8 +33,23 @@ export default function PrivacyScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.title}>Privacy Policy – HalfOrder</Text>
-        <Text style={styles.meta}>Last updated: {LAST_UPDATED}</Text>
+        <Text style={styles.title}>Privacy Policy</Text>
+        <Text style={styles.meta}>HalfOrder · Last updated: {LAST_UPDATED}</Text>
+
+        <Text style={styles.sectionHeading}>Summary</Text>
+        <Text style={styles.bullet}>
+          • The app connects users to share food orders.
+        </Text>
+        <Text style={styles.bullet}>
+          • Payments for meals are handled outside the app between users.
+        </Text>
+        <Text style={styles.bullet}>
+          • WhatsApp or other tools you choose may be used to coordinate pickup.
+        </Text>
+        <Text style={styles.bullet}>
+          • We do not store unrelated sensitive data beyond what is needed to run matching,
+          chat, and safety features described below.
+        </Text>
 
         <Text style={styles.paragraph}>
           HalfOrder is a food sharing application that helps users split meals and costs with

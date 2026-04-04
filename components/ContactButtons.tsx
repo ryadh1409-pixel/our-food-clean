@@ -1,3 +1,4 @@
+import { WHATSAPP_MATCH_DEFAULT_MESSAGE } from '@/lib/whatsapp';
 import * as Linking from 'expo-linking';
 import { theme } from '@/constants/theme';
 import {
@@ -23,7 +24,7 @@ export default function ContactButtons({
     if (!whatsappNumber) return;
     const num = whatsappNumber.replace(/\D/g, '');
     if (!num) return;
-    const url = `https://wa.me/${num}`;
+    const url = `https://wa.me/${num}?text=${encodeURIComponent(WHATSAPP_MATCH_DEFAULT_MESSAGE)}`;
     if (Platform.OS === 'web') {
       (window as unknown as { open: (u: string) => void }).open(url, '_blank');
     } else {
