@@ -882,15 +882,10 @@ export default function OrderDetailsScreen() {
             <Text style={styles.timerValue}>{countdownLabel}</Text>
           </View>
         </View>
-        {detailSource === 'food_card' || order.usesHalfUsers ? (
-          <FoodCardPaymentDisclaimer
-            style={
-              detailSource === 'food_card'
-                ? styles.foodCardInlineDisclaimer
-                : styles.orderDetailCoordinationNote
-            }
-          />
-        ) : null}
+        <FoodCardPaymentDisclaimer
+          variant="detail"
+          style={styles.orderDetailCoordinationNote}
+        />
         {detailSource === 'order' && order.usesHalfUsers && alreadyMember ? (
           <View style={styles.sectionDivider} />
         ) : null}
@@ -1264,11 +1259,6 @@ const styles = StyleSheet.create({
   },
   timerLabel: { color: '#FB923C', fontSize: 14, fontWeight: '700' },
   timerValue: { color: '#FB923C', fontSize: 24, fontWeight: '900' },
-  foodCardInlineDisclaimer: {
-    alignSelf: 'stretch',
-    marginTop: 4,
-    paddingHorizontal: 2,
-  },
   orderDetailCoordinationNote: {
     alignSelf: 'stretch',
     marginTop: 14,
