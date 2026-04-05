@@ -1,26 +1,9 @@
-<!--
-  HalfOrder — minimal split-receipt app icon (vector source).
-  Green #4CAF50 | Orange #FF7A00 | BG #F5F5F5
-  npm run generate:app-icon
--->
+<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <rect width="1024" height="1024" fill="#F5F5F5"/>
-  <!-- Left receipt (green) -->
-  <path
-    fill="#4CAF50"
-    d="M 334 336
-       L 352 286 L 372 336 L 392 286 L 412 336 L 432 286 L 452 336 L 472 286 L 490 336
-       L 490 688
-       L 472 738 L 452 688 L 432 738 L 412 688 L 392 738 L 372 688 L 352 738 L 334 688
-       Z"
-  />
-  <!-- Right receipt (orange), 44px gap -->
-  <path
-    fill="#FF7A00"
-    d="M 534 336
-       L 552 286 L 572 336 L 592 286 L 612 336 L 632 286 L 652 336 L 672 286 L 690 336
-       L 690 688
-       L 672 738 L 652 688 L 632 738 L 612 688 L 592 738 L 572 688 L 552 738 L 534 688
-       Z"
-  />
+  <title>HalfOrder app icon</title>
+  <rect width="1024" height="1024" fill="#4A90E2"/>
+  <g fill="#FFFFFF">
+    <circle cx="418" cy="512" r="246"/>
+    <circle cx="606" cy="512" r="246"/>
+  </g>
 </svg>

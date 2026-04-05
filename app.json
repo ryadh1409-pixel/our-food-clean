@@ -4,7 +4,7 @@
     "slug": "ourfood-clean",
     "version": "1.0.1",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/icon.png",
     "scheme": "halforder",
     "splash": {
       "image": "./assets/images/logo.png",
@@ -14,7 +14,7 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "icon": "./assets/images/icon.png",
+      "icon": "./assets/icon.png",
       "supportsTablet": true,
       "bundleIdentifier": "com.halforder.app",
       "buildNumber": "2",
@@ -101,7 +101,7 @@
         }
       ],
       "adaptiveIcon": {
-        "backgroundColor": "#F5F5F5",
+        "backgroundColor": "#4A90E2",
         "foregroundImage": "./assets/images/app-icon-foreground.png"
       },
       "edgeToEdgeEnabled": true,

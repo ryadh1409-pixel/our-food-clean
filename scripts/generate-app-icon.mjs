@@ -1,5 +1,6 @@
 /**
- * Rasterizes the vector app icon for Expo + optional iOS size exports.
+ * HalfOrder app icon: flat blue field, white food + sharing mark.
+ * Outputs Expo master + iOS size set + Android adaptive foreground.
  * Usage: npm run generate:app-icon
  */
 import fs from 'node:fs/promises';
@@ -10,49 +11,69 @@ import sharp from 'sharp';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
-const assets = join(root, 'assets', 'images');
-const iosOut = join(root, 'assets', 'icons', 'ios');
+const assetsRoot = join(root, 'assets');
+const assetsImages = join(assetsRoot, 'images');
+const iosOut = join(assetsRoot, 'icons', 'ios');
 
-const PATHS = `
-  <path fill="#4CAF50" d="M 334 336 L 352 286 L 372 336 L 392 286 L 412 336 L 432 286 L 452 336 L 472 286 L 490 336 L 490 688 L 472 738 L 452 688 L 432 738 L 412 688 L 392 738 L 372 688 L 352 738 L 334 688 Z"/>
-  <path fill="#FF7A00" d="M 534 336 L 552 286 L 572 336 L 592 286 L 612 336 L 632 286 L 652 336 L 672 286 L 690 336 L 690 688 L 672 738 L 652 688 L 632 738 L 612 688 L 592 738 L 572 688 L 552 738 L 534 688 Z"/>
+const BG = '#4A90E2';
+
+/**
+ * Centered white glyph: two overlapping disks (sharing / splitting one order).
+ * Kept inside ~78% of canvas for iOS squircle safe area.
+ */
+const WHITE_MARK = `
+  <g fill="#FFFFFF">
+    <circle cx="418" cy="512" r="246"/>
+    <circle cx="606" cy="512" r="246"/>
+  </g>
 `;
 
 function svgFull() {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <rect width="1024" height="1024" fill="#F5F5F5"/>
-  ${PATHS}
+  <rect width="1024" height="1024" fill="${BG}"/>
+  ${WHITE_MARK}
 </svg>`;
 }
 
-/** Android adaptive foreground: transparent, symbol scaled for ~66% safe circle. */
+/** Android adaptive foreground: transparent, symbol only, scaled for ~66% safe circle. */
 function svgForeground() {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <rect width="1024" height="1024" fill="none"/>
   <g transform="translate(512 512) scale(0.82) translate(-512 -512)">
-    ${PATHS}
+    ${WHITE_MARK}
   </g>
 </svg>`;
 }
 
-async function pngFromSvg(svgString, size, file) {
-  await sharp(Buffer.from(svgString))
-    .resize(size, size)
-    .png()
-    .toFile(file);
+/** @param {{ flattenHex?: string }} [opts] — flatten removes alpha (required for App Store 1024 master). */
+async function pngFromSvg(svgString, size, file, opts = {}) {
+  await fs.mkdir(dirname(file), { recursive: true });
+  let pipeline = sharp(Buffer.from(svgString)).resize(size, size);
+  if (opts.flattenHex) {
+    pipeline = pipeline.flatten({ background: opts.flattenHex });
+  }
+  await pipeline.png({ compressionLevel: 9 }).toFile(file);
 }
 
 async function main() {
   const full = svgFull();
   const fg = svgForeground();
 
-  await pngFromSvg(full, 1024, join(assets, 'icon.png'));
-  console.log('Wrote assets/images/icon.png (1024)');
+  const master1024 = join(assetsRoot, 'icon.png');
+  await pngFromSvg(full, 1024, master1024, { flattenHex: BG });
+  console.log('Wrote assets/icon.png (1024 × 1024, opaque)');
+
+  /** Mirror under images/ for any legacy paths or docs. */
+  await pngFromSvg(full, 1024, join(assetsImages, 'icon.png'), {
+    flattenHex: BG,
+  });
+  console.log('Wrote assets/images/icon.png (1024 × 1024, opaque)');
 
   await fs.mkdir(iosOut, { recursive: true });
 
-  /** Standard iPhone / iPad / marketing exports from same master art. */
+  /** Common Xcode / marketing exports from same art. */
   const iosSizes = [
     ['Icon-20@2x.png', 40],
     ['Icon-20@3x.png', 60],
@@ -66,12 +87,12 @@ async function main() {
   ];
 
   for (const [name, px] of iosSizes) {
-    await pngFromSvg(full, px, join(iosOut, name));
+    await pngFromSvg(full, px, join(iosOut, name), { flattenHex: BG });
   }
   console.log(`Wrote ${iosSizes.length} files to assets/icons/ios/`);
 
-  await pngFromSvg(fg, 1024, join(assets, 'app-icon-foreground.png'));
-  console.log('Wrote assets/images/app-icon-foreground.png (adaptive / Play)');
+  await pngFromSvg(fg, 1024, join(assetsImages, 'app-icon-foreground.png'));
+  console.log('Wrote assets/images/app-icon-foreground.png (Android adaptive foreground)');
 }
 
 main().catch((e) => {
