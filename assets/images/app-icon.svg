@@ -1,9 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <title>HalfOrder app icon</title>
+  <title>HalfOrder — hands sharing food</title>
   <rect width="1024" height="1024" fill="#4A90E2"/>
-  <g fill="#FFFFFF">
-    <circle cx="418" cy="512" r="246"/>
-    <circle cx="606" cy="512" r="246"/>
+  <path fill="#FFBD59" d="M 512 322 Q 388 508 512 572 Q 636 508 512 322 Z"/>
+  <path fill="#FFFFFF" d=" M 268 588 C 242 520 256 432 322 392 C 382 358 448 392 468 452 C 476 488 462 528 432 552 C 412 566 396 578 388 608 C 376 652 334 676 292 662 C 252 648 248 616 268 588 Z"/>
+  <rect x="332" y="412" width="112" height="38" rx="19" transform="rotate(16 388 431)" fill="#FFFFFF"/>
+  <rect x="348" y="458" width="120" height="38" rx="19" transform="rotate(6 408 477)" fill="#FFFFFF"/>
+  <rect x="360" y="504" width="126" height="38" rx="19" transform="rotate(-4 423 523)" fill="#FFFFFF"/>
+  <g transform="translate(1024 0) scale(-1 1)">
+    <path fill="#FFFFFF" d=" M 268 588 C 242 520 256 432 322 392 C 382 358 448 392 468 452 C 476 488 462 528 432 552 C 412 566 396 578 388 608 C 376 652 334 676 292 662 C 252 648 248 616 268 588 Z"/>
+    <rect x="332" y="412" width="112" height="38" rx="19" transform="rotate(16 388 431)" fill="#FFFFFF"/>
+    <rect x="348" y="458" width="120" height="38" rx="19" transform="rotate(6 408 477)" fill="#FFFFFF"/>
+    <rect x="360" y="504" width="126" height="38" rx="19" transform="rotate(-4 423 523)" fill="#FFFFFF"/>
   </g>
 </svg>

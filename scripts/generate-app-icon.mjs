@@ -1,6 +1,5 @@
 /**
- * HalfOrder app icon: flat blue field, white food + sharing mark.
- * Outputs Expo master + iOS size set + Android adaptive foreground.
+ * HalfOrder app icon — minimal two hands sharing food (flat, App Store safe).
  * Usage: npm run generate:app-icon
  */
 import fs from 'node:fs/promises';
@@ -16,15 +15,44 @@ const assetsImages = join(assetsRoot, 'images');
 const iosOut = join(assetsRoot, 'icons', 'ios');
 
 const BG = '#4A90E2';
+const HAND = '#FFFFFF';
+const FOOD = '#FFBD59';
 
 /**
- * Centered white glyph: two overlapping disks (sharing / splitting one order).
- * Kept inside ~78% of canvas for iOS squircle safe area.
+ * ~155px margin — art stays inside squircle safe zone on 1024 canvas.
  */
-const WHITE_MARK = `
-  <g fill="#FFFFFF">
-    <circle cx="418" cy="512" r="246"/>
-    <circle cx="606" cy="512" r="246"/>
+const GLYPH = `
+  <!-- Food: soft triangular “half share” (reads as pizza / offering) -->
+  <path fill="${FOOD}" d="M 512 322 Q 388 508 512 572 Q 636 508 512 322 Z"/>
+
+  <!-- Left hand: one cupped palm + three finger bars -->
+  <path fill="${HAND}" d="
+    M 268 588
+    C 242 520 256 432 322 392
+    C 382 358 448 392 468 452
+    C 476 488 462 528 432 552
+    C 412 566 396 578 388 608
+    C 376 652 334 676 292 662
+    C 252 648 248 616 268 588
+    Z"/>
+  <rect x="332" y="412" width="112" height="38" rx="19" transform="rotate(16 388 431)" fill="${HAND}"/>
+  <rect x="348" y="458" width="120" height="38" rx="19" transform="rotate(6 408 477)" fill="${HAND}"/>
+  <rect x="360" y="504" width="126" height="38" rx="19" transform="rotate(-4 423 523)" fill="${HAND}"/>
+
+  <!-- Right hand: mirrored -->
+  <g transform="translate(1024 0) scale(-1 1)">
+    <path fill="${HAND}" d="
+      M 268 588
+      C 242 520 256 432 322 392
+      C 382 358 448 392 468 452
+      C 476 488 462 528 432 552
+      C 412 566 396 578 388 608
+      C 376 652 334 676 292 662
+      C 252 648 248 616 268 588
+      Z"/>
+    <rect x="332" y="412" width="112" height="38" rx="19" transform="rotate(16 388 431)" fill="${HAND}"/>
+    <rect x="348" y="458" width="120" height="38" rx="19" transform="rotate(6 408 477)" fill="${HAND}"/>
+    <rect x="360" y="504" width="126" height="38" rx="19" transform="rotate(-4 423 523)" fill="${HAND}"/>
   </g>
 `;
 
@@ -32,22 +60,20 @@ function svgFull() {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
   <rect width="1024" height="1024" fill="${BG}"/>
-  ${WHITE_MARK}
+  ${GLYPH}
 </svg>`;
 }
 
-/** Android adaptive foreground: transparent, symbol only, scaled for ~66% safe circle. */
 function svgForeground() {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
   <rect width="1024" height="1024" fill="none"/>
   <g transform="translate(512 512) scale(0.82) translate(-512 -512)">
-    ${WHITE_MARK}
+    ${GLYPH}
   </g>
 </svg>`;
 }
 
-/** @param {{ flattenHex?: string }} [opts] — flatten removes alpha (required for App Store 1024 master). */
 async function pngFromSvg(svgString, size, file, opts = {}) {
   await fs.mkdir(dirname(file), { recursive: true });
   let pipeline = sharp(Buffer.from(svgString)).resize(size, size);
@@ -61,19 +87,27 @@ async function main() {
   const full = svgFull();
   const fg = svgForeground();
 
-  const master1024 = join(assetsRoot, 'icon.png');
-  await pngFromSvg(full, 1024, master1024, { flattenHex: BG });
+  await pngFromSvg(full, 1024, join(assetsRoot, 'icon.png'), { flattenHex: BG });
   console.log('Wrote assets/icon.png (1024 × 1024, opaque)');
 
-  /** Mirror under images/ for any legacy paths or docs. */
   await pngFromSvg(full, 1024, join(assetsImages, 'icon.png'), {
     flattenHex: BG,
   });
   console.log('Wrote assets/images/icon.png (1024 × 1024, opaque)');
 
+  /** In-app + splash (`AppLogo`, expo-splash-screen) — same art as store icon. */
+  await pngFromSvg(full, 1024, join(assetsImages, 'logo.png'), {
+    flattenHex: BG,
+  });
+  console.log('Wrote assets/images/logo.png (splash / header)');
+
+  await pngFromSvg(full, 48, join(assetsImages, 'favicon.png'), {
+    flattenHex: BG,
+  });
+  console.log('Wrote assets/images/favicon.png (web)');
+
   await fs.mkdir(iosOut, { recursive: true });
 
-  /** Common Xcode / marketing exports from same art. */
   const iosSizes = [
     ['Icon-20@2x.png', 40],
     ['Icon-20@3x.png', 60],
@@ -92,7 +126,7 @@ async function main() {
   console.log(`Wrote ${iosSizes.length} files to assets/icons/ios/`);
 
   await pngFromSvg(fg, 1024, join(assetsImages, 'app-icon-foreground.png'));
-  console.log('Wrote assets/images/app-icon-foreground.png (Android adaptive foreground)');
+  console.log('Wrote assets/images/app-icon-foreground.png');
 }
 
 main().catch((e) => {
