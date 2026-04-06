@@ -7,7 +7,7 @@ export function profilePhoneDigitsOnly(s: string): string {
   return s.replace(/\D/g, '');
 }
 
-/** Value written to Firestore `users.phone` (no spaces). */
+/** Digits-only form from the profile field (validation / diffing). */
 export function profilePhoneForFirestore(display: string): string {
   return profilePhoneDigitsOnly(display);
 }

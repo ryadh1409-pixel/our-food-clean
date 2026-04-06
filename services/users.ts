@@ -52,6 +52,7 @@ function resolveName(d: Record<string, unknown>): string {
 
 function resolveAvatar(d: Record<string, unknown>): string | null {
   const a =
+    (typeof d.photo === 'string' && d.photo.trim() ? d.photo.trim() : '') ||
     (typeof d.avatar === 'string' && d.avatar.trim() ? d.avatar.trim() : '') ||
     (typeof d.photoURL === 'string' && d.photoURL.trim() ? d.photoURL.trim() : '');
   if (/^https?:\/\//i.test(a) && a.length < 2000) return a;

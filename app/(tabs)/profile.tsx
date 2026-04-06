@@ -6,6 +6,7 @@ import { LEGAL_URLS } from '@/constants/legalLinks';
 import { theme } from '@/constants/theme';
 import {
   displayFromStoredProfilePhone,
+  formatProfileWhatsAppDisplay,
   isCompleteNaProfilePhone,
   isIncompleteNaProfilePhone,
   isProfilePhoneStorageEmpty,
@@ -109,6 +110,10 @@ function resolvePhotoURL(
   data: DocumentData | undefined,
   authUser: User | null,
 ): string | null {
+  const docPhotoKey = data?.photo;
+  if (typeof docPhotoKey === 'string' && docPhotoKey.trim().length > 0) {
+    return docPhotoKey.trim();
+  }
   const docPhoto = data?.photoURL;
   if (typeof docPhoto === 'string' && docPhoto.trim().length > 0) {
     return docPhoto.trim();
@@ -345,13 +350,16 @@ export default function ProfileScreen() {
       }
     }
 
-    const trimmedPhone = phoneChanged
+    const trimmedPhoneDigits = phoneChanged
       ? phoneTreatEmpty
         ? ''
         : phoneDigits
       : isProfilePhoneStorageEmpty(initialDigits)
         ? ''
         : initialDigits;
+    const phoneForFirestore = trimmedPhoneDigits
+      ? formatProfileWhatsAppDisplay(trimmedPhoneDigits)
+      : '';
     const currentUser = auth.currentUser;
     if (!currentUser) {
       const msg = 'Not signed in. Please sign in again.';
@@ -386,15 +394,15 @@ export default function ProfileScreen() {
           displayName: mod.text,
           name: mod.text,
           avatar: currentUser.photoURL ?? null,
-          phone: trimmedPhone,
-          whatsapp: trimmedPhone,
+          phone: phoneForFirestore,
+          whatsapp: phoneForFirestore,
           dateOfBirth: deleteField(),
         },
         { merge: true },
       );
       setDisplayNameInput(mod.text);
       setInitialDisplayName(mod.text);
-      const nextDisp = displayFromStoredProfilePhone(trimmedPhone);
+      const nextDisp = displayFromStoredProfilePhone(phoneForFirestore);
       setPhone(nextDisp);
       setInitialPhone(nextDisp);
       setNameSaved(true);
@@ -452,7 +460,7 @@ export default function ProfileScreen() {
       const userRef = doc(db, 'users', uid);
       await setDoc(
         userRef,
-        { photoURL: downloadURL, avatar: downloadURL },
+        { photoURL: downloadURL, avatar: downloadURL, photo: downloadURL },
         { merge: true },
       );
 

@@ -16,6 +16,7 @@ import {
   collection,
   doc,
   getDoc,
+  getDocFromServer,
   onSnapshot,
   setDoc,
   serverTimestamp,
@@ -41,6 +42,10 @@ import React, {
 import { ActivityIndicator, Platform, View } from 'react-native';
 import { theme } from '@/constants/theme';
 import { auth, db } from '@/services/firebase';
+import {
+  formatProfileWhatsAppDisplay,
+  profilePhoneDigitsOnly,
+} from '@/lib/profileWhatsAppPhone';
 import { syncUserRoleToFirestore } from '@/utils/admin';
 import { uploadUserProfileImage } from '@/services/profilePhoto';
 import { claimReferralInboxRewards } from '@/services/referralRewards';
@@ -99,14 +104,18 @@ async function ensureUserDocument(
       phoneNumber &&
       phoneNumber.trim().length > 0
     ) {
-      updates.phone = phoneNumber.trim();
+      updates.phone = formatProfileWhatsAppDisplay(
+        profilePhoneDigitsOnly(phoneNumber),
+      );
     }
     if (
       typeof data?.whatsapp !== 'string' &&
       phoneNumber &&
       phoneNumber.trim().length > 0
     ) {
-      updates.whatsapp = phoneNumber.trim();
+      updates.whatsapp = formatProfileWhatsAppDisplay(
+        profilePhoneDigitsOnly(phoneNumber),
+      );
     }
     if (
       (data?.photoURL == null || data?.photoURL === '') &&
@@ -116,6 +125,19 @@ async function ensureUserDocument(
       const p = photoURL.trim();
       updates.photoURL = p;
       updates.avatar = p;
+      updates.photo = p;
+    } else if (
+      (typeof data?.photo !== 'string' || !String(data.photo).trim()) &&
+      typeof data?.photoURL === 'string' &&
+      data.photoURL.trim().length > 0
+    ) {
+      updates.photo = data.photoURL.trim();
+    } else if (
+      (typeof data?.photo !== 'string' || !String(data.photo).trim()) &&
+      typeof data?.avatar === 'string' &&
+      data.avatar.trim().length > 0
+    ) {
+      updates.photo = data.avatar.trim();
     }
     if (data?.uid === undefined) updates.uid = uid;
     if (data?.activeOrderId === undefined) updates.activeOrderId = null;
@@ -157,7 +179,10 @@ async function ensureUserDocument(
     // ignore
   }
 
-  const phoneLine = phoneNumber?.trim() ?? '';
+  const phoneLine =
+    phoneNumber && phoneNumber.trim().length > 0
+      ? formatProfileWhatsAppDisplay(profilePhoneDigitsOnly(phoneNumber))
+      : '';
   const initialPhoto = photoURL?.trim() || null;
   await setDoc(userRef, {
     uid,
@@ -169,6 +194,7 @@ async function ensureUserDocument(
     phoneNumber: phoneNumber ?? null,
     photoURL: initialPhoto,
     avatar: initialPhoto,
+    photo: initialPhoto ?? '',
     createdAt: serverTimestamp(),
     activeOrderId: null,
     credits: referredBy ? REFERRAL_CREDIT : 0,
@@ -345,10 +371,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signUpWithEmail = useCallback(async (payload: EmailSignUpPayload) => {
     const trimmed = typeof payload.email === 'string' ? payload.email.trim() : '';
     const nameTrim = payload.fullName.trim();
-    const waTrim = payload.whatsapp.trim();
+    const waDigits = profilePhoneDigitsOnly(payload.whatsapp);
+    const phoneFormatted = formatProfileWhatsAppDisplay(waDigits);
     const pwd = payload.password;
 
-    if (!trimmed || !pwd || !nameTrim || !waTrim) {
+    if (!trimmed || !pwd || !nameTrim || !waDigits) {
       throw new Error('Please fill in all required fields.');
     }
     if (!payload.whatsappConsent) {
@@ -402,10 +429,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           name: nameTrim,
           displayName: nameTrim,
           email: trimmed,
-          whatsapp: waTrim,
-          phone: waTrim,
+          whatsapp: phoneFormatted,
+          phone: phoneFormatted,
+          photo: photoURL?.trim() ?? '',
           photoURL: photoURL ?? null,
           avatar: photoURL ?? null,
+          role: 'user',
           rating: 5,
           reviewsCount: 0,
           averageRating: 5,
@@ -424,7 +453,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      await ensureUserDocument(uid, nameTrim, trimmed, waTrim, photoURL);
+      await ensureUserDocument(uid, nameTrim, trimmed, phoneFormatted, photoURL);
     } catch (e) {
       if (__DEV__) {
         console.warn('ensureUserDocument failed (non-fatal):', e);
@@ -461,6 +490,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           cred.user.phoneNumber ?? null,
           cred.user.photoURL ?? null,
         );
+        try {
+          await getDocFromServer(doc(db, 'users', cred.user.uid));
+        } catch {
+          /* offline or missing doc */
+        }
         void syncUserRoleToFirestore(cred.user);
       } catch (e) {
         logError(e);
