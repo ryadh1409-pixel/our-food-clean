@@ -1,6 +1,5 @@
 import { useAuth } from '@/services/AuthContext';
 import { db } from '@/services/firebase';
-import { friendlyErrorMessage } from '@/lib/friendlyError';
 import {
   deriveLifecycleForViewer,
   formatOrderCountdown,
@@ -23,7 +22,6 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Platform,
   Pressable,
   ScrollView,
@@ -34,6 +32,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { FoodCardPaymentDisclaimer } from '@/components/FoodCardPaymentDisclaimer';
+import { systemConfirm } from '@/components/SystemDialogHost';
+import { getUserFriendlyError } from '@/utils/errorHandler';
+import { showError } from '@/utils/toast';
 
 const TAB_SPINNER = '#34D399';
 
@@ -242,53 +243,51 @@ export default function OrdersScreen() {
     if (raw === 'cancelled' || raw === 'completed' || raw === 'expired') return;
 
     if (isHost) {
-      Alert.alert(
-        'Cancel order',
-        'Cancel this order for everyone?',
-        [
-          { text: 'No', style: 'cancel' },
-          {
-            text: 'Cancel order',
-            style: 'destructive',
-            onPress: async () => {
-              setCancellingId(item.id);
-              try {
-                if (item.usesHalf) {
-                  await cancelHalfOrder(item.id);
-                } else {
-                  await updateDoc(doc(db, 'orders', item.id), {
-                    status: 'cancelled',
-                  });
-                }
-              } catch (e) {
-                Alert.alert('Error', friendlyErrorMessage(e));
-              } finally {
-                setCancellingId(null);
-              }
-            },
-          },
-        ],
-      );
+      void (async () => {
+        const ok = await systemConfirm({
+          title: 'Cancel order',
+          message: 'Cancel this order for everyone?',
+          confirmLabel: 'Cancel order',
+          cancelLabel: 'No',
+          destructive: true,
+        });
+        if (!ok) return;
+        setCancellingId(item.id);
+        try {
+          if (item.usesHalf) {
+            await cancelHalfOrder(item.id);
+          } else {
+            await updateDoc(doc(db, 'orders', item.id), {
+              status: 'cancelled',
+            });
+          }
+        } catch (e) {
+          showError(getUserFriendlyError(e));
+        } finally {
+          setCancellingId(null);
+        }
+      })();
       return;
     }
 
-    Alert.alert('Leave order', 'Remove yourself from this order?', [
-      { text: 'No', style: 'cancel' },
-      {
-        text: 'Leave',
-        style: 'destructive',
-        onPress: async () => {
-          setCancellingId(item.id);
-          try {
-            await leaveOrderParticipant(db, item.id, uid);
-          } catch (e) {
-            Alert.alert('Error', friendlyErrorMessage(e));
-          } finally {
-            setCancellingId(null);
-          }
-        },
-      },
-    ]);
+    void (async () => {
+      const ok = await systemConfirm({
+        title: 'Leave order',
+        message: 'Remove yourself from this order?',
+        confirmLabel: 'Leave',
+        cancelLabel: 'No',
+        destructive: true,
+      });
+      if (!ok) return;
+      setCancellingId(item.id);
+      try {
+        await leaveOrderParticipant(db, item.id, uid);
+      } catch (e) {
+        showError(getUserFriendlyError(e));
+      } finally {
+        setCancellingId(null);
+      }
+    })();
   };
 
   const renderOrderCard = (item: OrderItem, disabled = false) => {

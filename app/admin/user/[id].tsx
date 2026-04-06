@@ -24,7 +24,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -32,6 +31,10 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { systemConfirm } from '@/components/SystemDialogHost';
+import { getUserFriendlyError } from '@/utils/errorHandler';
+import { showError, showSuccess } from '@/utils/toast';
 
 type OrderRow = {
   id: string;
@@ -177,63 +180,56 @@ export default function AdminUserDetailScreen() {
 
   const toggleBan = () => {
     if (!userId) return;
-    Alert.alert(
-      banned ? 'Unban user' : 'Ban user',
-      banned
-        ? 'Restore access for this account?'
-        : 'They will not be able to create or join orders.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: banned ? 'Unban' : 'Ban',
-          style: banned ? 'default' : 'destructive',
-          onPress: async () => {
-            setActing(true);
-            try {
-              const nextBanned = !banned;
-              adminLog('user-detail', 'updateDoc users.banned', {
-                userId,
-                banned: nextBanned,
-              });
-              await updateDoc(doc(db, 'users', userId), {
-                banned: nextBanned ? true : false,
-              });
-            } catch (e) {
-              Alert.alert('Error', e instanceof Error ? e.message : 'Failed');
-            } finally {
-              setActing(false);
-            }
-          },
-        },
-      ],
-    );
+    void (async () => {
+      const ok = await systemConfirm({
+        title: banned ? 'Unban user' : 'Ban user',
+        message: banned
+          ? 'Restore access for this account?'
+          : 'They will not be able to create or join orders.',
+        confirmLabel: banned ? 'Unban' : 'Ban',
+        destructive: !banned,
+      });
+      if (!ok) return;
+      setActing(true);
+      try {
+        const nextBanned = !banned;
+        adminLog('user-detail', 'updateDoc users.banned', {
+          userId,
+          banned: nextBanned,
+        });
+        await updateDoc(doc(db, 'users', userId), {
+          banned: nextBanned ? true : false,
+        });
+      } catch (e) {
+        showError(getUserFriendlyError(e));
+      } finally {
+        setActing(false);
+      }
+    })();
   };
 
   const deleteUser = () => {
     if (!userId) return;
-    Alert.alert(
-      'Delete user document',
-      'Permanently delete this Firestore user profile? Auth account is not deleted.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            setActing(true);
-            try {
-              await deleteDoc(doc(db, 'users', userId));
-              Alert.alert('Deleted', 'User document removed.');
-              router.replace(adminRoutes.users as never);
-            } catch (e) {
-              Alert.alert('Error', e instanceof Error ? e.message : 'Failed');
-            } finally {
-              setActing(false);
-            }
-          },
-        },
-      ],
-    );
+    void (async () => {
+      const ok = await systemConfirm({
+        title: 'Delete user document',
+        message:
+          'Permanently delete this Firestore user profile? Auth account is not deleted.',
+        confirmLabel: 'Delete',
+        destructive: true,
+      });
+      if (!ok) return;
+      setActing(true);
+      try {
+        await deleteDoc(doc(db, 'users', userId));
+        showSuccess('User document removed.');
+        router.replace(adminRoutes.users as never);
+      } catch (e) {
+        showError(getUserFriendlyError(e));
+      } finally {
+        setActing(false);
+      }
+    })();
   };
 
   if (!userId) {

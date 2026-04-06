@@ -13,7 +13,6 @@ import {
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -24,6 +23,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { isAdminUser } from '@/constants/adminUid';
 import { adminCardShell, adminColors as COLORS } from '@/constants/adminTheme';
+import { showError } from '@/utils/toast';
 
 function getToken(data: {
   expoPushToken?: unknown;
@@ -62,7 +62,7 @@ export default function AdminNotificationsScreen() {
     const t = (title || 'HalfOrder').trim();
     const b = (message || '').trim();
     if (!b) {
-      Alert.alert('Error', 'Enter a message.');
+      showError('Enter a message.');
       return;
     }
     setSendingAll(true);
@@ -107,13 +107,13 @@ export default function AdminNotificationsScreen() {
   const sendToOne = async () => {
     const email = userEmail.trim().toLowerCase();
     if (!email) {
-      Alert.alert('Error', 'Enter user email.');
+      showError('Enter user email.');
       return;
     }
     const t = (title || 'HalfOrder').trim();
     const b = (message || '').trim();
     if (!b) {
-      Alert.alert('Error', 'Enter a message.');
+      showError('Enter a message.');
       return;
     }
     setSendingOne(true);
@@ -159,7 +159,7 @@ export default function AdminNotificationsScreen() {
     const t = (title || 'HalfOrder').trim();
     const b = (message || '').trim();
     if (!b) {
-      Alert.alert('Error', 'Enter a message.');
+      showError('Enter a message.');
       return;
     }
     setSendingActive(true);

@@ -2,7 +2,6 @@ import { getOrderLink, getShareMessage } from '@/utils/generateLink';
 import * as Linking from 'expo-linking';
 import React from 'react';
 import {
-  Alert,
   Platform,
   Share,
   StyleSheet,
@@ -11,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { theme } from '@/constants/theme';
+import { showError, showNotice, showSuccess } from '@/utils/toast';
 
 const c = theme.colors;
 
@@ -40,7 +40,7 @@ export default function ShareOrderButton({
         url: Platform.OS === 'ios' ? orderLink : undefined,
       });
     } catch {
-      Alert.alert('Share', 'Sharing is not available.');
+      showError('Sharing is not available.');
     }
   };
 
@@ -50,7 +50,7 @@ export default function ShareOrderButton({
       (window as unknown as { open: (u: string) => void }).open(url, '_blank');
     } else {
       Linking.openURL(url).catch(() =>
-        Alert.alert('Error', 'Could not open WhatsApp.'),
+        showError('Could not open WhatsApp.'),
       );
     }
   };
@@ -62,7 +62,7 @@ export default function ShareOrderButton({
     } else {
       Share.share({ message, title: 'Split this order' }).catch(() => {
         Linking.openURL(`sms:?body=${encodeURIComponent(message)}`).catch(() =>
-          Alert.alert('Error', 'Could not open Messages.'),
+          showError('Could not open Messages.'),
         );
       });
     }
@@ -70,7 +70,7 @@ export default function ShareOrderButton({
 
   const handleInstagram = () => {
     Share.share({ message, title: 'Split this order' }).catch(() =>
-      Alert.alert('Tip', 'Copy the link and paste it in Instagram.'),
+      showNotice('Tip', 'Copy the link and paste it in Instagram.'),
     );
   };
 
@@ -82,12 +82,12 @@ export default function ShareOrderButton({
     ) {
       navigator.clipboard
         .writeText(orderLink)
-        .then(() => Alert.alert('Copied', 'Link copied to clipboard.'));
+        .then(() => showSuccess('Link copied to clipboard.'));
       return;
     }
     Share.share({ message: orderLink, title: 'Order link' })
       .then(() => {})
-      .catch(() => Alert.alert('Link', orderLink));
+      .catch(() => showNotice('Link', orderLink));
   };
 
   if (variant === 'single') {

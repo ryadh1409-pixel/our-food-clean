@@ -18,7 +18,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { theme } from '@/constants/theme';
 import { getUserFriendlyError } from '@/utils/errorHandler';
-import { logError } from '@/utils/errorLogger';
 import { showError } from '@/utils/toast';
 
 const LOGIN_INPUTS = 2;
@@ -87,7 +86,6 @@ export default function LoginScreen() {
         router.replace('/(tabs)');
       }
     } catch (err: unknown) {
-      logError(err);
       showError(getUserFriendlyError(err));
     } finally {
       setLoading(false);

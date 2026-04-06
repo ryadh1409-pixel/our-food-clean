@@ -65,7 +65,7 @@ export function configureForegroundNotificationHandler(): void {
       const data = notification.request.content.data as
         | Record<string, unknown>
         | undefined;
-      /** Pair-join uses an in-app `Alert` in `_layout`; hide OS banner to avoid duplicates. */
+      /** Pair-join uses an in-app toast in `_layout`; hide OS banner to avoid duplicates. */
       if (data?.type === HALF_ORDER_PAIR_JOIN_PUSH_TYPE) {
         return {
           shouldShowAlert: false,

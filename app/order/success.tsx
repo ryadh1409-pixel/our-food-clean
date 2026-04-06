@@ -6,7 +6,6 @@ import * as Sharing from 'expo-sharing';
 import React, { useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Linking,
   Platform,
   Share,
@@ -17,6 +16,8 @@ import {
 } from 'react-native';
 import { captureRef } from 'react-native-view-shot';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { showError } from '@/utils/toast';
 
 const CARD_WIDTH = 320;
 const CARD_HEIGHT = 200;
@@ -71,7 +72,7 @@ export default function OrderSuccessScreen() {
     } catch (e) {
       await Share.share({ message: shareMessage, title: 'HalfOrder' }).catch(
         () => {
-          Alert.alert('Share', 'Sharing failed. You can copy the message.');
+          showError('Sharing failed. You can copy the message.');
         },
       );
     } finally {

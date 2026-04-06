@@ -18,7 +18,6 @@ import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Image,
   StyleSheet,
   Switch,
@@ -27,6 +26,9 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+
+import { getUserFriendlyError } from '@/utils/errorHandler';
+import { showError, showNotice, showSuccess } from '@/utils/toast';
 
 type Draft = {
   title: string;
@@ -118,7 +120,7 @@ export function AdminCardsDashboard() {
   const pickImage = async (docId: AdminFoodCardSlotId) => {
     const p = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!p.granted) {
-      Alert.alert('Permission', 'Allow photo library access to upload.');
+      showError('Allow photo library access to upload.');
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -137,10 +139,7 @@ export function AdminCardsDashboard() {
       const url = await getDownloadURL(storageRef);
       setField(docId, { image: url });
     } catch (e) {
-      Alert.alert(
-        'Upload failed',
-        e instanceof Error ? e.message : 'Upload error',
-      );
+      showError(getUserFriendlyError(e));
     } finally {
       setUploadingId(null);
     }
@@ -152,18 +151,15 @@ export function AdminCardsDashboard() {
     const priceNum = Number(d.price);
     const sharingNum = Number(d.sharingPrice);
     if (!d.title.trim() || !d.image.trim()) {
-      Alert.alert('Required', 'Title and image are required to save.');
+      showError('Title and image are required to save.');
       return;
     }
     if (!Number.isFinite(priceNum) || priceNum <= 0) {
-      Alert.alert('Price', 'Enter a valid total price.');
+      showError('Enter a valid total price.');
       return;
     }
     if (!Number.isFinite(sharingNum) || sharingNum <= 0) {
-      Alert.alert(
-        'Sharing price',
-        'Enter a valid price per person (sharing).',
-      );
+      showError('Enter a valid price per person (sharing).');
       return;
     }
     setSavingId(docId);
@@ -179,12 +175,9 @@ export function AdminCardsDashboard() {
         aiDescription: d.aiDescription,
         restaurantName: d.restaurantName,
       });
-      Alert.alert('Saved', `Card ${docId} updated.`);
+      showSuccess(`Card ${docId} updated.`);
     } catch (e) {
-      Alert.alert(
-        'Save failed',
-        e instanceof Error ? e.message : 'Could not save',
-      );
+      showError(getUserFriendlyError(e));
     } finally {
       setSavingId(null);
     }
@@ -203,7 +196,7 @@ export function AdminCardsDashboard() {
         });
         if (gen) setField(docId, { aiDescription: gen });
         else {
-          Alert.alert(
+          showNotice(
             'OpenAI',
             'Configure EXPO_PUBLIC_OPENAI_API_KEY or type a description manually.',
           );

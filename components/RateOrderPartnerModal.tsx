@@ -7,7 +7,6 @@ import { hasRatedOrderForUser, saveRating } from '@/services/ratings';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Modal,
   StyleSheet,
   Text,
@@ -16,6 +15,8 @@ import {
   View,
 } from 'react-native';
 import { theme } from '@/constants/theme';
+import { getUserFriendlyError } from '@/utils/errorHandler';
+import { showError } from '@/utils/toast';
 
 const C = theme.colors;
 
@@ -50,7 +51,7 @@ export function RateOrderPartnerModal({
   const handleSubmit = async () => {
     if (!fromUserId || !toUserId) return;
     if (stars < 1) {
-      Alert.alert('Rating required', 'Please select 1 to 5 stars.');
+      showError('Please select 1 to 5 stars.');
       return;
     }
     setSubmitting(true);
@@ -61,7 +62,7 @@ export function RateOrderPartnerModal({
         toUserId,
       );
       if (alreadyRated) {
-        Alert.alert('Already rated', 'You already rated this participant.');
+        showError('You already rated this participant.');
         onDismiss();
         setSubmitting(false);
         return;
@@ -70,8 +71,7 @@ export function RateOrderPartnerModal({
       onSuccess();
       onDismiss();
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Failed to save rating';
-      Alert.alert('Error', msg);
+      showError(getUserFriendlyError(e));
     } finally {
       setSubmitting(false);
     }

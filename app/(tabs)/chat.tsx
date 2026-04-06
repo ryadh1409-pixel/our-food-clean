@@ -19,13 +19,13 @@ import {
   SUGGESTED_ORDER_BOT_COPY,
   generateSuggestedOrder,
 } from '@/services/suggestedOrder';
+import { showNotice } from '@/utils/toast';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   KeyboardAvoidingView,
   Platform,
@@ -402,7 +402,7 @@ export default function ChatScreen() {
   };
 
   const handleMicPress = () => {
-    Alert.alert(
+    showNotice(
       'Voice input',
       'Please type your message for now. Voice input is not available in this version.',
     );

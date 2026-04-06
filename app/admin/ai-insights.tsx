@@ -22,7 +22,6 @@ import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -31,6 +30,10 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { getUserFriendlyError } from '@/utils/errorHandler';
+import { logError } from '@/utils/errorLogger';
+import { showError, showSuccess } from '@/utils/toast';
 
 function MetricCard({
   icon,
@@ -104,10 +107,7 @@ export default function AdminAiInsightsScreen() {
         });
 
       if (tokens.length === 0) {
-        Alert.alert(
-          'No recipients',
-          'No active (2h) users with Expo push tokens.',
-        );
+        showError('No active (2h) users with Expo push tokens.');
         setSending(false);
         return;
       }
@@ -136,16 +136,12 @@ export default function AdminAiInsightsScreen() {
         sentByEmail: user.email ?? null,
       });
 
-      Alert.alert(
-        'Sent',
+      showSuccess(
         `Notification sent to ${result.sent} users ✅\n\nActive window: last 2 hours.`,
       );
     } catch (e) {
-      console.warn('[admin ai send]', e);
-      Alert.alert(
-        'Error',
-        e instanceof Error ? e.message : 'Could not send notification.',
-      );
+      logError(e);
+      showError(getUserFriendlyError(e));
     } finally {
       setSending(false);
     }

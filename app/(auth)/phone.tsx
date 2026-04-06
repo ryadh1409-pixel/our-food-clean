@@ -3,7 +3,6 @@ import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Platform,
   StyleSheet,
   Text,
@@ -15,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { auth } from '@/services/firebase';
 import { theme } from '@/constants/theme';
 import { getUserFriendlyError } from '@/utils/errorHandler';
+import { showError } from '@/utils/toast';
 
 const c = theme.colors;
 
@@ -29,7 +29,7 @@ export default function PhoneLoginScreen() {
   const handleSendCode = async () => {
     const trimmed = phone.trim().replace(/\D/g, '');
     if (trimmed.length < 10) {
-      Alert.alert('Error', 'Enter a valid phone number.');
+      showError('Enter a valid phone number.');
       return;
     }
     const phoneNumber =
@@ -41,7 +41,7 @@ export default function PhoneLoginScreen() {
       await signInWithPhone(phoneNumber);
       setStep('code');
     } catch (err) {
-      Alert.alert('Error', getUserFriendlyError(err));
+      showError(getUserFriendlyError(err));
     } finally {
       setLoading(false);
     }
@@ -50,7 +50,7 @@ export default function PhoneLoginScreen() {
   const handleConfirmCode = async () => {
     const trimmed = code.trim();
     if (!trimmed) {
-      Alert.alert('Error', 'Enter the verification code.');
+      showError('Enter the verification code.');
       return;
     }
     setLoading(true);
@@ -58,7 +58,7 @@ export default function PhoneLoginScreen() {
       await confirmPhoneCode(trimmed);
       router.replace('/(tabs)');
     } catch (err) {
-      Alert.alert('Error', getUserFriendlyError(err));
+      showError(getUserFriendlyError(err));
     } finally {
       setLoading(false);
     }

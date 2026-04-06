@@ -17,7 +17,6 @@ import React, {
 } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Image,
   Modal,
   ScrollView,
@@ -36,7 +35,6 @@ import {
 } from '@/constants/paymentDisclaimer';
 import { theme } from '@/constants/theme';
 import { buildOrderWhatsAppInviteLink } from '@/lib/invite-link';
-import { friendlyErrorMessage } from '@/lib/friendlyError';
 import { safeAlertBody, USER_ERROR_JOIN } from '@/lib/userFacingErrors';
 import {
   openWhatsAppWithMessage,
@@ -47,6 +45,7 @@ import { OrderCardView } from '@/components/OrderCardView';
 import ReportUserModal from '@/components/ReportUserModal';
 import { reportContentIdOrder } from '@/services/reports';
 import { ScreenFadeIn } from '@/components/ScreenFadeIn';
+import { systemConfirm } from '@/components/SystemDialogHost';
 import { ShimmerSkeleton } from '@/components/ShimmerSkeleton';
 import { blockUser } from '@/services/block';
 import { hasBlockBetween } from '@/services/blocks';
@@ -77,6 +76,8 @@ import {
   parseFoodCardLocationFields,
 } from '@/services/foodCards';
 import { normalizeParticipantsStrings } from '@/services/orderLifecycle';
+import { getUserFriendlyError } from '@/utils/errorHandler';
+import { showError, showNotice, showSuccess } from '@/utils/toast';
 import { submitOrderEmailInvite } from '@/services/orderInviteEmail';
 import { claimReferralInboxRewards } from '@/services/referralRewards';
 
@@ -520,7 +521,7 @@ export default function OrderDetailsScreen() {
     const prev = prevJoinedCountRef.current;
     prevJoinedCountRef.current = count;
     if (prev === 1 && count >= 2 && auth.currentUser?.uid) {
-      Alert.alert(PAYMENT_MATCH_ALERT_TITLE, PAYMENT_MATCH_ALERT_MESSAGE);
+      showNotice(PAYMENT_MATCH_ALERT_TITLE, PAYMENT_MATCH_ALERT_MESSAGE);
     }
   }, [
     order?.peopleJoined,
@@ -592,10 +593,7 @@ export default function OrderDetailsScreen() {
         const result = await joinFoodCardOrder(order.id, uid);
         if (!result.ok) {
           if (!result.silent) {
-            Alert.alert(
-              'Unable to join',
-              safeAlertBody(result.message, USER_ERROR_JOIN),
-            );
+            showError(safeAlertBody(result.message, USER_ERROR_JOIN));
           }
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(
             () => {},
@@ -606,7 +604,7 @@ export default function OrderDetailsScreen() {
           () => {},
         );
         if (result.justBecamePair) {
-          Alert.alert(PAYMENT_MATCH_ALERT_TITLE, PAYMENT_MATCH_ALERT_MESSAGE);
+          showNotice(PAYMENT_MATCH_ALERT_TITLE, PAYMENT_MATCH_ALERT_MESSAGE);
         }
         router.replace(`/order/${result.orderId}` as never);
         return;
@@ -617,7 +615,7 @@ export default function OrderDetailsScreen() {
           () => {},
         );
         if (half.justBecamePair) {
-          Alert.alert(PAYMENT_MATCH_ALERT_TITLE, PAYMENT_MATCH_ALERT_MESSAGE);
+          showNotice(PAYMENT_MATCH_ALERT_TITLE, PAYMENT_MATCH_ALERT_MESSAGE);
         }
         router.push(`/order/${order.id}` as never);
         return;
@@ -628,10 +626,7 @@ export default function OrderDetailsScreen() {
       );
       router.push(`/order/${order.id}` as never);
     } catch (e) {
-      if (__DEV__) {
-        console.warn('[order join]', e);
-      }
-      Alert.alert('Unable to join', friendlyErrorMessage(e));
+      showError(getUserFriendlyError(e));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(
         () => {},
       );
@@ -644,27 +639,26 @@ export default function OrderDetailsScreen() {
     const uid = auth.currentUser?.uid;
     const target = partnerIdForSafety;
     if (!uid || !target) return;
-    Alert.alert('Block user', 'They will not be able to match or join orders with you.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Block',
-        style: 'destructive',
-        onPress: () => {
-          void (async () => {
-            setBlocking(true);
-            try {
-              await blockUser(target, uid);
-              setIsBlocked(true);
-              Alert.alert('Blocked', 'User has been blocked.');
-            } catch (e) {
-              Alert.alert('Block failed', friendlyErrorMessage(e));
-            } finally {
-              setBlocking(false);
-            }
-          })();
-        },
-      },
-    ]);
+    void (async () => {
+      const ok = await systemConfirm({
+        title: 'Block user',
+        message:
+          'They will not be able to match or join orders with you.',
+        confirmLabel: 'Block',
+        destructive: true,
+      });
+      if (!ok) return;
+      setBlocking(true);
+      try {
+        await blockUser(target, uid);
+        setIsBlocked(true);
+        showSuccess('User has been blocked.');
+      } catch (e) {
+        showError(getUserFriendlyError(e));
+      } finally {
+        setBlocking(false);
+      }
+    })();
   };
 
   const openWhatsApp = () => {
@@ -675,8 +669,7 @@ export default function OrderDetailsScreen() {
         WHATSAPP_MATCH_DEFAULT_MESSAGE,
       );
       if (!ok) {
-        Alert.alert(
-          'Unable to open WhatsApp',
+        showError(
           'Add a WhatsApp number to your match’s profile, or use in-app chat.',
         );
       }
@@ -687,10 +680,7 @@ export default function OrderDetailsScreen() {
     if (!order?.id) return;
     const url = buildOrderWhatsAppInviteLink(order.id);
     void Linking.openURL(url).catch(() => {
-      Alert.alert(
-        'Unable to open WhatsApp',
-        'Something went wrong. Please try again.',
-      );
+      showError('Something went wrong. Please try again.');
     });
   };
 
@@ -711,9 +701,11 @@ export default function OrderDetailsScreen() {
       });
       setEmailInviteOpen(false);
       setEmailInviteInput('');
-      Alert.alert('Invite sent', 'If email is configured, they will get a link in their inbox.');
+      showSuccess(
+        'If email is configured, they will get a link in their inbox.',
+      );
     } catch (e) {
-      Alert.alert('Could not send', friendlyErrorMessage(e));
+      showError(getUserFriendlyError(e));
     } finally {
       setEmailInviteSending(false);
     }
@@ -721,53 +713,47 @@ export default function OrderDetailsScreen() {
 
   const handleCompleteOrder = () => {
     if (!order?.usesHalfUsers || !order.id) return;
-    Alert.alert('Mark complete?', 'This order will move to Completed.', [
-      { text: 'Not now', style: 'cancel' },
-      {
-        text: 'Complete',
-        onPress: () => {
-          void (async () => {
-            setCompleting(true);
-            try {
-              await completeHalfOrder(order.id);
-              Alert.alert('Done', 'Order marked complete.');
-            } catch (e) {
-              Alert.alert('Something went wrong', friendlyErrorMessage(e));
-            } finally {
-              setCompleting(false);
-            }
-          })();
-        },
-      },
-    ]);
+    void (async () => {
+      const ok = await systemConfirm({
+        title: 'Mark complete?',
+        message: 'This order will move to Completed.',
+        confirmLabel: 'Complete',
+        cancelLabel: 'Not now',
+      });
+      if (!ok) return;
+      setCompleting(true);
+      try {
+        await completeHalfOrder(order.id);
+        showSuccess('Order marked complete.');
+      } catch (e) {
+        showError(getUserFriendlyError(e));
+      } finally {
+        setCompleting(false);
+      }
+    })();
   };
 
   const handleCancelOrder = () => {
     if (!order?.usesHalfUsers || !order.id) return;
-    Alert.alert(
-      'Cancel order',
-      'The other person will be notified. Continue?',
-      [
-        { text: 'No', style: 'cancel' },
-        {
-          text: 'Cancel order',
-          style: 'destructive',
-          onPress: () => {
-            void (async () => {
-              setCancelling(true);
-              try {
-                await cancelHalfOrder(order.id);
-                Alert.alert('Cancelled', 'This half order was cancelled.');
-              } catch (e) {
-                Alert.alert('Cancel failed', friendlyErrorMessage(e));
-              } finally {
-                setCancelling(false);
-              }
-            })();
-          },
-        },
-      ],
-    );
+    void (async () => {
+      const ok = await systemConfirm({
+        title: 'Cancel order',
+        message: 'The other person will be notified. Continue?',
+        confirmLabel: 'Cancel order',
+        cancelLabel: 'No',
+        destructive: true,
+      });
+      if (!ok) return;
+      setCancelling(true);
+      try {
+        await cancelHalfOrder(order.id);
+        showSuccess('This half order was cancelled.');
+      } catch (e) {
+        showError(getUserFriendlyError(e));
+      } finally {
+        setCancelling(false);
+      }
+    })();
   };
 
   if (loading) {
@@ -1179,9 +1165,7 @@ export default function OrderDetailsScreen() {
         reporterId={auth.currentUser?.uid ?? ''}
         reportedUserId={partnerIdForSafety ?? ''}
         contentId={order?.id ? reportContentIdOrder(order.id) : ''}
-        onSubmitted={() =>
-          Alert.alert('Thanks', 'We received your report.')
-        }
+        onSubmitted={() => showSuccess('We received your report.')}
       />
     </SafeAreaView>
   );

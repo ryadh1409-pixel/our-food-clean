@@ -10,7 +10,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -18,6 +17,8 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { showError } from '@/utils/toast';
 
 const c = theme.colors;
 
@@ -41,7 +42,7 @@ export default function TermsAcceptanceScreen() {
       );
       router.replace(next as Parameters<typeof router.replace>[0]);
     } catch {
-      Alert.alert('Error', 'Could not save your choice. Please try again.');
+      showError('Could not save your choice. Please try again.');
     } finally {
       setLoading(false);
     }

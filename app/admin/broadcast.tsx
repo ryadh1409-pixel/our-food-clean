@@ -18,7 +18,6 @@ import {
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
-  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -27,6 +26,10 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { getUserFriendlyError } from '@/utils/errorHandler';
+import { logError } from '@/utils/errorLogger';
+import { showError, showSuccess } from '@/utils/toast';
 
 export default function AdminSendNotificationScreen() {
   const router = useRouter();
@@ -48,7 +51,7 @@ export default function AdminSendNotificationScreen() {
     const adminTitle = title.trim() || 'HalfOrder';
     const adminMessage = message.trim();
     if (!adminMessage) {
-      Alert.alert('Message required', 'Please enter a notification message.');
+      showError('Please enter a notification message.');
       return;
     }
     if (!user || !isAdminUser(user)) return;
@@ -57,8 +60,7 @@ export default function AdminSendNotificationScreen() {
     const rParsed = parseFloat(radiusKmText.replace(',', '.'));
     if (radiusKmText.trim() !== '') {
       if (!Number.isFinite(rParsed) || rParsed <= 0) {
-        Alert.alert(
-          'Distance',
+        showError(
           'Enter a positive number for kilometers, or leave blank to skip distance filtering.',
         );
         return;
@@ -72,8 +74,7 @@ export default function AdminSendNotificationScreen() {
       if (radiusKm != null) {
         const loc = await getUserLocationSafe();
         if (!loc) {
-          Alert.alert(
-            'Location needed',
+          showError(
             'Allow location to filter users by distance, or clear the radius field.',
           );
           setSending(false);
@@ -91,8 +92,7 @@ export default function AdminSendNotificationScreen() {
         });
 
       if (tokens.length === 0) {
-        Alert.alert(
-          'No recipients',
+        showError(
           'No users with valid Expo push tokens matched your filters. Skipped without token: '
             + skippedNoToken
             + (skippedFilter ? ` · Filtered out: ${skippedFilter}` : ''),
@@ -128,14 +128,11 @@ export default function AdminSendNotificationScreen() {
         `Unique tokens targeted: ${tokens.length}.`,
       ].filter(Boolean);
 
-      Alert.alert('Done', [okLine, ...detailParts].join('\n\n'));
+      showSuccess([okLine, ...detailParts].join('\n\n'));
       setMessage('');
     } catch (e) {
-      console.warn('[admin broadcast]', e);
-      Alert.alert(
-        'Error',
-        e instanceof Error ? e.message : 'Failed to send notification.',
-      );
+      logError(e);
+      showError(getUserFriendlyError(e));
     } finally {
       setSending(false);
     }

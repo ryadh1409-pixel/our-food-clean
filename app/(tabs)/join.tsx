@@ -11,7 +11,10 @@ import {
 } from '@/services/orderLifecycle';
 import { hasBlockConflict } from '@/services/report-block';
 import { blockUser, submitUserReport } from '@/services/userSafety';
+import { systemActionSheet, systemConfirm } from '@/components/SystemDialogHost';
+import { getUserFriendlyError } from '@/utils/errorHandler';
 import { logError } from '@/utils/errorLogger';
+import { showError, showSuccess } from '@/utils/toast';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import type { User } from '@firebase/auth';
@@ -32,7 +35,6 @@ import {
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Text,
   TouchableOpacity,
@@ -306,8 +308,7 @@ export default function JoinScreen() {
   const doJoinOrder = async (orderId: string) => {
     if (!user) return;
     if (await isUserBanned(user.uid)) {
-      Alert.alert(
-        'Access denied',
+      showError(
         'Your account has been restricted. You cannot join orders.',
       );
       return;
@@ -321,18 +322,14 @@ export default function JoinScreen() {
         plist.includes(user.uid) &&
         getJoinedAtMsForUser(orderData?.joinedAtMap, user.uid) != null
       ) {
-        Alert.alert('Already joined', 'You are already in this order.');
+        showError('You are already in this order.');
         return;
       }
       if (await hasBlockConflict(user.uid, plist)) {
-        Alert.alert(
-          'Cannot join',
-          'You cannot join this order due to a block.',
-        );
+        showError('You cannot join this order due to a block.');
         return;
       }
       await joinOrderWithTransaction(orderId, user);
-      console.log('[join tab] joined order', orderId, 'uid', user.uid);
       const messagesRef = collection(db, 'orders', orderId, 'messages');
       await addDoc(messagesRef, {
         type: 'system',
@@ -344,8 +341,7 @@ export default function JoinScreen() {
       router.push(`/order/${orderId}` as never);
     } catch (e) {
       logError(e);
-      const msg = e instanceof Error ? e.message : 'Failed to join';
-      Alert.alert('Error', msg);
+      showError(getUserFriendlyError(e));
     } finally {
       setJoiningId(null);
     }
@@ -354,21 +350,21 @@ export default function JoinScreen() {
   const handleLeave = async (orderId: string) => {
     const user = auth.currentUser;
     if (!user || !user.uid) {
-      Alert.alert('Error', 'You must be signed in to leave.');
+      showError('You must be signed in to leave.');
       return;
     }
 
     setJoiningId(orderId);
     try {
       await leaveOrderWithTransaction(orderId, user);
-      Alert.alert('Success', 'You left the order');
+      showSuccess('You left the order');
     } catch (e) {
       logError(e);
       const msg = e instanceof Error ? e.message : 'Failed to leave';
       if (msg === 'Not in order') {
-        Alert.alert('Error', 'You are not in this order');
+        showError('You are not in this order');
       } else {
-        Alert.alert('Error', msg);
+        showError(getUserFriendlyError(e));
       }
     } finally {
       setJoiningId(null);
@@ -385,9 +381,11 @@ export default function JoinScreen() {
       return;
     }
     const reasons = ['Spam', 'Inappropriate behavior', 'Scam', 'Other'] as const;
-    Alert.alert('Report host', 'Select a reason', [
-      ...reasons.map((reason) => ({
-        text: reason,
+    void systemActionSheet({
+      title: 'Report host',
+      message: 'Select a reason',
+      actions: reasons.map((reason) => ({
+        label: reason,
         onPress: () => {
           void (async () => {
             try {
@@ -397,18 +395,14 @@ export default function JoinScreen() {
                 orderId,
                 reason,
               });
-              Alert.alert('Report submitted');
+              showSuccess('Report submitted');
             } catch (e) {
-              Alert.alert(
-                'Error',
-                e instanceof Error ? e.message : 'Could not submit report.',
-              );
+              showError(getUserFriendlyError(e));
             }
           })();
         },
       })),
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+    });
   };
 
   const handleBlockHost = (hostId: string) => {
@@ -420,39 +414,28 @@ export default function JoinScreen() {
       });
       return;
     }
-    Alert.alert(
-      'Block host',
-      'You will not see orders from this host in your join list.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Block',
-          style: 'destructive',
-          onPress: () => {
-            void (async () => {
-              try {
-                await blockUser(u, hostId);
-                Alert.alert(
-                  'Blocked',
-                  'This host will not appear in your join list.',
-                );
-              } catch (e) {
-                Alert.alert(
-                  'Error',
-                  e instanceof Error ? e.message : 'Could not block user.',
-                );
-              }
-            })();
-          },
-        },
-      ],
-    );
+    void (async () => {
+      const ok = await systemConfirm({
+        title: 'Block host',
+        message:
+          'You will not see orders from this host in your join list.',
+        confirmLabel: 'Block',
+        destructive: true,
+      });
+      if (!ok) return;
+      try {
+        await blockUser(u, hostId);
+        showSuccess('This host will not appear in your join list.');
+      } catch (e) {
+        showError(getUserFriendlyError(e));
+      }
+    })();
   };
 
   const handleConfirm = async (orderId: string) => {
     const user = auth.currentUser;
     if (!user || !user.uid) {
-      Alert.alert('Error', 'You must be signed in to confirm.');
+      showError('You must be signed in to confirm.');
       return;
     }
 
@@ -460,8 +443,7 @@ export default function JoinScreen() {
       await confirmParticipation(orderId, user);
     } catch (e) {
       logError(e);
-      const msg = e instanceof Error ? e.message : 'Failed to confirm';
-      Alert.alert('Error', msg);
+      showError(getUserFriendlyError(e));
     }
   };
 

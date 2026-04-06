@@ -22,7 +22,6 @@ import React, {
 } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Image,
   Modal,
   ScrollView,
@@ -33,6 +32,10 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+
+import { systemConfirm } from '@/components/SystemDialogHost';
+import { getUserFriendlyError } from '@/utils/errorHandler';
+import { showError, showSuccess } from '@/utils/toast';
 
 function parsePrice(raw: string): number | null {
   const n = Number(String(raw).replace(/[^0-9.]/g, ''));
@@ -127,7 +130,7 @@ export function AdminFoodCatalogProvider({
         folder: 'foodTemplates',
         quality: 0.85,
       });
-      if (uploadErr) Alert.alert('Upload', uploadErr);
+      if (uploadErr) showError(uploadErr);
       if (url) setImageUrl(url);
     } finally {
       setUploading(false);
@@ -137,19 +140,19 @@ export function AdminFoodCatalogProvider({
   const onSave = async () => {
     const price = parsePrice(priceStr);
     if (!name.trim()) {
-      Alert.alert('Required', 'Enter a name.');
+      showError('Enter a name.');
       return;
     }
     if (!description.trim()) {
-      Alert.alert('Required', 'Enter a description.');
+      showError('Enter a description.');
       return;
     }
     if (price === null) {
-      Alert.alert('Required', 'Enter a valid price.');
+      showError('Enter a valid price.');
       return;
     }
     if (!imageUrl.trim()) {
-      Alert.alert('Required', 'Upload an image.');
+      showError('Upload an image.');
       return;
     }
 
@@ -167,11 +170,10 @@ export function AdminFoodCatalogProvider({
         await updateTemplate(editingId, payload);
         setModalOpen(false);
         resetForm();
-        Alert.alert('Saved', 'Template updated.');
+        showSuccess('Template updated.');
       } else {
         if (list.length >= FOOD_TEMPLATES_MAX) {
-          Alert.alert(
-            'Limit',
+          showError(
             `Maximum ${FOOD_TEMPLATES_MAX} templates. Delete one to add another.`,
           );
           return;
@@ -179,13 +181,10 @@ export function AdminFoodCatalogProvider({
         await addTemplate(payload);
         setModalOpen(false);
         resetForm();
-        Alert.alert('Saved', 'Template added.');
+        showSuccess('Template added.');
       }
     } catch (e) {
-      Alert.alert(
-        'Error',
-        e instanceof Error ? e.message : 'Could not save.',
-      );
+      showError(getUserFriendlyError(e));
     } finally {
       setSaving(false);
     }
@@ -310,24 +309,21 @@ export function AdminFoodCatalogProvider({
 }
 
 function confirmDeleteTemplate(row: FoodTemplate) {
-  Alert.alert('Delete', `Remove “${row.name}”?`, [
-    { text: 'Cancel', style: 'cancel' },
-    {
-      text: 'Delete',
-      style: 'destructive',
-      onPress: async () => {
-        try {
-          await deleteTemplate(row.id);
-          Alert.alert('Deleted', 'Template removed.');
-        } catch (e) {
-          Alert.alert(
-            'Error',
-            e instanceof Error ? e.message : 'Could not delete.',
-          );
-        }
-      },
-    },
-  ]);
+  void (async () => {
+    const ok = await systemConfirm({
+      title: 'Delete',
+      message: `Remove “${row.name}”?`,
+      confirmLabel: 'Delete',
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      await deleteTemplate(row.id);
+      showSuccess('Template removed.');
+    } catch (e) {
+      showError(getUserFriendlyError(e));
+    }
+  })();
 }
 
 export function AdminFoodCatalogList() {
@@ -418,8 +414,7 @@ export function AdminFoodCatalogFab() {
         style={[fabStyles.fab, atCap && fabStyles.fabMuted]}
         onPress={() => {
           if (atCap) {
-            Alert.alert(
-              'Limit',
+            showError(
               `You already have ${FOOD_TEMPLATES_MAX} templates. Delete one to add another.`,
             );
             return;

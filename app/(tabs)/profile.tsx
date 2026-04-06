@@ -1,5 +1,6 @@
 import { KEYBOARD_TOOLBAR_NATIVE_ID, KeyboardToolbar } from '@/components/KeyboardToolbar';
 import { ScreenHeader } from '@/components/ScreenHeader';
+import { systemConfirm } from '@/components/SystemDialogHost';
 import { isAdminUser } from '@/constants/adminUid';
 import { theme } from '@/constants/theme';
 import {
@@ -27,6 +28,7 @@ import {
 import { moderateUserContent } from '@/utils/contentModeration';
 import { getUserFriendlyError } from '@/utils/errorHandler';
 import { logError } from '@/utils/errorLogger';
+import { showError, showNotice, showSuccess } from '@/utils/toast';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { updateProfile, type User } from '@firebase/auth';
@@ -46,7 +48,6 @@ import {
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Linking,
   Platform,
   ScrollView,
@@ -331,8 +332,7 @@ export default function ProfileScreen() {
 
     if (phoneChanged) {
       if (!phoneTreatEmpty && !isCompleteNaProfilePhone(phone)) {
-        Alert.alert(
-          'Phone number',
+        showError(
           'Enter a complete WhatsApp number (10 digits after +1), or clear the field to only +1.',
         );
         return;
@@ -350,16 +350,16 @@ export default function ProfileScreen() {
     if (!currentUser) {
       const msg = 'Not signed in. Please sign in again.';
       setNameErrorMessage(msg);
-      Alert.alert('Could not save', msg);
+      showError(msg);
       return;
     }
     if (!trimmed) {
-      Alert.alert('Error', 'Display name cannot be empty.');
+      showError('Display name cannot be empty.');
       return;
     }
     const mod = moderateUserContent(trimmed, { maxLength: 80 });
     if (!mod.ok) {
-      Alert.alert('Display name', mod.reason);
+      showError(mod.reason);
       return;
     }
     if (nameFeedbackClearRef.current != null) {
@@ -402,7 +402,7 @@ export default function ProfileScreen() {
       logError(err);
       const msg = getUserFriendlyError(err);
       setNameErrorMessage(msg);
-      Alert.alert('Could not save', msg);
+      showError(msg);
       nameFeedbackClearRef.current = setTimeout(() => {
         setNameErrorMessage('');
         nameFeedbackClearRef.current = null;
@@ -417,15 +417,12 @@ export default function ProfileScreen() {
     await ensureAuthReady();
     const currentUser = auth.currentUser;
     if (!currentUser) {
-      Alert.alert('Could not save', 'Authentication is still initializing.');
+      showError('Authentication is still initializing.');
       return;
     }
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert(
-        'Permission needed',
-        'Allow photo library access to set a profile picture.',
-      );
+      showError('Allow photo library access to set a profile picture.');
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -449,11 +446,11 @@ export default function ProfileScreen() {
       }
 
       setPhotoURL(downloadURL);
-      Alert.alert('Photo updated', 'Your profile picture has been saved.');
+      showSuccess('Your profile picture has been saved.');
     } catch (e) {
       logError(e);
       const msg = getUserFriendlyError(e);
-      Alert.alert('Upload failed', msg);
+      showError(msg);
     } finally {
       setUploadingPhoto(false);
     }
@@ -476,7 +473,7 @@ export default function ProfileScreen() {
       await signOutUser();
     } catch (err) {
       logError(err);
-      Alert.alert('Error', getUserFriendlyError(err));
+      showError(getUserFriendlyError(err));
       return;
     }
     router.replace('/(auth)/login');
@@ -484,31 +481,27 @@ export default function ProfileScreen() {
 
   const handleDeleteAccount = () => {
     if (!user) return;
-    Alert.alert(
-      'Delete Account',
-      'Are you sure you want to delete your account? This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            void confirmDeleteAccount();
-          },
-        },
-      ],
-    );
+    void (async () => {
+      const ok = await systemConfirm({
+        title: 'Delete Account',
+        message:
+          'Are you sure you want to delete your account? This action cannot be undone.',
+        confirmLabel: 'Delete',
+        destructive: true,
+      });
+      if (ok) void confirmDeleteAccount();
+    })();
   };
 
   const handleSubmitProfileReport = async () => {
     if (!uid) return;
     const target = reportUserId.trim();
     if (!target) {
-      Alert.alert('Missing user ID', 'Enter the user ID you want to report.');
+      showError('Enter the user ID you want to report.');
       return;
     }
     if (target === uid) {
-      Alert.alert('Invalid target', 'You cannot report yourself.');
+      showError('You cannot report yourself.');
       return;
     }
     setSubmittingReport(true);
@@ -519,9 +512,9 @@ export default function ProfileScreen() {
         contentId: reportContentIdUser(target),
         reason: reportReason,
       });
-      Alert.alert('Report submitted', 'Thanks. We will review this report.');
+      showSuccess('Thanks. We will review this report.');
     } catch (e) {
-      Alert.alert('Report failed', getUserFriendlyError(e));
+      showError(getUserFriendlyError(e));
     } finally {
       setSubmittingReport(false);
     }
@@ -533,9 +526,9 @@ export default function ProfileScreen() {
     try {
       await unblockUser(uid, blockedUserId);
       setBlockedUsers((prev) => prev.filter((id) => id !== blockedUserId));
-      Alert.alert('Unblocked', 'User has been unblocked.');
+      showSuccess('User has been unblocked.');
     } catch (e) {
-      Alert.alert('Unblock failed', getUserFriendlyError(e));
+      showError(getUserFriendlyError(e));
     } finally {
       setUnblockingId(null);
     }
@@ -546,19 +539,11 @@ export default function ProfileScreen() {
     setDeletingAccount(true);
     try {
       await deleteUserAccount(user);
-      Alert.alert(
-        'Account deleted',
-        'Your account has been permanently removed.',
-        [
-          {
-            text: 'OK',
-            onPress: () => router.replace('/(auth)/login'),
-          },
-        ],
-      );
+      showSuccess('Your account has been permanently removed.');
+      router.replace('/(auth)/login');
     } catch (err: unknown) {
       logError(err);
-      Alert.alert('Could not delete account', getUserFriendlyError(err));
+      showError(getUserFriendlyError(err));
     } finally {
       setDeletingAccount(false);
     }
@@ -571,10 +556,10 @@ export default function ProfileScreen() {
       if (supported) {
         await Linking.openURL(url);
       } else {
-        Alert.alert('Contact Support', `Please email us at ${SUPPORT_EMAIL}`);
+        showNotice('Contact Support', `Please email us at ${SUPPORT_EMAIL}`);
       }
     } catch {
-      Alert.alert('Contact Support', `Please email us at ${SUPPORT_EMAIL}`);
+      showNotice('Contact Support', `Please email us at ${SUPPORT_EMAIL}`);
     }
   };
 

@@ -25,7 +25,6 @@ import {
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   StyleSheet,
   Text,
@@ -35,7 +34,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { FoodCardPaymentDisclaimer } from '@/components/FoodCardPaymentDisclaimer';
+import { systemConfirm } from '@/components/SystemDialogHost';
 import { shadows, theme } from '@/constants/theme';
+import { getUserFriendlyError } from '@/utils/errorHandler';
+import { showError, showSuccess } from '@/utils/toast';
 
 type JoinableOrder = {
   id: string;
@@ -229,8 +231,7 @@ export default function JoinOrderScreen() {
       return;
     }
     if (await isUserBanned(u)) {
-      Alert.alert(
-        'Access denied',
+      showError(
         'Your account has been restricted. You cannot join orders.',
       );
       return;
@@ -243,13 +244,8 @@ export default function JoinOrderScreen() {
       const d = pre.data() as Record<string, unknown>;
       const members = memberIdsFromOrderData(d);
       if (members.includes(u)) {
-        Alert.alert('Already joined', 'You are already on this order.', [
-          {
-            text: 'Open',
-            onPress: () => router.push(`/order/${orderId}` as never),
-          },
-          { text: 'OK' },
-        ]);
+        showSuccess('You are already on this order.');
+        router.push(`/order/${orderId}` as never);
         return;
       }
 
@@ -272,14 +268,12 @@ export default function JoinOrderScreen() {
         });
       }
 
-      Alert.alert(
-        'Joined',
+      showSuccess(
         `You have ${Math.round(ORDER_JOIN_WINDOW_MS / 60000)} minutes to coordinate after joining.`,
       );
       router.push(`/order/${orderId}` as never);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Failed to join';
-      Alert.alert('Could not join', msg);
+      showError(getUserFriendlyError(e));
     } finally {
       setJoiningId(null);
     }
@@ -288,34 +282,30 @@ export default function JoinOrderScreen() {
   const handleLeaveSpot = (spot: MySpot) => {
     const u = auth.currentUser?.uid;
     if (!u) return;
-    Alert.alert(
-      'Leave this order?',
-      'Other participants will see you left.',
-      [
-        { text: 'Keep', style: 'cancel' },
-        {
-          text: spot.usesHalf ? 'Cancel order' : 'Leave',
-          style: 'destructive',
-          onPress: async () => {
-            setLeavingId(spot.id);
-            try {
-              if (spot.usesHalf) {
-                await cancelHalfOrder(spot.id);
-              } else {
-                const { leaveOrderParticipant } = await import('@/services/orderLifecycle');
-                await leaveOrderParticipant(db, spot.id, u);
-              }
-              Alert.alert('Updated', 'You left the order.');
-            } catch (e) {
-              const msg = e instanceof Error ? e.message : 'Could not leave';
-              Alert.alert('Error', msg);
-            } finally {
-              setLeavingId(null);
-            }
-          },
-        },
-      ],
-    );
+    void (async () => {
+      const ok = await systemConfirm({
+        title: 'Leave this order?',
+        message: 'Other participants will see you left.',
+        confirmLabel: spot.usesHalf ? 'Cancel order' : 'Leave',
+        cancelLabel: 'Keep',
+        destructive: true,
+      });
+      if (!ok) return;
+      setLeavingId(spot.id);
+      try {
+        if (spot.usesHalf) {
+          await cancelHalfOrder(spot.id);
+        } else {
+          const { leaveOrderParticipant } = await import('@/services/orderLifecycle');
+          await leaveOrderParticipant(db, spot.id, u);
+        }
+        showSuccess('You left the order.');
+      } catch (e) {
+        showError(getUserFriendlyError(e));
+      } finally {
+        setLeavingId(null);
+      }
+    })();
   };
 
   const renderJoinItem = ({ item }: { item: JoinableOrder }) => (

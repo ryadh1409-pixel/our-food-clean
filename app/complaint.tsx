@@ -4,7 +4,6 @@ import { useAuth } from '@/services/AuthContext';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
-  Alert,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
@@ -15,6 +14,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { theme } from '@/constants/theme';
+import { getUserFriendlyError } from '@/utils/errorHandler';
+import { showError, showSuccess } from '@/utils/toast';
 
 const c = theme.colors;
 
@@ -27,16 +28,16 @@ export default function ComplaintScreen() {
   const handleSubmit = async () => {
     const trimmed = message.trim();
     if (!trimmed) {
-      Alert.alert('Error', 'Please enter your message.');
+      showError('Please enter your message.');
       return;
     }
     const mod = moderateUserContent(trimmed, { maxLength: 2000 });
     if (!mod.ok) {
-      Alert.alert('Message not sent', mod.reason);
+      showError(mod.reason);
       return;
     }
     if (!user) {
-      Alert.alert('Error', 'Please sign in to submit a complaint or inquiry.');
+      showError('Please sign in to submit a complaint or inquiry.');
       return;
     }
     setSubmitting(true);
@@ -46,16 +47,10 @@ export default function ComplaintScreen() {
         mod.text,
       );
       setMessage('');
-      Alert.alert(
-        'Submitted',
-        'Your message has been sent. We will get back to you soon.',
-        [{ text: 'OK', onPress: () => router.back() }],
-      );
+      showSuccess('Your message has been sent. We will get back to you soon.');
+      router.back();
     } catch (e) {
-      Alert.alert(
-        'Error',
-        e instanceof Error ? e.message : 'Failed to submit. Please try again.',
-      );
+      showError(getUserFriendlyError(e));
     } finally {
       setSubmitting(false);
     }

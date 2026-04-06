@@ -20,7 +20,6 @@ import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Image,
   StyleSheet,
   Text,
@@ -28,6 +27,7 @@ import {
   View,
 } from 'react-native';
 import { AIDescription } from '@/components/AIDescription';
+import { showError, showNotice } from '@/utils/toast';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 const D = {
@@ -164,7 +164,7 @@ export default function BrowseScreen() {
   const onJoin = async (card: FoodCard) => {
     const uid = user?.uid;
     if (!uid) {
-      Alert.alert('Sign in required', 'Sign in to join a food card.');
+      showError('Sign in to join a food card.');
       router.push('/(auth)/login' as never);
       return;
     }
@@ -174,16 +174,16 @@ export default function BrowseScreen() {
       const result = await joinOrder(card.id, uid);
       if (!result.ok) {
         if (!result.silent) {
-          Alert.alert('Unable to join', safeAlertBody(result.message, USER_ERROR_JOIN));
+          showError(safeAlertBody(result.message, USER_ERROR_JOIN));
         }
         return;
       }
       if (result.justBecamePair) {
-        Alert.alert(PAYMENT_MATCH_ALERT_TITLE, PAYMENT_MATCH_ALERT_MESSAGE);
+        showNotice(PAYMENT_MATCH_ALERT_TITLE, PAYMENT_MATCH_ALERT_MESSAGE);
       }
       router.push(`/order/${result.orderId}` as never);
     } catch (e) {
-      Alert.alert('Unable to join', USER_ERROR_JOIN);
+      showError(USER_ERROR_JOIN);
     } finally {
       setJoiningId(null);
     }

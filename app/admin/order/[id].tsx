@@ -26,7 +26,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -34,6 +33,10 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { systemConfirm } from '@/components/SystemDialogHost';
+import { getUserFriendlyError } from '@/utils/errorHandler';
+import { showError, showSuccess } from '@/utils/toast';
 
 type Msg = { id: string; text: string; at: string; atMs: number };
 
@@ -98,56 +101,53 @@ export default function AdminOrderDetailScreen() {
 
   const setStatus = (next: string, title: string, body: string) => {
     if (!orderId) return;
-    Alert.alert(title, body, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Confirm',
-        style: 'destructive',
-        onPress: async () => {
-          setSaving(true);
-          try {
-            adminLog('order-detail', 'updateDoc order status', { orderId, status: next });
-            await updateDoc(doc(db, 'orders', orderId), {
-              status: next,
-              adminStatusUpdatedAt: serverTimestamp(),
-            });
-            Alert.alert('Updated', `Status: ${next}`);
-          } catch (e) {
-            Alert.alert('Error', e instanceof Error ? e.message : 'Failed');
-          } finally {
-            setSaving(false);
-          }
-        },
-      },
-    ]);
+    void (async () => {
+      const ok = await systemConfirm({
+        title,
+        message: body,
+        confirmLabel: 'Confirm',
+        destructive: true,
+      });
+      if (!ok) return;
+      setSaving(true);
+      try {
+        adminLog('order-detail', 'updateDoc order status', { orderId, status: next });
+        await updateDoc(doc(db, 'orders', orderId), {
+          status: next,
+          adminStatusUpdatedAt: serverTimestamp(),
+        });
+        showSuccess(`Status: ${next}`);
+      } catch (e) {
+        showError(getUserFriendlyError(e));
+      } finally {
+        setSaving(false);
+      }
+    })();
   };
 
   const confirmDelete = () => {
     if (!orderId) return;
-    Alert.alert(
-      'Delete order',
-      'Permanently remove this order and its messages/ratings subcollections?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            setSaving(true);
-            try {
-              adminLog('order-detail', 'adminDeleteOrderDeep', { orderId });
-              await adminDeleteOrderDeep(orderId);
-              Alert.alert('Deleted', 'Order removed.');
-              router.replace(adminRoutes.orders() as never);
-            } catch (e) {
-              Alert.alert('Error', e instanceof Error ? e.message : 'Failed');
-            } finally {
-              setSaving(false);
-            }
-          },
-        },
-      ],
-    );
+    void (async () => {
+      const ok = await systemConfirm({
+        title: 'Delete order',
+        message:
+          'Permanently remove this order and its messages/ratings subcollections?',
+        confirmLabel: 'Delete',
+        destructive: true,
+      });
+      if (!ok) return;
+      setSaving(true);
+      try {
+        adminLog('order-detail', 'adminDeleteOrderDeep', { orderId });
+        await adminDeleteOrderDeep(orderId);
+        showSuccess('Order removed.');
+        router.replace(adminRoutes.orders() as never);
+      } catch (e) {
+        showError(getUserFriendlyError(e));
+      } finally {
+        setSaving(false);
+      }
+    })();
   };
 
   if (!orderId) {

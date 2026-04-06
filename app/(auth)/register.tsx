@@ -13,7 +13,6 @@ import { useRouter } from 'expo-router';
 import React, { useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -27,8 +26,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { theme } from '@/constants/theme';
+import { systemActionSheet } from '@/components/SystemDialogHost';
 import { getUserFriendlyError } from '@/utils/errorHandler';
-import { logError } from '@/utils/errorLogger';
 import { showError, showSuccess } from '@/utils/toast';
 
 const c = theme.colors;
@@ -75,7 +74,7 @@ export default function RegisterScreen() {
   const pickFromLibrary = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert('Permission needed', 'Allow photo library access to add a profile picture.');
+      showError('Allow photo library access to add a profile picture.');
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -92,7 +91,7 @@ export default function RegisterScreen() {
   const pickFromCamera = async () => {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert('Permission needed', 'Allow camera access to take a profile picture.');
+      showError('Allow camera access to take a profile picture.');
       return;
     }
     const result = await ImagePicker.launchCameraAsync({
@@ -106,14 +105,23 @@ export default function RegisterScreen() {
   };
 
   const openPhotoOptions = () => {
-    Alert.alert('Profile photo', 'Choose a source', [
-      { text: 'Take photo', onPress: () => void pickFromCamera() },
-      { text: 'Choose from library', onPress: () => void pickFromLibrary() },
-      ...(photoUri
-        ? [{ text: 'Remove photo', style: 'destructive' as const, onPress: () => setPhotoUri(null) }]
-        : []),
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+    void systemActionSheet({
+      title: 'Profile photo',
+      message: 'Choose a source',
+      actions: [
+        { label: 'Take photo', onPress: () => void pickFromCamera() },
+        { label: 'Choose from library', onPress: () => void pickFromLibrary() },
+        ...(photoUri
+          ? [
+              {
+                label: 'Remove photo',
+                destructive: true,
+                onPress: () => setPhotoUri(null),
+              },
+            ]
+          : []),
+      ],
+    });
   };
 
   const validate = (): string => {
@@ -164,7 +172,6 @@ export default function RegisterScreen() {
       showSuccess('Account created successfully 🎉');
       router.replace('/verify-email' as Parameters<typeof router.replace>[0]);
     } catch (err: unknown) {
-      logError(err);
       showError(getUserFriendlyError(err));
     } finally {
       setLoading(false);

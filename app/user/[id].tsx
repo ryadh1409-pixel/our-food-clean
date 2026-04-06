@@ -2,7 +2,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { doc, onSnapshot, type DocumentData } from 'firebase/firestore';
 import React, { useMemo, useState } from 'react';
 import {
-  Alert,
   Image,
   ScrollView,
   StyleSheet,
@@ -12,7 +11,10 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { systemActionSheet, systemConfirm } from '@/components/SystemDialogHost';
 import { theme } from '@/constants/theme';
+import { getUserFriendlyError } from '@/utils/errorHandler';
+import { showError, showSuccess } from '@/utils/toast';
 import { useTrustScore } from '@/hooks/useTrustScore';
 import { blockUser } from '@/services/blocks';
 import { auth, db } from '@/services/firebase';
@@ -134,28 +136,25 @@ export default function UserProfileScreen() {
 
   const handleBlockUser = () => {
     if (!currentUserId || !userId || currentUserId === userId || blocking) return;
-    Alert.alert('Block user', 'Are you sure you want to block this user?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Block',
-        style: 'destructive',
-        onPress: async () => {
-          setBlocking(true);
-          try {
-            await blockUser(currentUserId, userId);
-            Alert.alert('Blocked', 'User blocked successfully.');
-            router.back();
-          } catch (e) {
-            Alert.alert(
-              'Error',
-              e instanceof Error ? e.message : 'Failed to block user.',
-            );
-          } finally {
-            setBlocking(false);
-          }
-        },
-      },
-    ]);
+    void (async () => {
+      const ok = await systemConfirm({
+        title: 'Block user',
+        message: 'Are you sure you want to block this user?',
+        confirmLabel: 'Block',
+        destructive: true,
+      });
+      if (!ok) return;
+      setBlocking(true);
+      try {
+        await blockUser(currentUserId, userId);
+        showSuccess('User blocked successfully.');
+        router.back();
+      } catch (e) {
+        showError(getUserFriendlyError(e));
+      } finally {
+        setBlocking(false);
+      }
+    })();
   };
 
   const submitReportWithReason = async (reason: ReportReason) => {
@@ -168,12 +167,9 @@ export default function UserProfileScreen() {
         contentId: reportContentIdUser(userId),
         reason,
       });
-      Alert.alert('Report submitted', 'Thanks for helping keep HalfOrder safe.');
+      showSuccess('Thanks for helping keep HalfOrder safe.');
     } catch (e) {
-      Alert.alert(
-        'Error',
-        e instanceof Error ? e.message : 'Failed to submit report.',
-      );
+      showError(getUserFriendlyError(e));
     } finally {
       setReporting(false);
     }
@@ -181,20 +177,14 @@ export default function UserProfileScreen() {
 
   const handleReportUser = () => {
     if (!currentUserId || !userId || currentUserId === userId || reporting) return;
-    Alert.alert(
-      'Report user',
-      'Choose a reason',
-      [
-        ...REPORT_REASON_OPTIONS.map((option) => ({
-          text: option.label,
-          onPress: () => {
-            void submitReportWithReason(option.value);
-          },
-        })),
-        { text: 'Cancel', style: 'cancel' as const },
-      ],
-      { cancelable: true },
-    );
+    void systemActionSheet({
+      title: 'Report user',
+      message: 'Choose a reason',
+      actions: REPORT_REASON_OPTIONS.map((option) => ({
+        label: option.label,
+        onPress: () => void submitReportWithReason(option.value),
+      })),
+    });
   };
 
   if (loading) {

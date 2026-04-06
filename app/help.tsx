@@ -7,7 +7,6 @@ import * as Linking from 'expo-linking';
 import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -15,7 +14,10 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { systemActionSheet, systemConfirm } from '@/components/SystemDialogHost';
 import { theme } from '@/constants/theme';
+import { getUserFriendlyError } from '@/utils/errorHandler';
+import { showError, showSuccess } from '@/utils/toast';
 
 const c = theme.colors;
 
@@ -100,34 +102,32 @@ export default function HelpScreen() {
   }, [loadOrders]);
 
   const handleReportOrder = (order: PreviousOrder) => {
-    Alert.alert(
-      'Report a problem',
-      `Report an issue with your order at ${order.restaurantName}? You can contact support with your order details.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Contact Support',
-          onPress: () => {
-            const subject = encodeURIComponent(
-              `Issue with order - ${order.restaurantName}`,
-            );
-            const body = encodeURIComponent(
-              `Order ID: ${order.id}\nRestaurant: ${order.restaurantName}\nDate: ${order.date}\nTotal: $${order.totalPrice.toFixed(2)}`,
-            );
-            const url = `mailto:support@halforder.app?subject=${subject}&body=${body}`;
-            Linking.openURL(url).catch(() => {});
-          },
-        },
-      ],
-    );
+    void (async () => {
+      const ok = await systemConfirm({
+        title: 'Report a problem',
+        message: `Report an issue with your order at ${order.restaurantName}? You can contact support with your order details.`,
+        confirmLabel: 'Contact Support',
+      });
+      if (!ok) return;
+      const subject = encodeURIComponent(
+        `Issue with order - ${order.restaurantName}`,
+      );
+      const body = encodeURIComponent(
+        `Order ID: ${order.id}\nRestaurant: ${order.restaurantName}\nDate: ${order.date}\nTotal: $${order.totalPrice.toFixed(2)}`,
+      );
+      const url = `mailto:support@halforder.app?subject=${subject}&body=${body}`;
+      Linking.openURL(url).catch(() => {});
+    })();
   };
 
   const handleReportUser = (order: PreviousOrder) => {
     const reportedId = order.otherUserId;
     if (!uid || !reportedId) return;
-    Alert.alert('Report user', 'Select a reason', [
-      ...REPORT_REASONS.map((reason) => ({
-        text: reason,
+    void systemActionSheet({
+      title: 'Report user',
+      message: 'Select a reason',
+      actions: REPORT_REASONS.map((reason) => ({
+        label: reason,
         onPress: () => {
           void (async () => {
             try {
@@ -137,48 +137,36 @@ export default function HelpScreen() {
                 orderId: order.id,
                 reason,
               });
-              Alert.alert('Report submitted');
+              showSuccess('Report submitted');
             } catch (e) {
-              Alert.alert(
-                'Error',
-                e instanceof Error ? e.message : 'Could not submit report.',
-              );
+              showError(getUserFriendlyError(e));
             }
           })();
         },
       })),
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+    });
   };
 
   const handleBlockUser = (order: PreviousOrder) => {
     const blockedId = order.otherUserId;
     if (!uid || !blockedId) return;
-    Alert.alert(
-      'Block user',
-      'You will not see each other in join lists. You can still email support about this order.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Block',
-          style: 'destructive',
-          onPress: () => {
-            void (async () => {
-              try {
-                await blockUser(uid, blockedId);
-                Alert.alert('Blocked', 'This user has been blocked.');
-                await loadOrders();
-              } catch (e) {
-                Alert.alert(
-                  'Error',
-                  e instanceof Error ? e.message : 'Could not block user.',
-                );
-              }
-            })();
-          },
-        },
-      ],
-    );
+    void (async () => {
+      const ok = await systemConfirm({
+        title: 'Block user',
+        message:
+          'You will not see each other in join lists. You can still email support about this order.',
+        confirmLabel: 'Block',
+        destructive: true,
+      });
+      if (!ok) return;
+      try {
+        await blockUser(uid, blockedId);
+        showSuccess('This user has been blocked.');
+        await loadOrders();
+      } catch (e) {
+        showError(getUserFriendlyError(e));
+      }
+    })();
   };
 
   if (!uid) {

@@ -20,7 +20,6 @@ import {
 import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -31,6 +30,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { shadows, theme } from '@/constants/theme';
+import { getUserFriendlyError } from '@/utils/errorHandler';
+import { showError } from '@/utils/toast';
 
 const NEARBY_RADIUS_KM = 1;
 
@@ -69,8 +70,7 @@ export default function NearbyOrdersScreen() {
       return;
     }
     if (await isUserBanned(uid)) {
-      Alert.alert(
-        'Access denied',
+      showError(
         'Your account has been restricted. You cannot join orders.',
       );
       return;
@@ -80,8 +80,7 @@ export default function NearbyOrdersScreen() {
       return;
     }
     if (order.participants.length >= order.maxParticipants) {
-      Alert.alert(
-        'Order full',
+      showError(
         'This order already has the maximum number of participants.',
       );
       return;
@@ -119,8 +118,7 @@ export default function NearbyOrdersScreen() {
       await trackOrderJoined(uid, order.id);
       router.push(`/order/${order.id}` as const);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Failed to join';
-      Alert.alert('Error', msg);
+      showError(getUserFriendlyError(e));
     } finally {
       setJoiningId(null);
     }

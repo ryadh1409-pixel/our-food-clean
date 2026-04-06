@@ -48,6 +48,20 @@ export const toastConfig: ToastConfig = {
       <Text style={{ color: '#fff' }}>{text2}</Text>
     </View>
   ),
+  info: ({ text1, text2 }) => (
+    <View style={[cardBase, { borderLeftColor: '#9ca3af' }]}>
+      <Text
+        style={{
+          color: palette.primaryOrange,
+          fontWeight: 'bold',
+          marginBottom: 4,
+        }}
+      >
+        {text1?.trim() ? text1 : 'Notice'}
+      </Text>
+      <Text style={{ color: '#fff' }}>{text2}</Text>
+    </View>
+  ),
 };
 
 /** Short error toast — never pass raw Firebase / stack text. */
@@ -64,6 +78,18 @@ export function showError(message: string): void {
 export function showSuccess(message: string): void {
   Toast.show({
     type: 'success',
+    text2: message,
+    position: 'bottom',
+    visibilityTime: VISIBILITY_MS,
+    autoHide: true,
+  });
+}
+
+/** In-app notice (e.g. foreground notifications) — not framed as success/error. */
+export function showNotice(title: string, message: string): void {
+  Toast.show({
+    type: 'info',
+    text1: title,
     text2: message,
     position: 'bottom',
     visibilityTime: VISIBILITY_MS,

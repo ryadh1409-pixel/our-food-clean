@@ -15,7 +15,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActionSheetIOS,
   ActivityIndicator,
-  Alert,
   FlatList,
   KeyboardAvoidingView,
   Platform,
@@ -28,7 +27,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
-import { friendlyErrorMessage } from '@/lib/friendlyError';
+import { systemActionSheet, systemConfirm } from '@/components/SystemDialogHost';
+import { getUserFriendlyError } from '@/utils/errorHandler';
+import { showError, showSuccess } from '@/utils/toast';
 import { blockUser } from '@/services/block';
 import { hasBlockBetween } from '@/services/blocks';
 import { auth, db } from '@/services/firebase';
@@ -328,7 +329,7 @@ export default function ChatByIdScreen() {
       }).catch(() => {});
       setText('');
     } catch (e) {
-      Alert.alert('Could not send', friendlyErrorMessage(e));
+      showError(getUserFriendlyError(e));
     } finally {
       setSending(false);
     }
@@ -336,28 +337,22 @@ export default function ChatByIdScreen() {
 
   const confirmBlockPeer = () => {
     if (!myUid || !peerUid) return;
-    Alert.alert(
-      'Block user?',
-      'You will not see each other’s messages or orders.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Block',
-          style: 'destructive',
-          onPress: () => {
-            void (async () => {
-              try {
-                await blockUser(peerUid, myUid);
-                setBlockedBetween(true);
-                Alert.alert('Blocked', 'This user is blocked.');
-              } catch (e) {
-                Alert.alert('Could not block', friendlyErrorMessage(e));
-              }
-            })();
-          },
-        },
-      ],
-    );
+    void (async () => {
+      const ok = await systemConfirm({
+        title: 'Block user?',
+        message: 'You will not see each other’s messages or orders.',
+        confirmLabel: 'Block',
+        destructive: true,
+      });
+      if (!ok) return;
+      try {
+        await blockUser(peerUid, myUid);
+        setBlockedBetween(true);
+        showSuccess('This user is blocked.');
+      } catch (e) {
+        showError(getUserFriendlyError(e));
+      }
+    })();
   };
 
   const openMessageActions = (item: ChatMessage) => {
@@ -381,11 +376,13 @@ export default function ChatByIdScreen() {
         },
       );
     } else {
-      Alert.alert('Message', undefined, [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Report', onPress: openReport },
-        { text: 'Block user', style: 'destructive', onPress: doBlock },
-      ]);
+      void systemActionSheet({
+        title: 'Message',
+        actions: [
+          { label: 'Report', onPress: openReport },
+          { label: 'Block user', destructive: true, onPress: doBlock },
+        ],
+      });
     }
   };
 
@@ -540,9 +537,7 @@ export default function ChatByIdScreen() {
               ? reportContentIdChatMessage(id, reportMessageId)
               : ''
           }
-          onSubmitted={() =>
-            Alert.alert('Thanks', 'We received your report.')
-          }
+          onSubmitted={() => showSuccess('We received your report.')}
         />
       </KeyboardAvoidingView>
     </SafeAreaView>

@@ -15,7 +15,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Platform,
   ScrollView,
   StyleSheet,
@@ -24,6 +23,10 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { systemConfirm } from '@/components/SystemDialogHost';
+import { getUserFriendlyError } from '@/utils/errorHandler';
+import { showError, showSuccess } from '@/utils/toast';
 
 export default function AdminReportDetailScreen() {
   const router = useRouter();
@@ -87,59 +90,56 @@ export default function AdminReportDetailScreen() {
 
   const markIgnored = () => {
     if (!reportId) return;
-    Alert.alert('Ignore report', 'Close without action?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Ignore',
-        onPress: async () => {
-          setActing(true);
-          try {
-            adminLog('report-detail', 'ignore report', { reportId });
-            await updateDoc(doc(db, 'reports', reportId), {
-              adminResolution: 'ignored',
-              adminResolvedAt: serverTimestamp(),
-            });
-          } catch (e) {
-            Alert.alert('Error', e instanceof Error ? e.message : 'Failed');
-          } finally {
-            setActing(false);
-          }
-        },
-      },
-    ]);
+    void (async () => {
+      const ok = await systemConfirm({
+        title: 'Ignore report',
+        message: 'Close without action?',
+        confirmLabel: 'Ignore',
+        destructive: true,
+      });
+      if (!ok) return;
+      setActing(true);
+      try {
+        adminLog('report-detail', 'ignore report', { reportId });
+        await updateDoc(doc(db, 'reports', reportId), {
+          adminResolution: 'ignored',
+          adminResolvedAt: serverTimestamp(),
+        });
+      } catch (e) {
+        showError(getUserFriendlyError(e));
+      } finally {
+        setActing(false);
+      }
+    })();
   };
 
   const banUser = () => {
     if (!reportId || !reportedUserId) return;
-    Alert.alert(
-      'Ban user',
-      `Ban ${reportedUserId.slice(0, 10)}… and resolve this report?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Ban',
-          style: 'destructive',
-          onPress: async () => {
-            setActing(true);
-          try {
-            adminLog('report-detail', 'ban user from report', { reportedUserId });
-            await updateDoc(doc(db, 'users', reportedUserId), {
-              banned: true,
-            });
-            await updateDoc(doc(db, 'reports', reportId), {
-                adminResolution: 'banned_reported_user',
-                adminResolvedAt: serverTimestamp(),
-              });
-              Alert.alert('Done', 'User banned.');
-            } catch (e) {
-              Alert.alert('Error', e instanceof Error ? e.message : 'Failed');
-            } finally {
-              setActing(false);
-            }
-          },
-        },
-      ],
-    );
+    void (async () => {
+      const ok = await systemConfirm({
+        title: 'Ban user',
+        message: `Ban ${reportedUserId.slice(0, 10)}… and resolve this report?`,
+        confirmLabel: 'Ban',
+        destructive: true,
+      });
+      if (!ok) return;
+      setActing(true);
+      try {
+        adminLog('report-detail', 'ban user from report', { reportedUserId });
+        await updateDoc(doc(db, 'users', reportedUserId), {
+          banned: true,
+        });
+        await updateDoc(doc(db, 'reports', reportId), {
+          adminResolution: 'banned_reported_user',
+          adminResolvedAt: serverTimestamp(),
+        });
+        showSuccess('User banned.');
+      } catch (e) {
+        showError(getUserFriendlyError(e));
+      } finally {
+        setActing(false);
+      }
+    })();
   };
 
   if (!reportId) {

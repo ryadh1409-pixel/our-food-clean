@@ -9,7 +9,6 @@ import {
 } from 'firebase/firestore';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Alert,
   FlatList,
   Keyboard,
   KeyboardAvoidingView,
@@ -25,6 +24,7 @@ import { auth, db } from '@/services/firebase';
 import { reportBlockedMessage } from '@/services/chatSecurity';
 import { moderateUserContent } from '@/utils/contentModeration';
 import { theme } from '@/constants/theme';
+import { showError } from '@/utils/toast';
 
 const c = theme.colors;
 
@@ -90,7 +90,7 @@ export default function SupportChatScreen() {
 
     const mod = moderateUserContent(trimmed, { maxLength: 2000 });
     if (!mod.ok) {
-      Alert.alert('Cannot send', mod.reason);
+      showError(mod.reason);
       void reportBlockedMessage(db, uid, trimmed, mod.reason);
       return;
     }

@@ -24,7 +24,6 @@ import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Image,
   RefreshControl,
   ScrollView,

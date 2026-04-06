@@ -9,7 +9,6 @@ import { addDoc, collection, doc, getDoc, serverTimestamp } from 'firebase/fires
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -17,6 +16,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { adminColors as C } from '@/constants/adminTheme';
+import { showError, showSuccess } from '@/utils/toast';
 
 function TestOrderFlowScreenDev() {
   const router = useRouter();
@@ -29,7 +29,7 @@ function TestOrderFlowScreenDev() {
 
   const runTest = async () => {
     if (!currentUserUid) {
-      Alert.alert('Error', 'You must be signed in to run the test.');
+      showError('You must be signed in to run the test.');
       setResult('Order flow test failed');
       setErrorDetail('Not signed in');
       return;
@@ -62,7 +62,7 @@ function TestOrderFlowScreenDev() {
       if (!snap.exists()) {
         setResult('Order flow test failed');
         setErrorDetail('Order not found after create');
-        Alert.alert('Order flow test failed', 'Order not found after create');
+        showError('Order not found after create');
         return;
       }
 
@@ -75,18 +75,18 @@ function TestOrderFlowScreenDev() {
         const detail = `Expected participants === [current user], got: ${plist.join(', ')}`;
         setResult('Order flow test failed');
         setErrorDetail(detail);
-        Alert.alert('Order flow test failed', detail);
+        showError(detail);
         return;
       }
 
       setResult('Order flow test passed');
       setErrorDetail(null);
-      Alert.alert('Success', 'Order flow test passed');
+      showSuccess('Order flow test passed');
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       setResult('Order flow test failed');
       setErrorDetail(message);
-      Alert.alert('Order flow test failed', message);
+      showError(message);
     } finally {
       setRunning(false);
     }

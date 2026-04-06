@@ -20,7 +20,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import * as Linking from 'expo-linking';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Keyboard,
   KeyboardAvoidingView,
@@ -44,12 +43,19 @@ import JoinOrderScreen from '@/screens/JoinOrderScreen';
 import { useTrustScore } from '@/hooks/useTrustScore';
 import { useHiddenUserIds } from '@/hooks/useHiddenUserIds';
 import { RateOrderPartnerModal } from '@/components/RateOrderPartnerModal';
+import {
+  systemActionSheet,
+  systemConfirm,
+} from '@/components/SystemDialogHost';
 import { getRatedUserIdsForOrder } from '@/services/ratings';
 import {
   isBlockedByAny,
   reportAndBlock,
 } from '@/services/report-block';
 import { blockUser, submitUserReport } from '@/services/userSafety';
+import { getUserFriendlyError } from '@/utils/errorHandler';
+import { logError } from '@/utils/errorLogger';
+import { showError, showNotice, showSuccess } from '@/utils/toast';
 import {
   formatTorontoDate,
   formatTorontoTime,
@@ -682,13 +688,6 @@ export default function OrderRoomScreen() {
     }
   }, [order?.status, pendingRatingUserIds, showRatingModal, didAutoPromptRating]);
 
-  useEffect(() => {
-    console.log('createdBy:', order?.createdBy);
-    console.log('user:', currentUser?.uid);
-    console.log('status:', order?.status);
-    console.log('showCancel:', showCancel);
-  }, [order?.createdBy, currentUser?.uid, order?.status, showCancel]);
-
   const handleSend = async () => {
     const trimmed = text.trim();
     if (
@@ -701,7 +700,7 @@ export default function OrderRoomScreen() {
       isWaiting
     ) {
       if (!trimmed) {
-        Alert.alert('Error', 'Message cannot be empty.');
+        showError('Message cannot be empty.');
       }
       return;
     }
@@ -710,28 +709,25 @@ export default function OrderRoomScreen() {
     if (!uid) return;
     if (otherParticipantId && (await isUserBlocked(uid, otherParticipantId))) {
       setIsBlocked(true);
-      Alert.alert('Blocked', 'You cannot send messages to this user.');
+      showError('You cannot send messages to this user.');
       return;
     }
 
     const containsLink = /(https?:\/\/|www\.)/i.test(trimmed);
     if (containsLink) {
-      Alert.alert('Error', 'Links are not allowed in chat.');
+      showError('Links are not allowed in chat.');
       return;
     }
 
     const now = Date.now();
     if (now - lastMessageTimeRef.current < CHAT_THROTTLE_MS) {
-      Alert.alert('Error', 'Please wait before sending another message.');
+      showError('Please wait before sending another message.');
       return;
     }
 
     const check = isMessageSafe(trimmed);
     if (!check.safe) {
-      Alert.alert(
-        'Message blocked',
-        check.reason ?? 'This message is not allowed.',
-      );
+      showError(check.reason ?? 'This message is not allowed.');
       await reportBlockedMessage(db, uid, trimmed, check.reason ?? 'blocked');
       return;
     }
@@ -742,7 +738,7 @@ export default function OrderRoomScreen() {
       'User';
 
     if (!orderId) {
-      Alert.alert('Error', 'Order not ready. Please try again.');
+      showError('Order not ready. Please try again.');
       return;
     }
     setSending(true);
@@ -759,11 +755,7 @@ export default function OrderRoomScreen() {
       Keyboard.dismiss();
       setTyping(false);
     } catch (e) {
-      const msg =
-        e instanceof Error
-          ? e.message
-          : 'Failed to send message. Please try again.';
-      Alert.alert('Error', msg);
+      showError(getUserFriendlyError(e));
     } finally {
       setSending(false);
     }
@@ -787,12 +779,12 @@ export default function OrderRoomScreen() {
           createdAt: serverTimestamp(),
         });
         setOutgoingCallId(callRef.id);
-        Alert.alert('Calling', 'Waiting for the other person to accept…');
-      } catch (e) {
-        Alert.alert(
-          'Error',
-          e instanceof Error ? e.message : 'Could not start call',
+        showNotice(
+          'Calling',
+          'Waiting for the other person to accept…',
         );
+      } catch (e) {
+        showError(getUserFriendlyError(e));
       }
       return;
     }
@@ -865,9 +857,9 @@ export default function OrderRoomScreen() {
       if (Platform.OS === 'web') {
         if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
           await navigator.clipboard.writeText(message);
-          Alert.alert('Copied', 'Invite message copied to clipboard. Share it anywhere!');
+          showSuccess('Invite message copied to clipboard. Share it anywhere!');
         } else {
-          Alert.alert('Share', message);
+          showNotice('Share', message);
         }
         return;
       }
@@ -876,9 +868,8 @@ export default function OrderRoomScreen() {
         title: 'Join my HalfOrder order',
       });
     } catch (error) {
-      console.log('Invite error:', error);
       if ((error as { message?: string })?.message !== 'User did not share') {
-        Alert.alert('Share', 'Could not open share sheet.');
+        showError('Could not open share sheet.');
       }
     }
   };
@@ -907,8 +898,7 @@ export default function OrderRoomScreen() {
         message,
         title: 'Join my HalfOrder order',
       }).catch(() =>
-        Alert.alert(
-          'Share',
+        showError(
           'Could not open WhatsApp. You can copy the message from the order screen.',
         ),
       );
@@ -958,11 +948,11 @@ export default function OrderRoomScreen() {
     ) {
       navigator.clipboard
         .writeText(orderShareLink)
-        .then(() => Alert.alert('Copied', 'Link copied to clipboard.'));
+        .then(() => showSuccess('Link copied to clipboard.'));
     } else {
       Share.share({ message: orderShareLink, title: 'Copy link' })
         .then(() => {})
-        .catch(() => Alert.alert('Link', orderShareLink));
+        .catch(() => showNotice('Link', orderShareLink));
     }
   };
 
@@ -1091,8 +1081,7 @@ export default function OrderRoomScreen() {
         >[0],
       );
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Failed to complete order';
-      Alert.alert('Error', msg);
+      showError(getUserFriendlyError(e));
     } finally {
       setCompleting(false);
     }
@@ -1104,8 +1093,7 @@ export default function OrderRoomScreen() {
     try {
       await doCompleteOrder();
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Failed';
-      Alert.alert('Error', msg);
+      showError(getUserFriendlyError(e));
     } finally {
       setCompleting(false);
     }
@@ -1130,10 +1118,9 @@ export default function OrderRoomScreen() {
         status: 'cancelled',
         reason: 'Users reported order not shared',
       });
-      Alert.alert('Reported', 'Order marked as not shared.');
+      showSuccess('Order marked as not shared.');
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Failed to update';
-      Alert.alert('Error', msg);
+      showError(getUserFriendlyError(e));
     } finally {
       setCompleting(false);
     }
@@ -1284,30 +1271,26 @@ export default function OrderRoomScreen() {
       : timerMessageUnderCardJoin;
   const handleCancelOrder = async () => {
     if (!orderId || !showCancel || cancellingOrder) return;
-    Alert.alert(
-      'Cancel Order',
-      'Are you sure you want to cancel this order?',
-      [
-        { text: 'No', style: 'cancel' },
-        {
-          text: 'Yes',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setCancellingOrder(true);
-              await updateDoc(doc(db, 'orders', orderId), {
-                status: 'cancelled',
-              });
-              router.back();
-            } catch (e) {
-              console.error('Cancel error:', e);
-            } finally {
-              setCancellingOrder(false);
-            }
-          },
-        },
-      ],
-    );
+    const ok = await systemConfirm({
+      title: 'Cancel Order',
+      message: 'Are you sure you want to cancel this order?',
+      confirmLabel: 'Yes',
+      cancelLabel: 'No',
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      setCancellingOrder(true);
+      await updateDoc(doc(db, 'orders', orderId), {
+        status: 'cancelled',
+      });
+      router.back();
+    } catch (e) {
+      logError(e);
+      showError(getUserFriendlyError(e));
+    } finally {
+      setCancellingOrder(false);
+    }
   };
 
   const handleJoinFromLink = async () => {
@@ -1319,21 +1302,19 @@ export default function OrderRoomScreen() {
       return;
     }
     if (await isUserBanned(uid)) {
-      Alert.alert(
-        'Access denied',
+      showError(
         'Your account has been restricted. You cannot join orders.',
       );
       return;
     }
     if (isExpired) {
-      Alert.alert('Order expired', 'This order expired.');
+      showError('This order expired.');
       return;
     }
     const memberIds = order?.participants ?? [];
     const maxPeople = order?.maxPeople ?? 2;
     if (memberIds.length >= maxPeople) {
-      Alert.alert(
-        'Order full',
+      showError(
         'This order already has the maximum number of participants.',
       );
       return;
@@ -1375,7 +1356,7 @@ export default function OrderRoomScreen() {
       await trackOrderJoined(uid, orderId);
       router.push(`/order/${orderId}` as never);
     } catch (e) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Failed to join');
+      showError(getUserFriendlyError(e));
     } finally {
       setJoiningAsGuest(false);
     }
@@ -1385,9 +1366,11 @@ export default function OrderRoomScreen() {
     const uid = auth.currentUser?.uid;
     if (!otherParticipantId || !uid || !orderId) return;
     const reasons = ['Spam', 'Inappropriate behavior', 'Scam', 'Other'] as const;
-    Alert.alert('Report user', 'Select a reason', [
-      ...reasons.map((reason) => ({
-        text: reason,
+    void systemActionSheet({
+      title: 'Report user',
+      message: 'Select a reason',
+      actions: reasons.map((reason) => ({
+        label: reason,
         onPress: () => {
           void (async () => {
             try {
@@ -1397,81 +1380,58 @@ export default function OrderRoomScreen() {
                 orderId,
                 reason,
               });
-              Alert.alert('Report submitted');
+              showSuccess('Report submitted');
             } catch (e) {
-              Alert.alert(
-                'Error',
-                e instanceof Error ? e.message : 'Could not submit report.',
-              );
+              showError(getUserFriendlyError(e));
             }
           })();
         },
       })),
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+    });
   };
 
   const handleBlockOtherUser = () => {
     const uid = auth.currentUser?.uid;
     if (!otherParticipantId || !uid || !orderId) return;
-    Alert.alert(
-      'Block user',
-      'You will not see each other in join lists and messaging may be limited. You can also report severe issues to HalfOrder.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Block',
-          style: 'destructive',
-          onPress: () => {
-            void (async () => {
-              try {
-                await blockUser(uid, otherParticipantId);
-                Alert.alert('Blocked', 'This user has been blocked.');
-                setIsBlocked(true);
-              } catch (e) {
-                Alert.alert(
-                  'Error',
-                  e instanceof Error ? e.message : 'Could not block user.',
-                );
-              }
-            })();
-          },
-        },
-      ],
-    );
+    void (async () => {
+      const ok = await systemConfirm({
+        title: 'Block user',
+        message:
+          'You will not see each other in join lists and messaging may be limited. You can also report severe issues to HalfOrder.',
+        confirmLabel: 'Block',
+        destructive: true,
+      });
+      if (!ok) return;
+      try {
+        await blockUser(uid, otherParticipantId);
+        showSuccess('This user has been blocked.');
+        setIsBlocked(true);
+      } catch (e) {
+        showError(getUserFriendlyError(e));
+      }
+    })();
   };
 
   const handleReportAndBlock = () => {
     const uid = auth.currentUser?.uid;
     if (!otherParticipantId || !uid || !orderId) return;
-    Alert.alert(
-      'Report and block',
-      'Submit a report and block this user. This action cannot be undone from the app.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Report and block',
-          style: 'destructive',
-          onPress: () => {
-            void (async () => {
-              try {
-                await reportAndBlock(uid, otherParticipantId, orderId);
-                Alert.alert(
-                  'Done',
-                  'We received your report and blocked this user.',
-                );
-                setIsBlocked(true);
-              } catch (e) {
-                Alert.alert(
-                  'Error',
-                  e instanceof Error ? e.message : 'Something went wrong.',
-                );
-              }
-            })();
-          },
-        },
-      ],
-    );
+    void (async () => {
+      const ok = await systemConfirm({
+        title: 'Report and block',
+        message:
+          'Submit a report and block this user. This action cannot be undone from the app.',
+        confirmLabel: 'Report and block',
+        destructive: true,
+      });
+      if (!ok) return;
+      try {
+        await reportAndBlock(uid, otherParticipantId, orderId);
+        showSuccess('We received your report and blocked this user.');
+        setIsBlocked(true);
+      } catch (e) {
+        showError(getUserFriendlyError(e));
+      }
+    })();
   };
 
   if (!allowed) {

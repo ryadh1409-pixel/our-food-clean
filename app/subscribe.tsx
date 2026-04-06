@@ -5,7 +5,6 @@ import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Platform,
   Pressable,
   ScrollView,
@@ -14,6 +13,8 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { showNotice } from '@/utils/toast';
 
 const c = theme.colors;
 
@@ -36,7 +37,7 @@ export default function SubscribeScreen() {
     // Replace with StoreKit / RevenueCat when billing is integrated.
     setTimeout(() => {
       setWorking(false);
-      Alert.alert(
+      showNotice(
         'Coming soon',
         'HalfOrder Plus will be available in an upcoming release. Thanks for your interest.',
       );

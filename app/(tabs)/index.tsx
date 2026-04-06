@@ -21,12 +21,12 @@ import { subscribeJoinHintsForFoodCard } from '@/services/foodCardSlotOrders';
 import { subscribeActiveFoodTemplates } from '@/services/foodTemplates';
 import type { FoodTemplate } from '@/types/food';
 import { AIDescription } from '@/components/AIDescription';
+import { showError, showNotice } from '@/utils/toast';
 import { BlurView } from 'expo-blur';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Animated,
   Image,
   PanResponder,
@@ -177,7 +177,7 @@ export default function SwipeScreen() {
     if (!targetId || joining) return;
     const joinUid = user?.uid;
     if (!joinUid) {
-      Alert.alert('Sign in required', 'Sign in to join a food card.');
+      showError('Sign in to join a food card.');
       router.push('/(auth)/login' as never);
       return;
     }
@@ -192,24 +192,16 @@ export default function SwipeScreen() {
       const result = await joinOrder(targetId, joinUid);
       if (!result.ok) {
         if (!result.silent) {
-          Alert.alert('Unable to join', safeAlertBody(result.message, USER_ERROR_JOIN));
+          showError(safeAlertBody(result.message, USER_ERROR_JOIN));
         }
         return;
       }
-      if (__DEV__) {
-        console.log('[swipe] joinOrder result:', {
-          cardId: targetId,
-          orderId: result.orderId,
-          alreadyJoined: result.alreadyJoined,
-          isFull: result.isFull,
-        });
-      }
       if (result.justBecamePair) {
-        Alert.alert(PAYMENT_MATCH_ALERT_TITLE, PAYMENT_MATCH_ALERT_MESSAGE);
+        showNotice(PAYMENT_MATCH_ALERT_TITLE, PAYMENT_MATCH_ALERT_MESSAGE);
       }
       router.push(`/order/${result.orderId}` as never);
     } catch (e) {
-      Alert.alert('Unable to join', USER_ERROR_JOIN);
+      showError(USER_ERROR_JOIN);
     } finally {
       setJoining(false);
     }

@@ -8,7 +8,6 @@ import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert,
   Animated as RNAnimated,
   Dimensions,
   Platform,
@@ -18,6 +17,9 @@ import {
   Text,
   View,
 } from 'react-native';
+import { getUserFriendlyError } from '@/utils/errorHandler';
+import { logError } from '@/utils/errorLogger';
+import { showError } from '@/utils/toast';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, {
   Extrapolation,
@@ -408,14 +410,10 @@ function SwipeScreenInner() {
             })(),
           };
         });
-        console.log(
-          '[Swipe] fetched open orders:',
-          cards.map((c) => ({ id: c.id, title: c.title, type: c.type })),
-        );
         setLiveOrders(cards);
       },
       (error) => {
-        console.error('[Swipe] failed to fetch open orders:', error);
+        logError(error);
         setLiveOrders([]);
       },
     );
@@ -425,14 +423,9 @@ function SwipeScreenInner() {
   useEffect(() => {
     const unsubAll = onSnapshot(
       collection(db, 'orders'),
-      (snap) => {
-        console.log(
-          '[Swipe] all orders documents:',
-          snap.docs.map((d) => ({ id: d.id, ...d.data() })),
-        );
-      },
+      () => {},
       (error) => {
-        console.error('[Swipe] failed to fetch all orders:', error);
+        logError(error);
       },
     );
     return () => unsubAll();
@@ -447,7 +440,7 @@ function SwipeScreenInner() {
       }
       if (joiningOrderId) return;
       if (order.createdBy && order.createdBy === currentUser.uid) {
-        Alert.alert('Own order', 'You cannot join your own order.');
+        showError('You cannot join your own order.');
         return;
       }
 
@@ -480,11 +473,8 @@ function SwipeScreenInner() {
         router.push(`/order/${order.id}` as const);
         setIndex((i) => i + 1);
       } catch (error) {
-        console.error('[Swipe] failed to join order on like:', error);
-        Alert.alert(
-          'Could not join order',
-          error instanceof Error ? error.message : 'Please try again.',
-        );
+        logError(error);
+        showError(getUserFriendlyError(error));
       } finally {
         setJoiningOrderId(null);
       }

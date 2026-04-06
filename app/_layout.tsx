@@ -3,10 +3,10 @@ import * as Notifications from 'expo-notifications';
 import { Redirect, Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useRef } from 'react';
-import { Alert, LogBox, Platform } from 'react-native';
+import { LogBox, Platform } from 'react-native';
 import Toast from 'react-native-toast-message';
 
-import { toastConfig } from '@/utils/toast';
+import { showNotice, toastConfig } from '@/utils/toast';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import 'react-native-reanimated';
@@ -16,6 +16,7 @@ import 'react-native-reanimated';
  * Main app chrome lives in `app/(tabs)/_layout.tsx`.
  */
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { SystemDialogHost } from '@/components/SystemDialogHost';
 import { isAdminUser } from '@/constants/adminUid';
 import {
   TERMS_ACCEPTANCE_STORAGE_KEY,
@@ -55,9 +56,7 @@ import {
   type DocumentData,
 } from 'firebase/firestore';
 
-if (!__DEV__) {
-  LogBox.ignoreAllLogs(true);
-}
+LogBox.ignoreAllLogs(true);
 
 const NEARBY_MATCH_DATA_TYPE = 'nearby_match';
 
@@ -844,7 +843,7 @@ function RootLayoutNav() {
           if (distanceKm) {
             message = `They're ${distanceKm} km away. ${message}`;
           }
-          Alert.alert(
+          showNotice(
             PAYMENT_MATCH_ALERT_TITLE,
             `${message}\n\n${PAYMENT_MATCH_ALERT_MESSAGE}`,
           );
@@ -852,15 +851,19 @@ function RootLayoutNav() {
         const nTitle = notification?.request?.content?.title;
         const nBody = notification?.request?.content?.body;
         if (data?.type === 'chat_message') {
-          Alert.alert(
+          showNotice(
             typeof nTitle === 'string' && nTitle.trim() ? nTitle : 'New message',
-            typeof nBody === 'string' && nBody.trim() ? nBody : 'Someone sent a message in your order chat.',
+            typeof nBody === 'string' && nBody.trim()
+              ? nBody
+              : 'Someone sent a message in your order chat.',
           );
         }
         if (data?.type === 'order_message') {
-          Alert.alert(
+          showNotice(
             typeof nTitle === 'string' && nTitle.trim() ? nTitle : 'Order chat',
-            typeof nBody === 'string' && nBody.trim() ? nBody : 'New message on your order.',
+            typeof nBody === 'string' && nBody.trim()
+              ? nBody
+              : 'New message on your order.',
           );
         }
         const notificationId = data?.notificationId as string | undefined;
@@ -1128,6 +1131,7 @@ export default function RootLayout() {
         <AuthProvider>
           <>
             <RootLayoutNav />
+            <SystemDialogHost />
             <Toast config={toastConfig} />
           </>
         </AuthProvider>
