@@ -23,9 +23,9 @@
         "applinks:www.halforder.app"
       ],
       "infoPlist": {
-        "NSPhotoLibraryUsageDescription": "We use your photos so you can upload food images when creating or joining an order.",
+        "NSPhotoLibraryUsageDescription": "We need access to your photos so you can upload a profile picture.",
         "NSPhotoLibraryAddUsageDescription": "HalfOrder may save images you share only when you choose to save them.",
-        "NSCameraUsageDescription": "HalfOrder uses your camera so you can take photos of food to share with other users when creating or joining an order.",
+        "NSCameraUsageDescription": "We need access to your camera so you can take a profile picture.",
         "ITSAppUsesNonExemptEncryption": false,
         "CFBundleURLTypes": [
           {
@@ -152,8 +152,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "HalfOrder needs access to your photo library so you can choose a profile image.",
-          "cameraPermission": "HalfOrder needs camera access if you take a new photo for your profile."
+          "photosPermission": "We need access to your photos so you can upload a profile picture.",
+          "cameraPermission": "We need access to your camera so you can take a profile picture."
         }
       ],
       "expo-web-browser"

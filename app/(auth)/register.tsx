@@ -74,15 +74,25 @@ export default function RegisterScreen() {
   const pickFromLibrary = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      showError('Allow photo library access to add a profile picture.');
+      showError(
+        'Permission to access photos is required. Enable Photos access for HalfOrder in Settings to add a profile picture.',
+      );
       return;
     }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.85,
-      allowsEditing: true,
-      aspect: [1, 1],
-    });
+    let result: Awaited<
+      ReturnType<typeof ImagePicker.launchImageLibraryAsync>
+    >;
+    try {
+      result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 0.85,
+        allowsEditing: true,
+        aspect: [1, 1],
+      });
+    } catch {
+      showError('Could not open your photo library. Please try again.');
+      return;
+    }
     if (!result.canceled && result.assets[0]?.uri) {
       setPhotoUri(result.assets[0].uri);
     }
@@ -91,14 +101,22 @@ export default function RegisterScreen() {
   const pickFromCamera = async () => {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) {
-      showError('Allow camera access to take a profile picture.');
+      showError(
+        'Permission to use the camera is required. Enable Camera access for HalfOrder in Settings.',
+      );
       return;
     }
-    const result = await ImagePicker.launchCameraAsync({
-      quality: 0.85,
-      allowsEditing: true,
-      aspect: [1, 1],
-    });
+    let result: Awaited<ReturnType<typeof ImagePicker.launchCameraAsync>>;
+    try {
+      result = await ImagePicker.launchCameraAsync({
+        quality: 0.85,
+        allowsEditing: true,
+        aspect: [1, 1],
+      });
+    } catch {
+      showError('Could not open the camera. Please try again.');
+      return;
+    }
     if (!result.canceled && result.assets[0]?.uri) {
       setPhotoUri(result.assets[0].uri);
     }

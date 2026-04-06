@@ -425,13 +425,26 @@ export default function ProfileScreen() {
     }
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      showError('Allow photo library access to set a profile picture.');
+      showError(
+        'Permission to access photos is required. Enable Photos access for HalfOrder in Settings.',
+      );
       return;
     }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.7,
-    });
+    let result: Awaited<
+      ReturnType<typeof ImagePicker.launchImageLibraryAsync>
+    >;
+    try {
+      result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+      });
+    } catch (e) {
+      logError(e);
+      showError('Could not open your photo library. Please try again.');
+      return;
+    }
     if (result.canceled || !result.assets?.[0]?.uri) return;
 
     const imageUri = result.assets[0].uri;
