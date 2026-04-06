@@ -3,13 +3,17 @@ import { useAuth } from '@/services/AuthContext';
 import { auth } from '@/services/firebase';
 import { getUserFriendlyError } from '@/utils/errorHandler';
 import { logError } from '@/utils/errorLogger';
+import {
+  VERIFY_EMAIL_HOME_HREF,
+  refreshSessionAndIsEmailVerified,
+} from '@/utils/emailVerificationFlow';
+import { showError, showSuccess } from '@/utils/toast';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { sendEmailVerification } from 'firebase/auth';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Animated,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -27,7 +31,6 @@ export default function VerifyEmailScreen() {
   const router = useRouter();
   const { user, loading: authLoading, reloadAuthUser, signOutUser } = useAuth();
   const [checking, setChecking] = useState(true);
-  const [verified, setVerified] = useState(false);
   const [loading, setLoading] = useState(false);
   const [resendLoading, setResendLoading] = useState(false);
   const [cooldown, setCooldown] = useState(0);
@@ -35,19 +38,45 @@ export default function VerifyEmailScreen() {
   const [messageIsSuccess, setMessageIsSuccess] = useState(true);
   const [actionError, setActionError] = useState('');
 
-  const successScale = useRef(new Animated.Value(0)).current;
+  const hasNavigatedRef = useRef(false);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollTickInFlightRef = useRef(false);
 
-  const goHome = useCallback(() => {
-    router.replace('/(tabs)' as Parameters<typeof router.replace>[0]);
-  }, [router]);
-
-  const clearPoll = useCallback(() => {
+  const clearPollInterval = useCallback(() => {
     if (pollIntervalRef.current != null) {
       clearInterval(pollIntervalRef.current);
       pollIntervalRef.current = null;
     }
   }, []);
+
+  /** Single navigation + toast — guards against double fire from interval + button. */
+  const navigateToHomeOnce = useCallback(() => {
+    if (hasNavigatedRef.current) return;
+    hasNavigatedRef.current = true;
+    clearPollInterval();
+    showSuccess('Email verified successfully');
+    router.replace(VERIFY_EMAIL_HOME_HREF as Parameters<typeof router.replace>[0]);
+  }, [router, clearPollInterval]);
+
+  const attemptRefreshAndRedirect = useCallback(async (): Promise<boolean> => {
+    if (hasNavigatedRef.current) return true;
+    if (!auth.currentUser) return false;
+
+    try {
+      const verified = await refreshSessionAndIsEmailVerified(reloadAuthUser);
+      if (verified) {
+        navigateToHomeOnce();
+        return true;
+      }
+    } catch (e) {
+      logError(e);
+    }
+    return false;
+  }, [reloadAuthUser, navigateToHomeOnce]);
+
+  useEffect(() => {
+    hasNavigatedRef.current = false;
+  }, [user?.uid]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -56,9 +85,12 @@ export default function VerifyEmailScreen() {
       return;
     }
     if (!userNeedsEmailVerification(user)) {
-      router.replace('/(tabs)' as Parameters<typeof router.replace>[0]);
+      if (hasNavigatedRef.current) return;
+      hasNavigatedRef.current = true;
+      clearPollInterval();
+      router.replace(VERIFY_EMAIL_HOME_HREF as Parameters<typeof router.replace>[0]);
     }
-  }, [authLoading, user, router]);
+  }, [authLoading, user, router, clearPollInterval]);
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -66,39 +98,23 @@ export default function VerifyEmailScreen() {
     return () => clearTimeout(t);
   }, [cooldown]);
 
+  /** Auto poll: reload session every 2s until verified or unmounted. */
   useEffect(() => {
-    if (!verified) return;
-    successScale.setValue(0);
-    Animated.spring(successScale, {
-      toValue: 1,
-      friction: 7,
-      tension: 80,
-      useNativeDriver: true,
-    }).start();
-  }, [verified, successScale]);
-
-  useEffect(() => {
-    if (authLoading || verified) return;
+    if (authLoading || hasNavigatedRef.current) return;
     const session = auth.currentUser;
     if (!session?.uid || !userNeedsEmailVerification(session)) return;
 
     let cancelled = false;
 
     const tick = async () => {
-      if (cancelled) return;
-      if (!auth.currentUser) return;
+      if (cancelled || hasNavigatedRef.current || pollTickInFlightRef.current) {
+        return;
+      }
+      pollTickInFlightRef.current = true;
       try {
-        // reload() on current user + syncs AuthContext (same as Firebase reload)
-        await reloadAuthUser();
-        if (auth.currentUser?.emailVerified) {
-          clearPoll();
-          setVerified(true);
-          setChecking(false);
-          goHome();
-        }
-      } catch (error) {
-        logError(error);
+        await attemptRefreshAndRedirect();
       } finally {
+        pollTickInFlightRef.current = false;
         if (!cancelled) setChecking(false);
       }
     };
@@ -108,11 +124,12 @@ export default function VerifyEmailScreen() {
 
     return () => {
       cancelled = true;
-      clearPoll();
+      clearPollInterval();
     };
-  }, [authLoading, verified, reloadAuthUser, clearPoll, goHome]);
+  }, [authLoading, attemptRefreshAndRedirect, clearPollInterval]);
 
-  const onVerified = async () => {
+  const handleVerified = async () => {
+    if (hasNavigatedRef.current) return;
     setLoading(true);
     setMessage('');
     setActionError('');
@@ -121,14 +138,10 @@ export default function VerifyEmailScreen() {
         setActionError('You are not signed in. Please log in again.');
         return;
       }
-      await reloadAuthUser();
-      if (auth.currentUser?.emailVerified) {
-        clearPoll();
-        setVerified(true);
-        goHome();
-      } else {
-        setActionError(
-          'Your email is not verified yet. Open the link we sent, then tap I verified again.',
+      const ok = await attemptRefreshAndRedirect();
+      if (!ok && !hasNavigatedRef.current) {
+        showError(
+          'Please verify your email first. Open the link we sent, then tap I verified again.',
         );
       }
     } catch (e) {
@@ -140,7 +153,7 @@ export default function VerifyEmailScreen() {
   };
 
   const handleResend = async () => {
-    if (cooldown > 0 || verified) return;
+    if (cooldown > 0 || hasNavigatedRef.current) return;
 
     const u = auth.currentUser;
     if (!u?.email) {
@@ -167,7 +180,7 @@ export default function VerifyEmailScreen() {
   };
 
   const resendDisabled =
-    resendLoading || cooldown > 0 || loading || verified;
+    resendLoading || cooldown > 0 || loading || hasNavigatedRef.current;
   const resendLabel = resendLoading
     ? 'Sending...'
     : cooldown > 0
@@ -181,6 +194,7 @@ export default function VerifyEmailScreen() {
       <SafeAreaView style={styles.screen} edges={['top']}>
         <View style={styles.loadingWrap}>
           <ActivityIndicator size="large" color={c.primary} />
+          <Text style={styles.loadingCaption}>Loading…</Text>
         </View>
       </SafeAreaView>
     );
@@ -188,16 +202,14 @@ export default function VerifyEmailScreen() {
 
   return (
     <SafeAreaView style={styles.screen} edges={['top', 'bottom']}>
-      <View style={[styles.banner, verified && styles.bannerSuccess]}>
+      <View style={styles.banner}>
         <MaterialIcons
-          name={verified ? 'mark-email-read' : 'mark-email-unread'}
+          name="mark-email-unread"
           size={20}
-          color={verified ? c.success : '#FBBF24'}
+          color="#FBBF24"
           style={styles.bannerIcon}
         />
-        <Text style={[styles.bannerText, verified && styles.bannerTextSuccess]}>
-          {verified ? 'Email verified' : 'Email not verified'}
-        </Text>
+        <Text style={styles.bannerText}>Email not verified</Text>
       </View>
 
       <View style={styles.body}>
@@ -206,84 +218,70 @@ export default function VerifyEmailScreen() {
           We sent a verification link to your email. Please check your inbox.
         </Text>
 
-        {verified ? (
-          <Animated.View
-            style={[styles.successBlock, { transform: [{ scale: successScale }] }]}
-          >
-            <MaterialIcons name="check-circle" size={72} color={c.success} />
-            <Text style={styles.successTitle}>{"You're all set!"}</Text>
-            <Text style={styles.successSub}>Taking you to the app…</Text>
-            <ActivityIndicator color={c.primary} style={styles.successSpinner} />
-          </Animated.View>
-        ) : (
-          <>
-            <View style={styles.waitingBlock}>
-              <ActivityIndicator size="large" color={c.primary} />
-              <Text style={styles.waitingText}>
-                {checking ? 'Checking verification status…' : 'Waiting for verification…'}
-              </Text>
-              <Text style={styles.waitingHint}>
-                {
-                  "We'll continue checking automatically. You can also tap I verified after you open the link."
-                }
+        <View style={styles.waitingBlock}>
+          <ActivityIndicator size="large" color={c.primary} />
+          <Text style={styles.waitingText}>
+            {checking ? 'Checking verification status…' : 'Waiting for verification…'}
+          </Text>
+          <Text style={styles.waitingHint}>
+            We check automatically every few seconds. After you tap the link, you can
+            also press I verified.
+          </Text>
+        </View>
+
+        <TouchableOpacity
+          style={[styles.primaryBtn, (loading || anyBusy) && styles.btnBusy]}
+          onPress={() => void handleVerified()}
+          disabled={anyBusy}
+          activeOpacity={0.9}
+        >
+          {loading ? (
+            <ActivityIndicator color={c.textOnPrimary} />
+          ) : (
+            <Text style={styles.primaryBtnText}>I verified</Text>
+          )}
+        </TouchableOpacity>
+
+        {actionError !== '' ? (
+          <Text style={styles.actionError} accessibilityLiveRegion="polite">
+            ⚠️ {actionError}
+          </Text>
+        ) : null}
+
+        <TouchableOpacity
+          style={[styles.secondaryBtn, resendDisabled && styles.secondaryBtnDisabled]}
+          onPress={() => void handleResend()}
+          disabled={resendDisabled}
+          activeOpacity={0.85}
+        >
+          {resendLoading ? (
+            <View style={styles.resendRow}>
+              <ActivityIndicator color={c.primary} size="small" style={styles.resendSpinner} />
+              <Text style={[styles.secondaryBtnText, styles.secondaryBtnTextMuted]}>
+                Sending...
               </Text>
             </View>
-
-            <TouchableOpacity
-              style={[styles.primaryBtn, (loading || verified) && styles.btnBusy]}
-              onPress={() => void onVerified()}
-              disabled={anyBusy || verified}
-              activeOpacity={0.9}
-            >
-              {loading ? (
-                <ActivityIndicator color={c.textOnPrimary} />
-              ) : (
-                <Text style={styles.primaryBtnText}>I verified</Text>
-              )}
-            </TouchableOpacity>
-
-            {actionError !== '' ? (
-              <Text style={styles.actionError} accessibilityLiveRegion="polite">
-                ⚠️ {actionError}
+          ) : (
+            <View style={styles.resendRow}>
+              <MaterialIcons
+                name="refresh"
+                size={20}
+                color={cooldown > 0 ? c.iconInactive : c.primary}
+                style={styles.resendIcon}
+              />
+              <Text
+                style={[
+                  styles.secondaryBtnText,
+                  cooldown > 0 && styles.secondaryBtnTextMuted,
+                ]}
+              >
+                {resendLabel}
               </Text>
-            ) : null}
+            </View>
+          )}
+        </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.secondaryBtn, resendDisabled && styles.secondaryBtnDisabled]}
-              onPress={() => void handleResend()}
-              disabled={resendDisabled}
-              activeOpacity={0.85}
-            >
-              {resendLoading ? (
-                <View style={styles.resendRow}>
-                  <ActivityIndicator color={c.primary} size="small" style={styles.resendSpinner} />
-                  <Text style={[styles.secondaryBtnText, styles.secondaryBtnTextMuted]}>
-                    Sending...
-                  </Text>
-                </View>
-              ) : (
-                <View style={styles.resendRow}>
-                  <MaterialIcons
-                    name="refresh"
-                    size={20}
-                    color={cooldown > 0 ? c.iconInactive : c.primary}
-                    style={styles.resendIcon}
-                  />
-                  <Text
-                    style={[
-                      styles.secondaryBtnText,
-                      cooldown > 0 && styles.secondaryBtnTextMuted,
-                    ]}
-                  >
-                    {resendLabel}
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
-          </>
-        )}
-
-        {!verified && message !== '' ? (
+        {message !== '' ? (
           <Text
             style={[
               styles.feedbackText,
@@ -295,16 +293,14 @@ export default function VerifyEmailScreen() {
           </Text>
         ) : null}
 
-        {!verified ? (
-          <TouchableOpacity
-            style={styles.footerLinkWrap}
-            onPress={() => void signOutUser()}
-            disabled={anyBusy}
-            hitSlop={12}
-          >
-            <Text style={styles.footerLink}>Use a different account</Text>
-          </TouchableOpacity>
-        ) : null}
+        <TouchableOpacity
+          style={styles.footerLinkWrap}
+          onPress={() => void signOutUser()}
+          disabled={anyBusy}
+          hitSlop={12}
+        >
+          <Text style={styles.footerLink}>Use a different account</Text>
+        </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
@@ -319,6 +315,12 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    gap: 12,
+  },
+  loadingCaption: {
+    fontSize: 15,
+    color: c.textSecondary,
+    fontWeight: '600',
   },
   banner: {
     flexDirection: 'row',
@@ -330,10 +332,6 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 16,
   },
-  bannerSuccess: {
-    backgroundColor: 'rgba(76, 175, 80, 0.18)',
-    borderBottomColor: 'rgba(76, 175, 80, 0.35)',
-  },
   bannerIcon: {
     marginRight: 8,
   },
@@ -341,9 +339,6 @@ const styles = StyleSheet.create({
     color: '#FDE68A',
     fontSize: 15,
     fontWeight: '600',
-  },
-  bannerTextSuccess: {
-    color: c.success,
   },
   body: {
     flex: 1,
@@ -381,26 +376,6 @@ const styles = StyleSheet.create({
     color: c.textSecondary,
     textAlign: 'center',
     paddingHorizontal: 8,
-  },
-  successBlock: {
-    alignItems: 'center',
-    marginTop: 16,
-    marginBottom: 32,
-  },
-  successTitle: {
-    marginTop: 16,
-    fontSize: 22,
-    fontWeight: '700',
-    color: c.white,
-  },
-  successSub: {
-    marginTop: 8,
-    fontSize: 15,
-    color: c.textSecondary,
-    textAlign: 'center',
-  },
-  successSpinner: {
-    marginTop: 20,
   },
   primaryBtn: {
     backgroundColor: c.primary,
