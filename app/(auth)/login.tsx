@@ -104,7 +104,7 @@ export default function LoginScreen() {
         router.replace('/(tabs)');
       }
     } catch (err: unknown) {
-      logError(err, { alert: false });
+      logError(err);
       const message =
         err instanceof Error && err.message
           ? err.message
@@ -258,7 +258,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     fontWeight: '500',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   primaryBtn: {
     backgroundColor: c.primary,

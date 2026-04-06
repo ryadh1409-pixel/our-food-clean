@@ -6,7 +6,6 @@ import {
   profileWhatsAppOnChangeText,
 } from '@/lib/profileWhatsAppPhone';
 import { useAuth } from '@/services/AuthContext';
-import { logError } from '@/utils/errorLogger';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
@@ -182,7 +181,6 @@ export default function RegisterScreen() {
       });
       router.replace('/verify-email' as Parameters<typeof router.replace>[0]);
     } catch (err: unknown) {
-      logError(err, { alert: false });
       const message =
         err instanceof Error && err.message ? err.message : 'Something went wrong';
       setError(message);
@@ -483,7 +481,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     fontWeight: '500',
-    marginBottom: 12,
+    marginBottom: 10,
     marginTop: 4,
   },
   primaryBtn: {

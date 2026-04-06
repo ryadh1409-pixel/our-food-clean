@@ -345,7 +345,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         { merge: true },
       );
     } catch (e) {
-      logError(e);
+      logError(e, { alert: false });
     }
 
     try {

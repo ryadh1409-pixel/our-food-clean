@@ -6,7 +6,7 @@ export function mapFirebaseSignUpError(error: unknown): string {
       : '';
 
   if (code === 'auth/email-already-in-use') {
-    return 'Email already in use';
+    return 'This email is already registered';
   }
   if (code === 'auth/invalid-email') {
     return 'Enter a valid email';

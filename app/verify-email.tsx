@@ -8,7 +8,6 @@ import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Animated,
   StyleSheet,
   Text,
@@ -34,6 +33,7 @@ export default function VerifyEmailScreen() {
   const [cooldown, setCooldown] = useState(0);
   const [message, setMessage] = useState('');
   const [messageIsSuccess, setMessageIsSuccess] = useState(true);
+  const [actionError, setActionError] = useState('');
 
   const successScale = useRef(new Animated.Value(0)).current;
   const navigateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -93,7 +93,7 @@ export default function VerifyEmailScreen() {
           return;
         }
       } catch (error) {
-        logError(error, { alert: false });
+        logError(error);
       } finally {
         if (!cancelled) setChecking(false);
       }
@@ -115,6 +115,7 @@ export default function VerifyEmailScreen() {
   const onVerified = async () => {
     setLoading(true);
     setMessage('');
+    setActionError('');
     try {
       await reloadAuthUser();
       const u = auth.currentUser;
@@ -125,11 +126,11 @@ export default function VerifyEmailScreen() {
           router.replace('/(tabs)' as Parameters<typeof router.replace>[0]);
         }, NAV_DELAY_MS);
       } else {
-        Alert.alert('Still not verified', 'Open the link we sent, then try again.');
+        setActionError('Please verify your email first. Open the link we sent, then try again.');
       }
     } catch (e) {
-      logError(e, { alert: false });
-      Alert.alert('Error', 'Could not refresh your account. Try again.');
+      logError(e);
+      setActionError('Something went wrong. Try again.');
     } finally {
       setLoading(false);
     }
@@ -148,12 +149,13 @@ export default function VerifyEmailScreen() {
     try {
       setResendLoading(true);
       setMessage('');
+      setActionError('');
       await sendEmailVerification(u);
       setMessageIsSuccess(true);
       setMessage('Verification email sent again 📩');
       setCooldown(COOLDOWN_SEC);
     } catch (error) {
-      logError(error, { alert: false });
+      logError(error);
       setMessageIsSuccess(false);
       setMessage('Something went wrong. Try again.');
     } finally {
@@ -236,6 +238,12 @@ export default function VerifyEmailScreen() {
                 <Text style={styles.primaryBtnText}>I verified</Text>
               )}
             </TouchableOpacity>
+
+            {actionError !== '' ? (
+              <Text style={styles.actionError} accessibilityLiveRegion="polite">
+                ⚠️ {actionError}
+              </Text>
+            ) : null}
 
             <TouchableOpacity
               style={[styles.secondaryBtn, resendDisabled && styles.secondaryBtnDisabled]}
@@ -405,6 +413,14 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '700',
     color: c.textOnPrimary,
+  },
+  actionError: {
+    color: c.danger,
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 10,
+    marginBottom: 10,
+    fontWeight: '500',
   },
   secondaryBtn: {
     marginTop: 16,
