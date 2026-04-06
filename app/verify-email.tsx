@@ -3,6 +3,7 @@ import { useAuth } from '@/services/AuthContext';
 import { auth } from '@/services/firebase';
 import { logError } from '@/utils/errorLogger';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { sendEmailVerification } from 'firebase/auth';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
@@ -22,7 +23,8 @@ const c = theme.colors;
 export default function VerifyEmailScreen() {
   const router = useRouter();
   const { user, loading, reloadAuthUser, signOutUser } = useAuth();
-  const [busy, setBusy] = useState(false);
+  const [verifyBusy, setVerifyBusy] = useState(false);
+  const [resendBusy, setResendBusy] = useState(false);
 
   useEffect(() => {
     if (loading) return;
@@ -36,25 +38,42 @@ export default function VerifyEmailScreen() {
   }, [loading, user, router]);
 
   const onVerified = async () => {
-    setBusy(true);
+    setVerifyBusy(true);
     try {
       await reloadAuthUser();
       const u = auth.currentUser;
       if (u?.emailVerified) {
         router.replace('/(tabs)' as Parameters<typeof router.replace>[0]);
       } else {
-        Alert.alert(
-          'Please verify your email',
-          'Open the link we sent, then tap I verified again.',
-        );
+        Alert.alert('Please verify your email first', 'Open the link we sent, then try again.');
       }
     } catch (e) {
       logError(e, { alert: false });
       Alert.alert('Error', 'Could not refresh your account. Try again.');
     } finally {
-      setBusy(false);
+      setVerifyBusy(false);
     }
   };
+
+  const onResend = async () => {
+    const u = auth.currentUser;
+    if (!u || !u.email) {
+      Alert.alert('Error', 'No email on file.');
+      return;
+    }
+    setResendBusy(true);
+    try {
+      await sendEmailVerification(u);
+      Alert.alert('Email sent', 'Check your inbox for a new verification link.');
+    } catch (e) {
+      logError(e, { alert: false });
+      Alert.alert('Error', 'Could not resend the email. Try again later.');
+    } finally {
+      setResendBusy(false);
+    }
+  };
+
+  const anyBusy = verifyBusy || resendBusy;
 
   if (loading || !user) {
     return (
@@ -76,16 +95,17 @@ export default function VerifyEmailScreen() {
       <View style={styles.body}>
         <Text style={styles.title}>Verify your email</Text>
         <Text style={styles.bodyText}>
-          Check your email to verify your account. We sent a link to your email.
+          We sent a verification link to your email. Open it to confirm your account, then tap I
+          verified.
         </Text>
 
         <TouchableOpacity
-          style={[styles.primaryBtn, busy && styles.btnDisabled]}
+          style={[styles.primaryBtn, verifyBusy && styles.btnBusy]}
           onPress={() => void onVerified()}
-          disabled={busy}
+          disabled={anyBusy}
           activeOpacity={0.9}
         >
-          {busy ? (
+          {verifyBusy ? (
             <ActivityIndicator color={c.textOnPrimary} />
           ) : (
             <Text style={styles.primaryBtnText}>I verified</Text>
@@ -93,12 +113,28 @@ export default function VerifyEmailScreen() {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.secondaryBtn}
+          style={[styles.secondaryBtn, resendBusy && styles.secondaryBtnBusy]}
+          onPress={() => void onResend()}
+          disabled={anyBusy}
+          activeOpacity={0.85}
+        >
+          {resendBusy ? (
+            <ActivityIndicator color={c.primary} />
+          ) : (
+            <>
+              <MaterialIcons name="refresh" size={20} color={c.primary} style={styles.resendIcon} />
+              <Text style={styles.secondaryBtnText}>Resend email</Text>
+            </>
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.footerLinkWrap}
           onPress={() => void signOutUser()}
-          disabled={busy}
+          disabled={anyBusy}
           hitSlop={12}
         >
-          <Text style={styles.secondaryText}>Use a different account</Text>
+          <Text style={styles.footerLink}>Use a different account</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -136,20 +172,20 @@ const styles = StyleSheet.create({
   body: {
     flex: 1,
     paddingHorizontal: 28,
-    paddingTop: 32,
+    paddingTop: 36,
   },
   title: {
     fontSize: 28,
     fontWeight: '700',
     color: c.white,
     letterSpacing: -0.4,
-    marginBottom: 14,
+    marginBottom: 16,
   },
   bodyText: {
     fontSize: 16,
     lineHeight: 24,
     color: c.textSecondary,
-    marginBottom: 32,
+    marginBottom: 36,
   },
   primaryBtn: {
     backgroundColor: c.primary,
@@ -158,18 +194,43 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  btnDisabled: { opacity: 0.65 },
+  btnBusy: {
+    opacity: 0.85,
+  },
   primaryBtnText: {
     fontSize: 17,
     fontWeight: '700',
     color: c.textOnPrimary,
   },
   secondaryBtn: {
-    marginTop: 24,
+    marginTop: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 50,
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+  },
+  secondaryBtnBusy: {
+    opacity: 0.8,
+  },
+  resendIcon: {
+    marginRight: 8,
+  },
+  secondaryBtnText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: c.primary,
+  },
+  footerLinkWrap: {
+    marginTop: 28,
     alignSelf: 'center',
     paddingVertical: 8,
   },
-  secondaryText: {
+  footerLink: {
     fontSize: 15,
     color: c.textSecondary,
     fontWeight: '600',

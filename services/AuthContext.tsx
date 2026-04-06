@@ -25,6 +25,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createAlert } from '@/services/alerts';
 import { REFERRAL_ORDER_ID_KEY, REFERRAL_STORAGE_KEY } from '@/lib/invite-link';
 import { mapFirebaseLoginError } from '@/lib/mapFirebaseLoginError';
+import { mapFirebaseSignUpError } from '@/lib/mapFirebaseSignUpError';
 import { logError } from '@/utils/errorLogger';
 import React, {
   createContext,
@@ -294,11 +295,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       );
     } catch (err: unknown) {
       logError(err, { alert: false });
-      const msg =
-        err && typeof err === 'object' && 'message' in err
-          ? String((err as { message: string }).message)
-          : 'Registration failed';
-      throw new Error(msg);
+      throw new Error(mapFirebaseSignUpError(err));
     }
 
     const firebaseUser = userCredential.user;

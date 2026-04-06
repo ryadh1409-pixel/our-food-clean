@@ -25,6 +25,8 @@ import {
   TouchableOpacity,
   TouchableWithoutFeedback,
   View,
+  type TextStyle,
+  type ViewStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { theme } from '@/constants/theme';
@@ -32,32 +34,47 @@ import { theme } from '@/constants/theme';
 const c = theme.colors;
 
 const REGISTER_INPUTS = 5;
-const FIELD_GAP = 14;
 const PHOTO_SIZE = 92;
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const placeholderColor = 'rgba(255,255,255,0.42)';
 
+function inputStyle(hasError: boolean): ViewStyle & TextStyle {
+  return {
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: hasError ? c.danger : 'rgba(255,255,255,0.1)',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+    fontSize: 16,
+    color: c.white,
+  };
+}
+
 export default function RegisterScreen() {
   const router = useRouter();
   const { signUpWithEmail } = useAuth();
-  const fullNameRef = useRef<TextInput>(null);
+  const nameRef = useRef<TextInput>(null);
   const emailRef = useRef<TextInput>(null);
   const whatsappRef = useRef<TextInput>(null);
   const passwordRef = useRef<TextInput>(null);
   const confirmPasswordRef = useRef<TextInput>(null);
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
-  const [fullName, setFullName] = useState('');
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [whatsapp, setWhatsapp] = useState('+1 ');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [whatsappCoordinationConsent, setWhatsappCoordinationConsent] = useState(false);
+  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const refs = [fullNameRef, emailRef, whatsappRef, passwordRef, confirmPasswordRef];
+  const hasError = error !== '';
+
+  const refs = [nameRef, emailRef, whatsappRef, passwordRef, confirmPasswordRef];
   const focusPrev = () => {
     if (focusedIndex !== null && focusedIndex > 0) {
       refs[focusedIndex - 1].current?.focus();
@@ -115,47 +132,43 @@ export default function RegisterScreen() {
     ]);
   };
 
-  const handleRegister = async () => {
-    const nameTrim = fullName.trim();
-    const emailTrim = email.trim();
-    const wa = whatsapp.trim();
+  const validate = (): string => {
+    const nameTrim = name.trim();
+    if (!nameTrim) return 'Enter your name';
 
-    if (!nameTrim) {
-      Alert.alert('Required', 'Please enter your full name.');
-      return;
-    }
-    if (!emailTrim) {
-      Alert.alert('Required', 'Please enter your email.');
-      return;
-    }
-    if (!EMAIL_RE.test(emailTrim)) {
-      Alert.alert('Invalid email', 'Please enter a valid email address.');
-      return;
-    }
-    if (!wa || isProfilePhoneStorageEmpty(whatsapp)) {
-      Alert.alert('Required', 'Please enter your WhatsApp number.');
-      return;
+    const emailTrim = email.trim();
+    if (!emailTrim || !emailTrim.includes('@')) return 'Enter a valid email';
+    if (!EMAIL_RE.test(emailTrim)) return 'Enter a valid email';
+
+    if (!whatsapp.trim() || isProfilePhoneStorageEmpty(whatsapp)) {
+      return 'Enter WhatsApp number';
     }
     if (!isCompleteNaProfilePhone(whatsapp)) {
-      Alert.alert(
-        'WhatsApp number',
-        'Enter a complete number (10 digits after +1), or adjust the country code if needed.',
-      );
-      return;
+      return 'Enter a complete WhatsApp number';
     }
+
     if (!whatsappCoordinationConsent) {
-      Alert.alert('WhatsApp usage', 'Please accept WhatsApp usage to continue.');
-      return;
+      return 'Please accept WhatsApp usage to continue.';
     }
-    if (!password || password.length < 6) {
-      Alert.alert('Password', 'Password must be at least 6 characters.');
-      return;
-    }
-    if (password !== confirmPassword) {
-      Alert.alert('Password', 'Passwords do not match.');
+
+    if (password.length < 6) return 'Password must be at least 6 characters';
+    if (password !== confirmPassword) return 'Passwords do not match';
+    return '';
+  };
+
+  const clearError = () => setError('');
+
+  const handleSignup = async () => {
+    const validationError = validate();
+    if (validationError) {
+      setError(validationError);
       return;
     }
 
+    const nameTrim = name.trim();
+    const emailTrim = email.trim();
+
+    setError('');
     Keyboard.dismiss();
     setLoading(true);
     try {
@@ -168,13 +181,11 @@ export default function RegisterScreen() {
         localPhotoUri: photoUri,
       });
       router.replace('/verify-email' as Parameters<typeof router.replace>[0]);
-    } catch (error: unknown) {
-      logError(error, { alert: false });
-      const msg =
-        error && typeof error === 'object' && 'message' in error
-          ? String((error as { message: string }).message)
-          : 'Registration failed. Please try again.';
-      Alert.alert('Error', msg);
+    } catch (err: unknown) {
+      logError(err, { alert: false });
+      const message =
+        err instanceof Error && err.message ? err.message : 'Something went wrong';
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -200,151 +211,175 @@ export default function RegisterScreen() {
               keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
               showsVerticalScrollIndicator={false}
             >
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Create account</Text>
-              <Text style={styles.cardSubtitle}>Add your details to get started</Text>
-
-              <TouchableOpacity
-                style={styles.photoWrap}
-                onPress={openPhotoOptions}
-                disabled={loading}
-                activeOpacity={0.85}
-                accessibilityLabel="Add profile photo"
-              >
-                {photoUri ? (
-                  <Image source={{ uri: photoUri }} style={styles.photoImage} contentFit="cover" />
-                ) : (
-                  <View style={styles.photoEmpty}>
-                    <MaterialIcons name="add-a-photo" size={36} color={placeholderColor} />
-                  </View>
-                )}
-              </TouchableOpacity>
-              <Text style={styles.photoCaption}>Add profile photo (optional)</Text>
-
-              <View style={styles.fields}>
-                <TextInput
-                  ref={fullNameRef}
-                  style={styles.input}
-                  placeholder="Full name"
-                  placeholderTextColor={placeholderColor}
-                  value={fullName}
-                  onChangeText={setFullName}
-                  autoCapitalize="words"
-                  editable={!loading}
-                  inputAccessoryViewID={
-                    Platform.OS === 'ios' ? KEYBOARD_TOOLBAR_NATIVE_ID : undefined
-                  }
-                  onFocus={() => setFocusedIndex(0)}
-                />
-
-                <TextInput
-                  ref={emailRef}
-                  style={styles.input}
-                  placeholder="Email address"
-                  placeholderTextColor={placeholderColor}
-                  value={email}
-                  onChangeText={setEmail}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  editable={!loading}
-                  inputAccessoryViewID={
-                    Platform.OS === 'ios' ? KEYBOARD_TOOLBAR_NATIVE_ID : undefined
-                  }
-                  onFocus={() => setFocusedIndex(1)}
-                />
-
-                <TextInput
-                  ref={whatsappRef}
-                  style={styles.input}
-                  placeholder="WhatsApp number"
-                  placeholderTextColor={placeholderColor}
-                  value={whatsapp}
-                  onChangeText={(t) => setWhatsapp(profileWhatsAppOnChangeText(t))}
-                  keyboardType="phone-pad"
-                  editable={!loading}
-                  inputAccessoryViewID={
-                    Platform.OS === 'ios' ? KEYBOARD_TOOLBAR_NATIVE_ID : undefined
-                  }
-                  onFocus={() => setFocusedIndex(2)}
-                />
-
-                <Text style={styles.fieldHelper}>
-                  This number is used only to coordinate pickup with other users. It will not be shared
-                  publicly.
-                </Text>
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Create account</Text>
+                <Text style={styles.cardSubtitle}>Add your details to get started</Text>
 
                 <TouchableOpacity
-                  style={styles.consentRow}
-                  onPress={() => setWhatsappCoordinationConsent((v) => !v)}
+                  style={styles.photoWrap}
+                  onPress={openPhotoOptions}
                   disabled={loading}
-                  activeOpacity={0.75}
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: whatsappCoordinationConsent }}
-                  accessibilityLabel="I agree to use my WhatsApp number for coordination"
+                  activeOpacity={0.85}
+                  accessibilityLabel="Add profile photo"
                 >
-                  <MaterialIcons
-                    name={whatsappCoordinationConsent ? 'check-box' : 'check-box-outline-blank'}
-                    size={22}
-                    color={whatsappCoordinationConsent ? c.primary : placeholderColor}
-                    style={styles.consentIcon}
-                  />
-                  <Text style={styles.consentLabel}>
-                    I agree to use my WhatsApp number for coordination.
-                  </Text>
+                  {photoUri ? (
+                    <Image source={{ uri: photoUri }} style={styles.photoImage} contentFit="cover" />
+                  ) : (
+                    <View style={styles.photoEmpty}>
+                      <MaterialIcons name="add-a-photo" size={36} color={placeholderColor} />
+                    </View>
+                  )}
                 </TouchableOpacity>
+                <Text style={styles.photoCaption}>Add profile photo (optional)</Text>
 
-                <TextInput
-                  ref={passwordRef}
-                  style={styles.input}
-                  placeholder="Password"
-                  placeholderTextColor={placeholderColor}
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry
-                  editable={!loading}
-                  inputAccessoryViewID={
-                    Platform.OS === 'ios' ? KEYBOARD_TOOLBAR_NATIVE_ID : undefined
-                  }
-                  onFocus={() => setFocusedIndex(3)}
-                />
+                <View style={styles.fields}>
+                  <TextInput
+                    ref={nameRef}
+                    style={inputStyle(hasError)}
+                    placeholder="Full name"
+                    placeholderTextColor={placeholderColor}
+                    value={name}
+                    onChangeText={(t) => {
+                      setName(t);
+                      clearError();
+                    }}
+                    autoCapitalize="words"
+                    editable={!loading}
+                    inputAccessoryViewID={
+                      Platform.OS === 'ios' ? KEYBOARD_TOOLBAR_NATIVE_ID : undefined
+                    }
+                    onFocus={() => setFocusedIndex(0)}
+                  />
 
-                <TextInput
-                  ref={confirmPasswordRef}
-                  style={styles.input}
-                  placeholder="Confirm password"
-                  placeholderTextColor={placeholderColor}
-                  value={confirmPassword}
-                  onChangeText={setConfirmPassword}
-                  secureTextEntry
-                  editable={!loading}
-                  inputAccessoryViewID={
-                    Platform.OS === 'ios' ? KEYBOARD_TOOLBAR_NATIVE_ID : undefined
-                  }
-                  onFocus={() => setFocusedIndex(4)}
-                />
+                  <TextInput
+                    ref={emailRef}
+                    style={inputStyle(hasError)}
+                    placeholder="Email"
+                    placeholderTextColor={placeholderColor}
+                    value={email}
+                    onChangeText={(t) => {
+                      setEmail(t);
+                      clearError();
+                    }}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    editable={!loading}
+                    inputAccessoryViewID={
+                      Platform.OS === 'ios' ? KEYBOARD_TOOLBAR_NATIVE_ID : undefined
+                    }
+                    onFocus={() => setFocusedIndex(1)}
+                  />
+
+                  <TextInput
+                    ref={whatsappRef}
+                    style={inputStyle(hasError)}
+                    placeholder="WhatsApp number"
+                    placeholderTextColor={placeholderColor}
+                    value={whatsapp}
+                    onChangeText={(t) => {
+                      setWhatsapp(profileWhatsAppOnChangeText(t));
+                      clearError();
+                    }}
+                    keyboardType="phone-pad"
+                    editable={!loading}
+                    inputAccessoryViewID={
+                      Platform.OS === 'ios' ? KEYBOARD_TOOLBAR_NATIVE_ID : undefined
+                    }
+                    onFocus={() => setFocusedIndex(2)}
+                  />
+
+                  <Text style={styles.fieldHelper}>
+                    This number is used only to coordinate pickup with other users. It will not be
+                    shared publicly.
+                  </Text>
+
+                  <TouchableOpacity
+                    style={styles.consentRow}
+                    onPress={() => {
+                      setWhatsappCoordinationConsent((v) => !v);
+                      clearError();
+                    }}
+                    disabled={loading}
+                    activeOpacity={0.75}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: whatsappCoordinationConsent }}
+                    accessibilityLabel="I agree to use my WhatsApp number for coordination"
+                  >
+                    <MaterialIcons
+                      name={whatsappCoordinationConsent ? 'check-box' : 'check-box-outline-blank'}
+                      size={22}
+                      color={whatsappCoordinationConsent ? c.primary : placeholderColor}
+                      style={styles.consentIcon}
+                    />
+                    <Text style={styles.consentLabel}>
+                      I agree to use my WhatsApp number for coordination.
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TextInput
+                    ref={passwordRef}
+                    style={inputStyle(hasError)}
+                    placeholder="Password"
+                    placeholderTextColor={placeholderColor}
+                    value={password}
+                    onChangeText={(t) => {
+                      setPassword(t);
+                      clearError();
+                    }}
+                    secureTextEntry
+                    editable={!loading}
+                    inputAccessoryViewID={
+                      Platform.OS === 'ios' ? KEYBOARD_TOOLBAR_NATIVE_ID : undefined
+                    }
+                    onFocus={() => setFocusedIndex(3)}
+                  />
+
+                  <TextInput
+                    ref={confirmPasswordRef}
+                    style={[inputStyle(hasError), styles.lastField]}
+                    placeholder="Confirm password"
+                    placeholderTextColor={placeholderColor}
+                    value={confirmPassword}
+                    onChangeText={(t) => {
+                      setConfirmPassword(t);
+                      clearError();
+                    }}
+                    secureTextEntry
+                    editable={!loading}
+                    inputAccessoryViewID={
+                      Platform.OS === 'ios' ? KEYBOARD_TOOLBAR_NATIVE_ID : undefined
+                    }
+                    onFocus={() => setFocusedIndex(4)}
+                  />
+                </View>
+
+                {error !== '' ? (
+                  <Text style={styles.inlineError} accessibilityLiveRegion="polite">
+                    ⚠️ {error}
+                  </Text>
+                ) : null}
+
+                <TouchableOpacity
+                  style={[styles.primaryBtn, loading && styles.primaryBtnLoading]}
+                  onPress={() => void handleSignup()}
+                  disabled={loading}
+                  activeOpacity={0.9}
+                >
+                  {loading ? (
+                    <ActivityIndicator color={c.textOnPrimary} />
+                  ) : (
+                    <Text style={styles.primaryBtnText}>Create Account</Text>
+                  )}
+                </TouchableOpacity>
               </View>
 
-              <TouchableOpacity
-                style={[styles.primaryBtn, loading && styles.btnDisabled]}
-                onPress={() => void handleRegister()}
-                disabled={loading}
-                activeOpacity={0.9}
-              >
-                {loading ? (
-                  <ActivityIndicator color={c.textOnPrimary} />
-                ) : (
-                  <Text style={styles.primaryBtnText}>Create Account</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.footer}>
-              <Text style={styles.footerMuted}>Already have an account? </Text>
-              <TouchableOpacity onPress={() => router.back()} disabled={loading} hitSlop={8}>
-                <Text style={styles.footerLink}>Log in</Text>
-              </TouchableOpacity>
-            </View>
+              <View style={styles.footer}>
+                <Text style={styles.footerMuted}>Already have an account? </Text>
+                <TouchableOpacity onPress={() => router.back()} disabled={loading} hitSlop={8}>
+                  <Text style={styles.footerLink}>Log in</Text>
+                </TouchableOpacity>
+              </View>
             </ScrollView>
           </View>
         </TouchableWithoutFeedback>
@@ -412,24 +447,23 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: c.textSecondary,
     marginTop: 10,
-    marginBottom: 8,
+    marginBottom: 16,
   },
   fields: {
-    gap: FIELD_GAP,
-    marginTop: 16,
+    marginTop: 0,
   },
   fieldHelper: {
     fontSize: 13,
     lineHeight: 18,
     color: c.textSecondary,
-    marginTop: -6,
-    marginBottom: 2,
+    marginTop: -4,
+    marginBottom: 10,
   },
   consentRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 10,
-    marginBottom: 4,
+    marginBottom: 12,
   },
   consentIcon: {
     marginTop: 1,
@@ -441,15 +475,16 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.88)',
     fontWeight: '500',
   },
-  input: {
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    fontSize: 16,
-    color: c.white,
+  lastField: {
+    marginBottom: 8,
+  },
+  inlineError: {
+    color: c.danger,
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '500',
+    marginBottom: 12,
+    marginTop: 4,
   },
   primaryBtn: {
     backgroundColor: c.primary,
@@ -457,14 +492,16 @@ const styles = StyleSheet.create({
     height: 54,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 22,
+    marginTop: 8,
+  },
+  primaryBtnLoading: {
+    backgroundColor: c.iconInactive,
   },
   primaryBtnText: {
     color: c.textOnPrimary,
     fontSize: 17,
     fontWeight: '700',
   },
-  btnDisabled: { opacity: 0.65 },
   footer: {
     flexDirection: 'row',
     justifyContent: 'center',
