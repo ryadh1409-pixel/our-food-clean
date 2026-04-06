@@ -15,6 +15,7 @@ import React, { useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -22,6 +23,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -30,27 +32,31 @@ import { theme } from '@/constants/theme';
 const c = theme.colors;
 
 const REGISTER_INPUTS = 5;
+const FIELD_GAP = 14;
+const PHOTO_SIZE = 92;
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const placeholderColor = 'rgba(255,255,255,0.42)';
 
 export default function RegisterScreen() {
   const router = useRouter();
   const { signUpWithEmail } = useAuth();
   const fullNameRef = useRef<TextInput>(null);
-  const whatsappRef = useRef<TextInput>(null);
   const emailRef = useRef<TextInput>(null);
+  const whatsappRef = useRef<TextInput>(null);
   const passwordRef = useRef<TextInput>(null);
   const confirmPasswordRef = useRef<TextInput>(null);
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
   const [fullName, setFullName] = useState('');
-  const [whatsapp, setWhatsapp] = useState('');
   const [email, setEmail] = useState('');
+  const [whatsapp, setWhatsapp] = useState('+1 ');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const refs = [fullNameRef, whatsappRef, emailRef, passwordRef, confirmPasswordRef];
+  const refs = [fullNameRef, emailRef, whatsappRef, passwordRef, confirmPasswordRef];
   const focusPrev = () => {
     if (focusedIndex !== null && focusedIndex > 0) {
       refs[focusedIndex - 1].current?.focus();
@@ -98,7 +104,7 @@ export default function RegisterScreen() {
   };
 
   const openPhotoOptions = () => {
-    Alert.alert('Profile photo', 'Add a photo (optional but recommended)', [
+    Alert.alert('Profile photo', 'Choose a source', [
       { text: 'Take photo', onPress: () => void pickFromCamera() },
       { text: 'Choose from library', onPress: () => void pickFromLibrary() },
       ...(photoUri
@@ -117,6 +123,14 @@ export default function RegisterScreen() {
       Alert.alert('Required', 'Please enter your full name.');
       return;
     }
+    if (!emailTrim) {
+      Alert.alert('Required', 'Please enter your email.');
+      return;
+    }
+    if (!EMAIL_RE.test(emailTrim)) {
+      Alert.alert('Invalid email', 'Please enter a valid email address.');
+      return;
+    }
     if (!wa || isProfilePhoneStorageEmpty(whatsapp)) {
       Alert.alert('Required', 'Please enter your WhatsApp number.');
       return;
@@ -124,16 +138,8 @@ export default function RegisterScreen() {
     if (!isCompleteNaProfilePhone(whatsapp)) {
       Alert.alert(
         'WhatsApp number',
-        'Enter a complete number (10 digits after +1 for US/Canada), or use your full international number.',
+        'Enter a complete number (10 digits after +1), or adjust the country code if needed.',
       );
-      return;
-    }
-    if (!emailTrim) {
-      Alert.alert('Required', 'Please enter your email.');
-      return;
-    }
-    if (!EMAIL_RE.test(emailTrim)) {
-      Alert.alert('Invalid email', 'Please enter a valid email address.');
       return;
     }
     if (!password || password.length < 6) {
@@ -145,6 +151,7 @@ export default function RegisterScreen() {
       return;
     }
 
+    Keyboard.dismiss();
     setLoading(true);
     try {
       await signUpWithEmail({
@@ -168,7 +175,7 @@ export default function RegisterScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={['top']}>
       <KeyboardToolbar
         onFocusPrevious={focusPrev}
         onFocusNext={focusNext}
@@ -179,251 +186,245 @@ export default function RegisterScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.keyboard}
       >
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          <Text style={styles.title}>Create account</Text>
-          <Text style={styles.subtitle}>Join HalfOrder in seconds</Text>
-
-          <TouchableOpacity
-            style={styles.photoRing}
-            onPress={openPhotoOptions}
-            disabled={loading}
-            activeOpacity={0.85}
-            accessibilityLabel="Add profile photo"
-          >
-            {photoUri ? (
-              <Image source={{ uri: photoUri }} style={styles.photoImage} contentFit="cover" />
-            ) : (
-              <View style={styles.photoPlaceholder}>
-                <MaterialIcons name="add-a-photo" size={32} color={c.iconInactive} />
-                <Text style={styles.photoPlaceholderText}>Add photo</Text>
-              </View>
-            )}
-          </TouchableOpacity>
-          <Text style={styles.photoHint}>Optional — recommended</Text>
-
-          <View style={styles.form}>
-            <Text style={styles.label}>
-              Full name <Text style={styles.req}>*</Text>
-            </Text>
-            <TextInput
-              ref={fullNameRef}
-              style={styles.input}
-              placeholder="Thamer Khaled"
-              placeholderTextColor={c.iconInactive}
-              value={fullName}
-              onChangeText={setFullName}
-              autoCapitalize="words"
-              editable={!loading}
-              inputAccessoryViewID={
-                Platform.OS === 'ios' ? KEYBOARD_TOOLBAR_NATIVE_ID : undefined
-              }
-              onFocus={() => setFocusedIndex(0)}
-            />
-
-            <Text style={styles.label}>
-              WhatsApp <Text style={styles.req}>*</Text>
-            </Text>
-            <TextInput
-              ref={whatsappRef}
-              style={styles.input}
-              placeholder="+1 416 555 0100"
-              placeholderTextColor={c.iconInactive}
-              value={whatsapp}
-              onChangeText={(t) => setWhatsapp(profileWhatsAppOnChangeText(t))}
-              keyboardType="phone-pad"
-              editable={!loading}
-              inputAccessoryViewID={
-                Platform.OS === 'ios' ? KEYBOARD_TOOLBAR_NATIVE_ID : undefined
-              }
-              onFocus={() => setFocusedIndex(1)}
-            />
-
-            <Text style={styles.label}>
-              Email <Text style={styles.req}>*</Text>
-            </Text>
-            <TextInput
-              ref={emailRef}
-              style={styles.input}
-              placeholder="you@example.com"
-              placeholderTextColor={c.iconInactive}
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-              editable={!loading}
-              inputAccessoryViewID={
-                Platform.OS === 'ios' ? KEYBOARD_TOOLBAR_NATIVE_ID : undefined
-              }
-              onFocus={() => setFocusedIndex(2)}
-            />
-
-            <Text style={styles.label}>
-              Password <Text style={styles.req}>*</Text>
-            </Text>
-            <TextInput
-              ref={passwordRef}
-              style={styles.input}
-              placeholder="At least 6 characters"
-              placeholderTextColor={c.iconInactive}
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              editable={!loading}
-              inputAccessoryViewID={
-                Platform.OS === 'ios' ? KEYBOARD_TOOLBAR_NATIVE_ID : undefined
-              }
-              onFocus={() => setFocusedIndex(3)}
-            />
-
-            <Text style={styles.label}>
-              Confirm password <Text style={styles.req}>*</Text>
-            </Text>
-            <TextInput
-              ref={confirmPasswordRef}
-              style={styles.input}
-              placeholder="••••••••"
-              placeholderTextColor={c.iconInactive}
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              secureTextEntry
-              editable={!loading}
-              inputAccessoryViewID={
-                Platform.OS === 'ios' ? KEYBOARD_TOOLBAR_NATIVE_ID : undefined
-              }
-              onFocus={() => setFocusedIndex(4)}
-            />
-
-            <TouchableOpacity
-              style={[styles.primaryBtn, loading && styles.btnDisabled]}
-              onPress={() => void handleRegister()}
-              disabled={loading}
-              activeOpacity={0.9}
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+          <View style={styles.scrollHost}>
+            <ScrollView
+              contentContainerStyle={styles.scroll}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+              showsVerticalScrollIndicator={false}
             >
-              {loading ? (
-                <ActivityIndicator color={c.textOnPrimary} />
-              ) : (
-                <Text style={styles.primaryBtnText}>Create account</Text>
-              )}
-            </TouchableOpacity>
-          </View>
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Create account</Text>
+              <Text style={styles.cardSubtitle}>Add your details to get started</Text>
 
-          <View style={styles.footer}>
-            <Text style={styles.footerText}>Already have an account? </Text>
-            <TouchableOpacity onPress={() => router.back()} disabled={loading}>
-              <Text style={styles.link}>Log in</Text>
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.photoWrap}
+                onPress={openPhotoOptions}
+                disabled={loading}
+                activeOpacity={0.85}
+                accessibilityLabel="Add profile photo"
+              >
+                {photoUri ? (
+                  <Image source={{ uri: photoUri }} style={styles.photoImage} contentFit="cover" />
+                ) : (
+                  <View style={styles.photoEmpty}>
+                    <MaterialIcons name="add-a-photo" size={36} color={placeholderColor} />
+                  </View>
+                )}
+              </TouchableOpacity>
+              <Text style={styles.photoCaption}>Add profile photo (optional)</Text>
+
+              <View style={styles.fields}>
+                <TextInput
+                  ref={fullNameRef}
+                  style={styles.input}
+                  placeholder="Full name"
+                  placeholderTextColor={placeholderColor}
+                  value={fullName}
+                  onChangeText={setFullName}
+                  autoCapitalize="words"
+                  editable={!loading}
+                  inputAccessoryViewID={
+                    Platform.OS === 'ios' ? KEYBOARD_TOOLBAR_NATIVE_ID : undefined
+                  }
+                  onFocus={() => setFocusedIndex(0)}
+                />
+
+                <TextInput
+                  ref={emailRef}
+                  style={styles.input}
+                  placeholder="Email address"
+                  placeholderTextColor={placeholderColor}
+                  value={email}
+                  onChangeText={setEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  editable={!loading}
+                  inputAccessoryViewID={
+                    Platform.OS === 'ios' ? KEYBOARD_TOOLBAR_NATIVE_ID : undefined
+                  }
+                  onFocus={() => setFocusedIndex(1)}
+                />
+
+                <TextInput
+                  ref={whatsappRef}
+                  style={styles.input}
+                  placeholder="WhatsApp number"
+                  placeholderTextColor={placeholderColor}
+                  value={whatsapp}
+                  onChangeText={(t) => setWhatsapp(profileWhatsAppOnChangeText(t))}
+                  keyboardType="phone-pad"
+                  editable={!loading}
+                  inputAccessoryViewID={
+                    Platform.OS === 'ios' ? KEYBOARD_TOOLBAR_NATIVE_ID : undefined
+                  }
+                  onFocus={() => setFocusedIndex(2)}
+                />
+
+                <TextInput
+                  ref={passwordRef}
+                  style={styles.input}
+                  placeholder="Password"
+                  placeholderTextColor={placeholderColor}
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry
+                  editable={!loading}
+                  inputAccessoryViewID={
+                    Platform.OS === 'ios' ? KEYBOARD_TOOLBAR_NATIVE_ID : undefined
+                  }
+                  onFocus={() => setFocusedIndex(3)}
+                />
+
+                <TextInput
+                  ref={confirmPasswordRef}
+                  style={styles.input}
+                  placeholder="Confirm password"
+                  placeholderTextColor={placeholderColor}
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  secureTextEntry
+                  editable={!loading}
+                  inputAccessoryViewID={
+                    Platform.OS === 'ios' ? KEYBOARD_TOOLBAR_NATIVE_ID : undefined
+                  }
+                  onFocus={() => setFocusedIndex(4)}
+                />
+              </View>
+
+              <TouchableOpacity
+                style={[styles.primaryBtn, loading && styles.btnDisabled]}
+                onPress={() => void handleRegister()}
+                disabled={loading}
+                activeOpacity={0.9}
+              >
+                {loading ? (
+                  <ActivityIndicator color={c.textOnPrimary} />
+                ) : (
+                  <Text style={styles.primaryBtnText}>Create Account</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.footer}>
+              <Text style={styles.footerMuted}>Already have an account? </Text>
+              <TouchableOpacity onPress={() => router.back()} disabled={loading} hitSlop={8}>
+                <Text style={styles.footerLink}>Log in</Text>
+              </TouchableOpacity>
+            </View>
+            </ScrollView>
           </View>
-        </ScrollView>
+        </TouchableWithoutFeedback>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
-const PHOTO_SIZE = 112;
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: c.sheetDark },
+  screen: {
+    flex: 1,
+    backgroundColor: c.sheetDark,
+  },
   keyboard: { flex: 1 },
+  scrollHost: { flex: 1 },
   scroll: {
-    paddingHorizontal: 24,
-    paddingTop: 24,
-    paddingBottom: 40,
+    flexGrow: 1,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 36,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: '800',
+  card: {
+    backgroundColor: c.surfaceDark,
+    borderRadius: 20,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  cardTitle: {
+    fontSize: 26,
+    fontWeight: '700',
     color: c.white,
-    letterSpacing: -0.5,
+    letterSpacing: -0.4,
+    textAlign: 'center',
   },
-  subtitle: {
+  cardSubtitle: {
     fontSize: 15,
     color: c.textSecondary,
+    textAlign: 'center',
     marginTop: 6,
-    marginBottom: 24,
+    marginBottom: 8,
   },
-  photoRing: {
+  photoWrap: {
     alignSelf: 'center',
     width: PHOTO_SIZE,
     height: PHOTO_SIZE,
     borderRadius: PHOTO_SIZE / 2,
+    marginTop: 16,
     borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.15)',
+    borderColor: 'rgba(255,255,255,0.14)',
     overflow: 'hidden',
-    marginBottom: 8,
-    backgroundColor: c.background,
+    backgroundColor: 'rgba(255,255,255,0.05)',
   },
   photoImage: {
     width: '100%',
     height: '100%',
   },
-  photoPlaceholder: {
+  photoEmpty: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 4,
   },
-  photoPlaceholderText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: c.textSecondary,
-  },
-  photoHint: {
-    alignSelf: 'center',
-    fontSize: 12,
-    color: c.textTertiary,
-    marginBottom: 20,
-  },
-  form: {
-    gap: 4,
-    backgroundColor: c.background,
-    padding: 22,
-    borderRadius: 16,
-  },
-  label: {
+  photoCaption: {
+    textAlign: 'center',
     fontSize: 14,
-    fontWeight: '600',
-    color: c.textSlateDark,
-    marginBottom: 6,
+    color: c.textSecondary,
     marginTop: 10,
+    marginBottom: 8,
   },
-  req: { color: c.primary },
+  fields: {
+    gap: FIELD_GAP,
+    marginTop: 16,
+  },
   input: {
-    backgroundColor: c.background,
+    backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
-    borderColor: c.borderStrong,
+    borderColor: 'rgba(255,255,255,0.1)',
     borderRadius: 12,
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingVertical: 14,
     fontSize: 16,
-    color: c.text,
-    marginBottom: 4,
+    color: c.white,
   },
   primaryBtn: {
     backgroundColor: c.primary,
     borderRadius: 14,
-    paddingVertical: 16,
+    height: 54,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 54,
-    marginTop: 16,
+    marginTop: 22,
   },
   primaryBtnText: {
     color: c.textOnPrimary,
-    fontSize: 16,
-    fontWeight: '800',
+    fontSize: 17,
+    fontWeight: '700',
   },
   btnDisabled: { opacity: 0.65 },
   footer: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
+    flexWrap: 'wrap',
     marginTop: 28,
   },
-  footerText: { color: c.textSecondary, fontSize: 15 },
-  link: { color: c.primary, fontSize: 15, fontWeight: '700' },
+  footerMuted: {
+    color: c.textSecondary,
+    fontSize: 15,
+  },
+  footerLink: {
+    color: c.primary,
+    fontSize: 15,
+    fontWeight: '700',
+  },
 });
