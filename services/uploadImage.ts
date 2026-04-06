@@ -1,11 +1,11 @@
 /**
  * Pick an image from the library and upload to Firebase Storage.
  */
-import { PickerMediaType } from '@/lib/imagePickerMedia';
 import * as ImagePicker from 'expo-image-picker';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 
 import { storage } from '@/services/firebase';
+import { uploadUserProfileImage } from '@/services/profilePhoto';
 
 export type PickUploadOptions = {
   /** Storage path prefix, e.g. `foodTemplates`. Default `uploads`. */
@@ -33,7 +33,7 @@ export async function pickAndUploadImage(
   }
 
   const result = await ImagePicker.launchImageLibraryAsync({
-    mediaTypes: [PickerMediaType.Images],
+    mediaTypes: ['images'],
     allowsEditing: true,
     aspect: [4, 3],
     quality: options.quality ?? 0.85,
@@ -58,4 +58,23 @@ export async function pickAndUploadImage(
     console.warn('[uploadImage]', msg);
     return { url: null, error: msg };
   }
+}
+
+/**
+ * Upload a local image URI for a user → Storage download URL.
+ * Uses `profiles/{userId}.jpg` (matches {@link storage.rules} and signup flow).
+ */
+export async function uploadImageAsync(
+  uri: string,
+  userId: string,
+): Promise<string> {
+  const uid = userId.trim();
+  if (!uid) {
+    throw new Error('Missing user id');
+  }
+  const u = typeof uri === 'string' ? uri.trim() : '';
+  if (!u) {
+    throw new Error('No image selected');
+  }
+  return uploadUserProfileImage(uid, u);
 }

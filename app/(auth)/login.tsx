@@ -9,6 +9,7 @@ import {
   Animated,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -133,9 +134,14 @@ export default function LoginScreen() {
       />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboard}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+        style={styles.keyboardAvoid}
       >
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          showsVerticalScrollIndicator={false}
+        >
         <View style={styles.content}>
           <View style={styles.card}>
             <Text style={styles.title}>HalfOrder</Text>
@@ -216,6 +222,7 @@ export default function LoginScreen() {
             </TouchableOpacity>
           </View>
         </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -223,22 +230,24 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: AUTH.bg },
-  keyboard: { flex: 1 },
-  content: {
-    flex: 1,
+  keyboardAvoid: { flex: 1, backgroundColor: '#0B0F14' },
+  scrollContent: {
+    flexGrow: 1,
     paddingHorizontal: 24,
     paddingTop: 32,
-    paddingBottom: 32,
+    paddingBottom: 120,
     alignItems: 'center',
-    justifyContent: 'flex-start',
+  },
+  content: {
+    width: '100%',
+    maxWidth: 400,
+    alignItems: 'center',
   },
   card: {
     width: '100%',
-    maxWidth: 400,
     backgroundColor: AUTH.card,
     borderRadius: 20,
-    paddingHorizontal: 22,
-    paddingVertical: 28,
+    padding: 20,
     borderWidth: 1,
     borderColor: 'rgba(55,65,81,0.6)',
   },
@@ -258,14 +267,13 @@ const styles = StyleSheet.create({
   form: { width: '100%' },
   input: {
     borderWidth: 1,
-    borderColor: AUTH.inputBorder,
+    borderColor: '#374151',
     borderRadius: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 14,
+    padding: 14,
     marginBottom: 12,
     fontSize: 16,
-    color: AUTH.text,
-    backgroundColor: AUTH.inputBg,
+    color: '#FFFFFF',
+    backgroundColor: '#1F2937',
   },
   passwordInput: {
     marginBottom: 4,

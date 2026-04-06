@@ -212,7 +212,7 @@ export default function RegisterScreen() {
       />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboard}
+        style={styles.keyboardAvoid}
       >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
           <View style={styles.scrollHost}>
@@ -384,13 +384,13 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: AUTH.bg,
   },
-  keyboard: { flex: 1 },
+  keyboardAvoid: { flex: 1, backgroundColor: '#0B0F14' },
   scrollHost: { flex: 1 },
   scroll: {
     flexGrow: 1,
     paddingHorizontal: 20,
     paddingTop: 20,
-    paddingBottom: 48,
+    paddingBottom: 120,
   },
   card: {
     backgroundColor: AUTH.card,
@@ -447,15 +447,14 @@ const styles = StyleSheet.create({
     marginTop: 0,
   },
   fieldInput: {
-    backgroundColor: AUTH.inputBg,
+    backgroundColor: '#1F2937',
     borderWidth: 1,
-    borderColor: AUTH.inputBorder,
+    borderColor: '#374151',
     borderRadius: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 14,
+    padding: 14,
     marginBottom: 12,
     fontSize: 16,
-    color: AUTH.text,
+    color: '#FFFFFF',
   },
   fieldHelper: {
     fontSize: 13,

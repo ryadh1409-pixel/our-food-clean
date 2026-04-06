@@ -44,6 +44,8 @@ import { StatusBar } from 'expo-status-bar';
 import {
   deleteField,
   doc,
+  getDoc,
+  getDocFromServer,
   onSnapshot,
   setDoc,
   type DocumentData,
@@ -66,6 +68,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 const SUPPORT_EMAIL = 'support@halforder.app';
 
 const tc = theme.colors;
+
+const DEFAULT_AVATAR = require('@/assets/default-avatar.png') as number;
 
 /** Reads `users/{uid}` fields with the same aliases as `getTrustScoreProfile`. */
 function pickRatingAverage(data: DocumentData): number {
@@ -264,45 +268,63 @@ export default function ProfileScreen() {
       return;
     }
     const userRef = doc(db, 'users', uid);
+    let cancelled = false;
+
+    const applyUserDoc = (data: DocumentData | undefined) => {
+      const authUser = auth.currentUser;
+      const mapped = mapUsersCollectionToProfile(data, authUser);
+      setDisplayNameInput(mapped.displayName);
+      setInitialDisplayName(mapped.displayName);
+      setNotificationsEnabled(mapped.notificationsEnabled);
+      setAverageRating(mapped.averageRating);
+      setTotalRatings(mapped.totalRatings);
+      setEmailFromFirestore(mapped.emailFromDoc);
+      setPhotoURL(mapped.photoURL);
+      const phoneDisp = displayFromStoredProfilePhone(mapped.phone);
+      setPhone(phoneDisp);
+      setInitialPhone(phoneDisp);
+      setProfileLoading(false);
+    };
+
+    setProfileLoading(true);
+    void (async () => {
+      try {
+        const serverSnap = await getDocFromServer(userRef);
+        if (cancelled) return;
+        applyUserDoc(
+          serverSnap.exists() ? (serverSnap.data() as DocumentData) : undefined,
+        );
+      } catch {
+        if (cancelled) return;
+        try {
+          const cacheSnap = await getDoc(userRef);
+          if (cancelled) return;
+          applyUserDoc(
+            cacheSnap.exists() ? (cacheSnap.data() as DocumentData) : undefined,
+          );
+        } catch {
+          applyUserDoc(undefined);
+        }
+      }
+    })();
+
     const unsubscribe = onSnapshot(
       userRef,
       (snap) => {
-        const authUser = auth.currentUser;
-        const mapped = mapUsersCollectionToProfile(
+        if (cancelled) return;
+        applyUserDoc(
           snap.exists() ? (snap.data() as DocumentData) : undefined,
-          authUser,
         );
-
-        setDisplayNameInput(mapped.displayName);
-        setInitialDisplayName(mapped.displayName);
-        setNotificationsEnabled(mapped.notificationsEnabled);
-        setAverageRating(mapped.averageRating);
-        setTotalRatings(mapped.totalRatings);
-        setEmailFromFirestore(mapped.emailFromDoc);
-        setPhotoURL(mapped.photoURL);
-        const phoneDisp = displayFromStoredProfilePhone(mapped.phone);
-        setPhone(phoneDisp);
-        setInitialPhone(phoneDisp);
-
-        setProfileLoading(false);
       },
       () => {
-        const authUser = auth.currentUser;
-        const mapped = mapUsersCollectionToProfile(undefined, authUser);
-        setDisplayNameInput(mapped.displayName);
-        setInitialDisplayName(mapped.displayName);
-        setNotificationsEnabled(mapped.notificationsEnabled);
-        setAverageRating(mapped.averageRating);
-        setTotalRatings(mapped.totalRatings);
-        setEmailFromFirestore(mapped.emailFromDoc);
-        setPhotoURL(mapped.photoURL);
-        const phoneDisp = displayFromStoredProfilePhone(mapped.phone);
-        setPhone(phoneDisp);
-        setInitialPhone(phoneDisp);
-        setProfileLoading(false);
+        if (cancelled) return;
+        applyUserDoc(undefined);
       },
     );
-    return () => unsubscribe();
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, [uid]);
 
   useEffect(() => {
@@ -612,7 +634,6 @@ export default function ProfileScreen() {
     (displayNameInput.trim() !== initialDisplayName.trim() ||
       phone.trim() !== initialPhone.trim());
   const saveButtonLabel = savingName ? 'Saving…' : nameSaved ? 'Saved ✓' : 'Save name';
-  const initialLetter = displayName.slice(0, 1).toUpperCase() || '?';
 
   const reviewCount =
     totalRatings > 0 ? totalRatings : trustScore?.count ?? 0;
@@ -744,17 +765,15 @@ export default function ProfileScreen() {
               >
                 {uploadingPhoto ? (
                   <ActivityIndicator size="large" color={pal.primary} />
-                ) : photoURL ? (
+                ) : (
                   <Image
-                    key={photoURL}
-                    source={{ uri: photoURL }}
+                    key={photoURL ?? 'default'}
+                    source={photoURL ? { uri: photoURL } : DEFAULT_AVATAR}
                     style={dynamicStyles.profileAvatarImage}
                     contentFit="cover"
                     transition={200}
                     cachePolicy="memory-disk"
                   />
-                ) : (
-                  <Text style={dynamicStyles.profileAvatarLetter}>{initialLetter}</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -1204,11 +1223,6 @@ function createDynamicStyles(pal: Palette, isDarkMode: boolean) {
       width: 88,
       height: 88,
       borderRadius: 44,
-    },
-    profileAvatarLetter: {
-      fontSize: 32,
-      fontWeight: '800',
-      color: pal.text,
     },
     trustChip: {
       alignSelf: 'flex-start',

@@ -1,6 +1,5 @@
 import * as ImagePicker from 'expo-image-picker';
 
-import { PickerMediaType } from '@/lib/imagePickerMedia';
 import { logError } from '@/utils/errorLogger';
 
 export class ImagePickerPermissionError extends Error {
@@ -40,7 +39,7 @@ export async function pickImageFromLibrary(
   >;
   try {
     result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: [PickerMediaType.Images],
+      mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [1, 1],
       quality,

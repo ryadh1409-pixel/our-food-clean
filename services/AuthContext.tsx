@@ -47,7 +47,7 @@ import {
   profilePhoneDigitsOnly,
 } from '@/lib/profileWhatsAppPhone';
 import { syncUserRoleToFirestore } from '@/utils/admin';
-import { uploadUserProfileImage } from '@/services/profilePhoto';
+import { uploadImageAsync } from '@/services/uploadImage';
 import { claimReferralInboxRewards } from '@/services/referralRewards';
 import { subscribeExpoPushTokenRefresh } from '@/services/notifications';
 import {
@@ -403,7 +403,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     if (payload.localPhotoUri?.trim()) {
       try {
-        photoURL = await uploadUserProfileImage(uid, payload.localPhotoUri.trim());
+        photoURL = await uploadImageAsync(
+          payload.localPhotoUri.trim(),
+          uid,
+        );
       } catch (e) {
         logError(e);
         if (__DEV__) {
