@@ -20,3 +20,19 @@ export async function refreshSessionAndIsEmailVerified(
   await reloadAuthUser();
   return auth.currentUser?.emailVerified === true;
 }
+
+/**
+ * Same intent as `navigation.reset({ routes: [{ name: "Home" }] })` in React Navigation:
+ * reload the Firebase user, then if verified call `redirectToHome` once.
+ * With Expo Router, pass e.g. `() => router.replace(VERIFY_EMAIL_HOME_HREF)`.
+ */
+export async function checkEmailVerifiedAndRedirect(
+  reloadAuthUser: ReloadAuthUserFn,
+  redirectToHome: () => void,
+): Promise<boolean> {
+  const verified = await refreshSessionAndIsEmailVerified(reloadAuthUser);
+  if (verified) {
+    redirectToHome();
+  }
+  return verified;
+}

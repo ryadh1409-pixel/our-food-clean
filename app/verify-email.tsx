@@ -5,7 +5,7 @@ import { getUserFriendlyError } from '@/utils/errorHandler';
 import { logError } from '@/utils/errorLogger';
 import {
   VERIFY_EMAIL_HOME_HREF,
-  refreshSessionAndIsEmailVerified,
+  checkEmailVerifiedAndRedirect,
 } from '@/utils/emailVerificationFlow';
 import { showError, showSuccess } from '@/utils/toast';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
@@ -63,15 +63,14 @@ export default function VerifyEmailScreen() {
     if (!auth.currentUser) return false;
 
     try {
-      const verified = await refreshSessionAndIsEmailVerified(reloadAuthUser);
-      if (verified) {
-        navigateToHomeOnce();
-        return true;
-      }
+      return await checkEmailVerifiedAndRedirect(
+        reloadAuthUser,
+        navigateToHomeOnce,
+      );
     } catch (e) {
       logError(e);
+      return false;
     }
-    return false;
   }, [reloadAuthUser, navigateToHomeOnce]);
 
   useEffect(() => {
