@@ -6,6 +6,7 @@ import {
   signInWithEmailAndPassword,
   signInWithPhoneNumber,
   signOut as firebaseSignOut,
+  updateProfile,
   type User,
 } from 'firebase/auth';
 import {
@@ -33,6 +34,7 @@ import React, {
 import { ActivityIndicator, Platform, View } from 'react-native';
 import { theme } from '@/constants/theme';
 import { auth, db } from '@/services/firebase';
+import { uploadUserProfileImage } from '@/services/profilePhoto';
 import { claimReferralInboxRewards } from '@/services/referralRewards';
 import { subscribeExpoPushTokenRefresh } from '@/services/notifications';
 import {
@@ -42,10 +44,19 @@ import {
 
 const REFERRAL_CREDIT = 2;
 
+export type EmailSignUpPayload = {
+  email: string;
+  password: string;
+  fullName: string;
+  whatsapp: string;
+  /** Local file URI from ImagePicker; uploaded to `users/{uid}/profile.jpg` */
+  localPhotoUri?: string | null;
+};
+
 type AuthContextValue = {
   user: User | null;
   loading: boolean;
-  signUpWithEmail: (email: string, password: string) => Promise<void>;
+  signUpWithEmail: (payload: EmailSignUpPayload) => Promise<void>;
   signInWithEmail: (email: string, password: string) => Promise<void>;
   signInWithPhone: (phoneNumber: string) => Promise<void>;
   confirmPhoneCode: (code: string) => Promise<void>;
@@ -67,7 +78,22 @@ async function ensureUserDocument(
     const data = snap.data();
     const updates: Record<string, unknown> = {};
     if (typeof data?.displayName !== 'string') updates.displayName = displayName ?? '';
+    if (typeof data?.name !== 'string' && displayName) updates.name = displayName;
     if (data?.email == null) updates.email = email ?? null;
+    if (
+      typeof data?.phone !== 'string' &&
+      phoneNumber &&
+      phoneNumber.trim().length > 0
+    ) {
+      updates.phone = phoneNumber.trim();
+    }
+    if (
+      typeof data?.whatsapp !== 'string' &&
+      phoneNumber &&
+      phoneNumber.trim().length > 0
+    ) {
+      updates.whatsapp = phoneNumber.trim();
+    }
     if (
       (data?.photoURL == null || data?.photoURL === '') &&
       photoURL &&
@@ -115,10 +141,14 @@ async function ensureUserDocument(
     // ignore
   }
 
+  const phoneLine = phoneNumber?.trim() ?? '';
   await setDoc(userRef, {
     uid,
+    name: displayName ?? '',
     displayName: displayName ?? '',
     email: email ?? null,
+    phone: phoneLine,
+    whatsapp: phoneLine,
     phoneNumber: phoneNumber ?? null,
     photoURL: photoURL?.trim() || null,
     createdAt: serverTimestamp(),
@@ -232,58 +262,90 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => sub.remove();
   }, [user?.uid, user?.isAnonymous]);
 
-  const signUpWithEmail = useCallback(
-    async (email: string, password: string) => {
-      const trimmed = typeof email === 'string' ? email.trim() : '';
-      if (!trimmed || !password) {
-        throw new Error('Please fill in all fields.');
-      }
-      let userCredential;
+  const signUpWithEmail = useCallback(async (payload: EmailSignUpPayload) => {
+    const trimmed = typeof payload.email === 'string' ? payload.email.trim() : '';
+    const nameTrim = payload.fullName.trim();
+    const waTrim = payload.whatsapp.trim();
+    const pwd = payload.password;
+
+    if (!trimmed || !pwd || !nameTrim || !waTrim) {
+      throw new Error('Please fill in all required fields.');
+    }
+    if (pwd.length < 6) {
+      throw new Error('Password must be at least 6 characters.');
+    }
+
+    let userCredential;
+    try {
+      userCredential = await createUserWithEmailAndPassword(
+        auth,
+        trimmed,
+        pwd,
+      );
+    } catch (err: unknown) {
+      logError(err, { alert: false });
+      const msg =
+        err && typeof err === 'object' && 'message' in err
+          ? String((err as { message: string }).message)
+          : 'Registration failed';
+      throw new Error(msg);
+    }
+
+    const firebaseUser = userCredential.user;
+    const uid = firebaseUser.uid;
+    let photoURL: string | null = null;
+
+    if (payload.localPhotoUri?.trim()) {
       try {
-        userCredential = await createUserWithEmailAndPassword(
-          auth,
-          trimmed,
-          password,
-        );
-      } catch (err: unknown) {
-        logError(err, { alert: false });
-        const msg =
-          err && typeof err === 'object' && 'message' in err
-            ? String((err as { message: string }).message)
-            : 'Registration failed';
-        throw new Error(msg);
+        photoURL = await uploadUserProfileImage(uid, payload.localPhotoUri.trim());
+      } catch (e) {
+        logError(e, { alert: false });
+        console.warn('Profile image upload failed (continuing without photo):', e);
       }
-      const uid = userCredential.user.uid;
-      const userEmail = userCredential.user.email ?? trimmed;
-      try {
-        await setDoc(doc(db, 'users', uid), {
-          email: userEmail,
+    }
+
+    try {
+      await updateProfile(firebaseUser, {
+        displayName: nameTrim,
+        ...(photoURL ? { photoURL } : {}),
+      });
+    } catch (e) {
+      logError(e, { alert: false });
+    }
+
+    try {
+      await setDoc(
+        doc(db, 'users', uid),
+        {
+          uid,
+          name: nameTrim,
+          displayName: nameTrim,
+          email: trimmed,
+          whatsapp: waTrim,
+          phone: waTrim,
+          photoURL: photoURL ?? null,
+          rating: 5,
+          reviewsCount: 0,
+          averageRating: 5,
+          totalRatings: 0,
           createdAt: serverTimestamp(),
           trustScore: 0,
-          averageRating: 0,
-          totalRatings: 0,
           totalOrdersCompleted: 0,
           cancellationRate: 0,
           reportCount: 0,
-        });
-      } catch (e) {
-        logError(e);
-        // Do not throw: Auth succeeded; ensureUserDocument will run on onAuthStateChanged
-      }
-      try {
-        await ensureUserDocument(
-          uid,
-          userCredential.user.displayName ?? null,
-          userCredential.user.email ?? null,
-          userCredential.user.phoneNumber ?? null,
-          userCredential.user.photoURL ?? null,
-        );
-      } catch (e) {
-        console.warn('ensureUserDocument failed (non-fatal):', e);
-      }
-    },
-    [],
-  );
+        },
+        { merge: true },
+      );
+    } catch (e) {
+      logError(e);
+    }
+
+    try {
+      await ensureUserDocument(uid, nameTrim, trimmed, waTrim, photoURL);
+    } catch (e) {
+      console.warn('ensureUserDocument failed (non-fatal):', e);
+    }
+  }, []);
 
   const signInWithEmail = useCallback(
     async (email: string, password: string) => {

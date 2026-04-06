@@ -67,6 +67,9 @@ const tc = theme.colors;
 
 /** Reads `users/{uid}` fields with the same aliases as `getTrustScoreProfile`. */
 function pickRatingAverage(data: DocumentData): number {
+  if (typeof data.rating === 'number' && Number.isFinite(data.rating)) {
+    return data.rating;
+  }
   if (
     typeof data.ratingAverage === 'number' &&
     Number.isFinite(data.ratingAverage)
@@ -83,6 +86,12 @@ function pickRatingAverage(data: DocumentData): number {
 }
 
 function pickRatingCount(data: DocumentData): number {
+  if (
+    typeof data.reviewsCount === 'number' &&
+    Number.isFinite(data.reviewsCount)
+  ) {
+    return Math.max(0, Math.round(data.reviewsCount));
+  }
   if (typeof data.ratingCount === 'number' && Number.isFinite(data.ratingCount)) {
     return Math.max(0, Math.round(data.ratingCount));
   }
@@ -136,6 +145,8 @@ function mapUsersCollectionToProfile(
     };
   }
 
+  const nameFromDoc =
+    typeof data.name === 'string' ? data.name.trim() : '';
   const fromDoc =
     typeof data.displayName === 'string' ? data.displayName.trim() : '';
   const emailRaw = data.email;
@@ -149,7 +160,7 @@ function mapUsersCollectionToProfile(
       : '';
 
   return {
-    displayName: fromDoc || authDisplay,
+    displayName: nameFromDoc || fromDoc || authDisplay,
     emailFromDoc,
     photoURL,
     phone,
@@ -365,13 +376,14 @@ export default function ProfileScreen() {
       const userRef = doc(db, 'users', uid);
       await updateProfile(currentUser, { displayName: mod.text });
       await currentUser.reload();
-      await setDoc(
+        await setDoc(
         userRef,
         {
           displayName: mod.text,
           name: mod.text,
           avatar: currentUser.photoURL ?? null,
           phone: trimmedPhone,
+          whatsapp: trimmedPhone,
           dateOfBirth: deleteField(),
         },
         { merge: true },
@@ -598,14 +610,15 @@ export default function ProfileScreen() {
   const saveButtonLabel = savingName ? 'Saving…' : nameSaved ? 'Saved ✓' : 'Save name';
   const initialLetter = displayName.slice(0, 1).toUpperCase() || '?';
 
+  const reviewCount =
+    totalRatings > 0 ? totalRatings : trustScore?.count ?? 0;
   const ratingValue =
     totalRatings > 0
       ? averageRating
       : trustScore && trustScore.count > 0
         ? trustScore.average
         : null;
-  const reviewCount =
-    totalRatings > 0 ? totalRatings : trustScore?.count ?? 0;
+  const showNewUserBadge = reviewCount === 0;
 
   const dynamicStyles = useMemo(
     () => createDynamicStyles(pal, isDark),
@@ -683,16 +696,20 @@ export default function ProfileScreen() {
               </Text>
               <View style={dynamicStyles.profileRatingRow}>
                 <MaterialIcons name="star" size={20} color={pal.star} />
-                <Text style={dynamicStyles.profileRatingValue}>
-                  {ratingValue != null ? ratingValue.toFixed(2) : '—'}
-                </Text>
-                <Text style={dynamicStyles.profileReviewMeta}>
-                  {reviewCount > 0
-                    ? ` · ${reviewCount} review${reviewCount === 1 ? '' : 's'}`
-                    : ratingValue != null
-                      ? ''
-                      : ' · No ratings yet'}
-                </Text>
+                {showNewUserBadge ? (
+                  <Text style={dynamicStyles.profileNewUserLabel}>New user</Text>
+                ) : (
+                  <>
+                    <Text style={dynamicStyles.profileRatingValue}>
+                      {ratingValue != null ? ratingValue.toFixed(1) : '—'}
+                    </Text>
+                    <Text style={dynamicStyles.profileReviewMeta}>
+                      {reviewCount > 0
+                        ? ` · ${reviewCount} review${reviewCount === 1 ? '' : 's'}`
+                        : ''}
+                    </Text>
+                  </>
+                )}
               </View>
               {trustScore || isAdminUser(user) ? (
                 <View style={dynamicStyles.trustChip}>
@@ -723,7 +740,6 @@ export default function ProfileScreen() {
                   <Text style={dynamicStyles.profileAvatarLetter}>{initialLetter}</Text>
                 )}
               </TouchableOpacity>
-              <Text style={dynamicStyles.profilePhotoHint}>Tap to change</Text>
             </View>
           </View>
 
@@ -1082,6 +1098,13 @@ function createDynamicStyles(pal: Palette, isDarkMode: boolean) {
       color: pal.text,
       letterSpacing: -0.3,
     },
+    profileNewUserLabel: {
+      marginLeft: 6,
+      fontSize: 17,
+      fontWeight: '700',
+      color: pal.textSecondary,
+      letterSpacing: -0.2,
+    },
     profileReviewMeta: {
       fontSize: 15,
       fontWeight: '600',
@@ -1110,13 +1133,6 @@ function createDynamicStyles(pal: Palette, isDarkMode: boolean) {
       fontSize: 32,
       fontWeight: '800',
       color: pal.text,
-    },
-    profilePhotoHint: {
-      marginTop: 8,
-      fontSize: 11,
-      fontWeight: '600',
-      color: pal.textTertiary,
-      textAlign: 'right',
     },
     trustChip: {
       alignSelf: 'flex-start',
