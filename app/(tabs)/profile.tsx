@@ -40,10 +40,8 @@ import { StatusBar } from 'expo-status-bar';
 import {
   deleteField,
   doc,
-  getDoc,
   onSnapshot,
   setDoc,
-  updateDoc,
   type DocumentData,
 } from 'firebase/firestore';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -108,9 +106,13 @@ function resolvePhotoURL(
   data: DocumentData | undefined,
   authUser: User | null,
 ): string | null {
-  const docUrl = data?.photoURL;
-  if (typeof docUrl === 'string' && docUrl.trim().length > 0) {
-    return docUrl.trim();
+  const docPhoto = data?.photoURL;
+  if (typeof docPhoto === 'string' && docPhoto.trim().length > 0) {
+    return docPhoto.trim();
+  }
+  const docAvatar = data?.avatar;
+  if (typeof docAvatar === 'string' && docAvatar.trim().length > 0) {
+    return docAvatar.trim();
   }
   const authUrl = authUser?.photoURL;
   if (typeof authUrl === 'string' && authUrl.trim().length > 0) {
@@ -214,7 +216,7 @@ export default function ProfileScreen() {
   const router = useRouter();
   const pal = useProfilePalette();
   const isDark = true;
-  const { user, signOutUser } = useAuth();
+  const { user, signOutUser, reloadAuthUser } = useAuth();
   const [displayNameInput, setDisplayNameInput] = useState('');
   const [phone, setPhone] = useState('');
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
@@ -439,13 +441,17 @@ export default function ProfileScreen() {
       await updateProfile(currentUser, { photoURL: downloadURL });
 
       const userRef = doc(db, 'users', uid);
-      const userSnap = await getDoc(userRef);
-      if (userSnap.exists()) {
-        await updateDoc(userRef, { photoURL: downloadURL });
-      } else {
-        await setDoc(userRef, { photoURL: downloadURL }, { merge: true });
-      }
+      await setDoc(
+        userRef,
+        { photoURL: downloadURL, avatar: downloadURL },
+        { merge: true },
+      );
 
+      try {
+        await reloadAuthUser();
+      } catch (e) {
+        logError(e);
+      }
       setPhotoURL(downloadURL);
       showSuccess('Your profile picture has been saved.');
     } catch (e) {
@@ -723,10 +729,12 @@ export default function ProfileScreen() {
                   <ActivityIndicator size="large" color={pal.primary} />
                 ) : photoURL ? (
                   <Image
+                    key={photoURL}
                     source={{ uri: photoURL }}
                     style={dynamicStyles.profileAvatarImage}
                     contentFit="cover"
                     transition={200}
+                    cachePolicy="memory-disk"
                   />
                 ) : (
                   <Text style={dynamicStyles.profileAvatarLetter}>{initialLetter}</Text>

@@ -1,10 +1,10 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    // Profile photos: one file per uid — filename must be `{auth.uid}.jpg`
+    // Profile photos: one file per signed-in user — `{uid}.jpg` only
     match /profiles/{fileName} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null;
+      allow write: if request.auth != null && fileName == auth.uid + '.jpg';
     }
 
     match /users/{userId}/{allPaths=**} {

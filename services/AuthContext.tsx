@@ -106,7 +106,9 @@ async function ensureUserDocument(
       photoURL &&
       photoURL.trim()
     ) {
-      updates.photoURL = photoURL.trim();
+      const p = photoURL.trim();
+      updates.photoURL = p;
+      updates.avatar = p;
     }
     if (data?.uid === undefined) updates.uid = uid;
     if (data?.activeOrderId === undefined) updates.activeOrderId = null;
@@ -149,6 +151,7 @@ async function ensureUserDocument(
   }
 
   const phoneLine = phoneNumber?.trim() ?? '';
+  const initialPhoto = photoURL?.trim() || null;
   await setDoc(userRef, {
     uid,
     name: displayName ?? '',
@@ -157,7 +160,8 @@ async function ensureUserDocument(
     phone: phoneLine,
     whatsapp: phoneLine,
     phoneNumber: phoneNumber ?? null,
-    photoURL: photoURL?.trim() || null,
+    photoURL: initialPhoto,
+    avatar: initialPhoto,
     createdAt: serverTimestamp(),
     activeOrderId: null,
     credits: referredBy ? REFERRAL_CREDIT : 0,
@@ -332,6 +336,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           whatsapp: waTrim,
           phone: waTrim,
           photoURL: photoURL ?? null,
+          avatar: photoURL ?? null,
           rating: 5,
           reviewsCount: 0,
           averageRating: 5,
