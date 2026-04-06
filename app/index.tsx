@@ -1,11 +1,10 @@
 import AppLogo from '@/components/AppLogo';
+import { ONBOARDING_COMPLETE_KEY } from '@/constants/onboarding';
 import { TERMS_ACCEPTANCE_STORAGE_KEY } from '@/constants/termsAcceptance';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Redirect } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
-
-const ONBOARDING_COMPLETE_KEY = 'onboardingComplete';
 
 type GateState =
   | { phase: 'loading' }
