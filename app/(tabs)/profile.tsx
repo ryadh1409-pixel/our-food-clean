@@ -1,6 +1,6 @@
 import { KEYBOARD_TOOLBAR_NATIVE_ID, KeyboardToolbar } from '@/components/KeyboardToolbar';
 import { ScreenHeader } from '@/components/ScreenHeader';
-import { systemConfirm } from '@/components/SystemDialogHost';
+import { DeleteAccountModal } from '@/components/DeleteAccountModal';
 import { isAdminUser } from '@/constants/adminUid';
 import { LEGAL_URLS } from '@/constants/legalLinks';
 import { theme } from '@/constants/theme';
@@ -19,7 +19,6 @@ import {
   getBlockedUsersByBlocker,
   unblockUser,
 } from '@/services/blocks';
-import { deleteUserAccount } from '@/services/deleteUserAccount';
 import { auth, db, ensureAuthReady } from '@/services/firebase';
 import {
   ImagePickerPermissionError,
@@ -247,7 +246,8 @@ export default function ProfileScreen() {
   );
   const [photoURL, setPhotoURL] = useState<string | null>(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
-  const [deletingAccount, setDeletingAccount] = useState(false);
+  const [deleteAccountModalVisible, setDeleteAccountModalVisible] =
+    useState(false);
   const [reportUserId, setReportUserId] = useState('');
   const [reportReason, setReportReason] = useState<ReportReason>('spam');
   const [submittingReport, setSubmittingReport] = useState(false);
@@ -557,18 +557,22 @@ export default function ProfileScreen() {
 
   const handleDeleteAccount = () => {
     if (!user) return;
-    void (async () => {
-      const ok = await systemConfirm({
-        title: 'Delete Account',
-        message:
-          'Are you sure you want to delete your account? This action cannot be undone.',
-        confirmLabel: 'Delete',
-        cancelLabel: 'Cancel',
-        destructive: true,
-      });
-      if (ok) void confirmDeleteAccount();
-    })();
+    setDeleteAccountModalVisible(true);
   };
+
+  const handleDeleteAccountDismiss = useCallback(() => {
+    setDeleteAccountModalVisible(false);
+  }, []);
+
+  const handleAfterAccountDeleted = useCallback(async () => {
+    setDeleteAccountModalVisible(false);
+    try {
+      await signOutUser();
+    } catch {
+      // `deleteUser` already ends the session; sign-out may no-op.
+    }
+    router.replace('/(auth)/login' as Parameters<typeof router.replace>[0]);
+  }, [router, signOutUser]);
 
   const handleSubmitProfileReport = async () => {
     if (!uid) return;
@@ -608,36 +612,6 @@ export default function ProfileScreen() {
       showError(getUserFriendlyError(e));
     } finally {
       setUnblockingId(null);
-    }
-  };
-
-  const confirmDeleteAccount = async () => {
-    if (!user) return;
-    setDeletingAccount(true);
-    try {
-      await deleteUserAccount(user);
-      showSuccess('Your account has been deleted successfully');
-      router.replace('/(auth)/login');
-    } catch (err: unknown) {
-      logError(err);
-      const code =
-        err &&
-        typeof err === 'object' &&
-        'code' in err &&
-        typeof (err as { code: unknown }).code === 'string'
-          ? (err as { code: string }).code
-          : null;
-      if (code === 'auth/requires-recent-login') {
-        showNotice(
-          'Sign in required',
-          'For security, please log in again before deleting your account.',
-        );
-        router.replace('/(auth)/login');
-      } else {
-        showError(getUserFriendlyError(err));
-      }
-    } finally {
-      setDeletingAccount(false);
     }
   };
 
@@ -1120,15 +1094,10 @@ export default function ProfileScreen() {
               how we handle reports.
             </Text>
             <TouchableOpacity
-              style={[dynamicStyles.dangerButton, deletingAccount && dynamicStyles.buttonDisabled]}
+              style={dynamicStyles.dangerButton}
               onPress={handleDeleteAccount}
-              disabled={deletingAccount}
             >
-              {deletingAccount ? (
-                <ActivityIndicator size="small" color={pal.onPrimary} />
-              ) : (
-                <Text style={dynamicStyles.dangerButtonText}>Delete account</Text>
-              )}
+              <Text style={dynamicStyles.dangerButtonText}>Delete account</Text>
             </TouchableOpacity>
             <TouchableOpacity style={dynamicStyles.signOutRow} onPress={handleSignOut}>
               <Text style={dynamicStyles.signOutText}>Sign out</Text>
@@ -1166,6 +1135,12 @@ export default function ProfileScreen() {
           </View>
         </View>
       </ScrollView>
+      <DeleteAccountModal
+        visible={deleteAccountModalVisible}
+        user={user}
+        onDismiss={handleDeleteAccountDismiss}
+        onNavigateLogin={() => void handleAfterAccountDeleted()}
+      />
     </SafeAreaView>
   );
 }
