@@ -4,6 +4,8 @@
  */
 import { theme } from '@/constants/theme';
 import { auth, db } from '@/services/firebase';
+import { CONTENT_NOT_ALLOWED, moderateChatMessage } from '@/utils/contentModeration';
+import { showError } from '@/utils/toast';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
@@ -28,6 +30,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { onSnapshot } from 'firebase/firestore';
+
+/** Align with `OrderRoomScreen` / `chatSecurity` order chat limits. */
+const ORDER_ROOM_CHAT_MAX = 200;
 
 type OrderMessage = {
   id: string;
@@ -113,10 +118,17 @@ export default function OrderChatScreen() {
     if (!canSend) return;
 
     const text = input.trim();
+    const mod = moderateChatMessage(text, { maxLength: ORDER_ROOM_CHAT_MAX });
+    if (!mod.ok) {
+      showError(
+        mod.reason === CONTENT_NOT_ALLOWED ? CONTENT_NOT_ALLOWED : mod.reason,
+      );
+      return;
+    }
     setSending(true);
     try {
       await addDoc(messagesRef, {
-        text,
+        text: mod.text,
         senderId: uid,
         senderName:
           typeof currentUser?.displayName === 'string' && currentUser.displayName.trim()

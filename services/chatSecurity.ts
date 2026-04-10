@@ -1,5 +1,4 @@
 import type { Firestore } from 'firebase/firestore';
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { moderateUserContent } from '@/utils/contentModeration';
 
 const CHAT_MAX_CHARS = 200;
@@ -16,23 +15,21 @@ export function isMessageSafe(text: string): MessageSafetyResult {
   return { safe: true };
 }
 
+/**
+ * Firestore `reports` requires a real `reportedUserId` (see `firestore.rules`).
+ * Automated moderation blocks should not write invalid docs — log only.
+ */
 export async function reportBlockedMessage(
-  db: Firestore,
+  _db: Firestore,
   userId: string,
   message: string,
   reason: string,
 ): Promise<void> {
-  try {
-    await addDoc(collection(db, 'reports'), {
+  if (__DEV__) {
+    console.warn('[UGC] Blocked message (not persisted to reports):', {
       userId,
-      reporterId: userId,
-      reportedUserId: null,
-      orderId: null,
-      message,
       reason,
-      createdAt: serverTimestamp(),
+      preview: message.slice(0, 80),
     });
-  } catch {
-    // Best-effort; do not block UI
   }
 }

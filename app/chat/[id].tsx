@@ -29,6 +29,7 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
 import { systemActionSheet, systemConfirm } from '@/components/SystemDialogHost';
 import { getUserFriendlyError } from '@/utils/errorHandler';
+import { CONTENT_NOT_ALLOWED, moderateChatMessage } from '@/utils/contentModeration';
 import { showError, showSuccess } from '@/utils/toast';
 import { useHiddenUserIds } from '@/hooks/useHiddenUserIds';
 import { blockUser } from '@/services/blockService';
@@ -287,16 +288,24 @@ export default function ChatByIdScreen() {
     [text, sending, id, blockedBetween, myUid],
   );
 
+  const CHAT_MESSAGE_MAX = 2000;
+
   const onSend = async () => {
     if (!canSend) return;
     if (blockedBetween) return;
     const uid = auth.currentUser?.uid;
     if (!uid) return;
     const payload = text.trim();
+    const mod = moderateChatMessage(payload, { maxLength: CHAT_MESSAGE_MAX });
+    if (!mod.ok) {
+      showError(mod.reason === CONTENT_NOT_ALLOWED ? CONTENT_NOT_ALLOWED : mod.reason);
+      return;
+    }
+    const safeText = mod.text;
     setSending(true);
     try {
       await addDoc(collection(db, 'chats', id, 'messages'), {
-        text: payload,
+        text: safeText,
         senderId: uid,
         userName:
           auth.currentUser?.displayName ||
@@ -305,7 +314,7 @@ export default function ChatByIdScreen() {
         createdAt: Date.now(),
       });
       await updateDoc(firestoreDoc(db, 'chats', id), {
-        lastMessage: payload,
+        lastMessage: safeText,
         lastMessageAt: Date.now(),
       }).catch(() => {});
       setText('');

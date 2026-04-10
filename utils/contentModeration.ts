@@ -6,7 +6,14 @@
 /** Shown when text matches the banned-word list (case-insensitive). */
 export const CONTENT_NOT_ALLOWED = 'Content not allowed';
 
+/**
+ * Case-insensitive substring checks after lowercasing + normalizing spaces.
+ * Keep in sync with App Review / UGC tests (`tests/contentModeration.ugc.test.ts`).
+ */
 export const BANNED_WORDS = [
+  'fuck',
+  'shit',
+  'spam link',
   'kill yourself',
   'kys',
   'nazi',
