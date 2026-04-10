@@ -1,3 +1,5 @@
+import { useHiddenUserIds } from '@/hooks/useHiddenUserIds';
+import { isUserBlocked } from '@/services/blockService';
 import { auth, db } from '@/services/firebase';
 import { theme } from '@/constants/theme';
 import { doc, getDoc } from 'firebase/firestore';
@@ -20,6 +22,7 @@ type UserMini = { uid: string; displayName: string; photoURL: string | null };
 
 export default function FoodMatchScreen() {
   const router = useRouter();
+  const hiddenUserIds = useHiddenUserIds();
   const { matchId } = useLocalSearchParams<{ matchId: string }>();
   const id = typeof matchId === 'string' ? matchId : '';
 
@@ -135,23 +138,40 @@ export default function FoodMatchScreen() {
         <Text style={styles.foodName}>{foodName}</Text>
 
         <Text style={styles.sectionLabel}>People</Text>
-        {users.map((u) => (
-          <View key={u.uid} style={styles.userRow}>
-            {u.photoURL ? (
-              <Image source={{ uri: u.photoURL }} style={styles.avatar} contentFit="cover" />
-            ) : (
-              <View style={[styles.avatar, styles.avatarPh]}>
-                <Text style={styles.avatarLetter}>{u.displayName.charAt(0).toUpperCase()}</Text>
+        {users.map((u) => {
+          const myUid = auth.currentUser?.uid ?? '';
+          const peerBlocked =
+            !!myUid &&
+            u.uid !== myUid &&
+            isUserBlocked({ uid: myUid, hiddenUserIds }, u.uid);
+          if (peerBlocked) {
+            return (
+              <View key={u.uid} style={styles.userRow}>
+                <View style={[styles.avatar, styles.avatarPh]} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.userName}>User unavailable</Text>
+                </View>
               </View>
-            )}
-            <View style={{ flex: 1 }}>
-              <Text style={styles.userName}>{u.displayName}</Text>
-              {auth.currentUser?.uid === u.uid ? (
-                <Text style={styles.you}>You</Text>
-              ) : null}
+            );
+          }
+          return (
+            <View key={u.uid} style={styles.userRow}>
+              {u.photoURL ? (
+                <Image source={{ uri: u.photoURL }} style={styles.avatar} contentFit="cover" />
+              ) : (
+                <View style={[styles.avatar, styles.avatarPh]}>
+                  <Text style={styles.avatarLetter}>{u.displayName.charAt(0).toUpperCase()}</Text>
+                </View>
+              )}
+              <View style={{ flex: 1 }}>
+                <Text style={styles.userName}>{u.displayName}</Text>
+                {myUid === u.uid ? (
+                  <Text style={styles.you}>You</Text>
+                ) : null}
+              </View>
             </View>
-          </View>
-        ))}
+          );
+        })}
 
         <TouchableOpacity
           style={styles.secondaryBtn}

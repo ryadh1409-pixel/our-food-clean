@@ -1,14 +1,17 @@
 /**
- * Production block API — consistent argument order everywhere:
+ * Production block API — consistent argument order:
  * `blockUser(currentUserId, targetUserId)` = signed-in user blocks `targetUserId`.
  *
  * Persists `users/{currentUserId}.blockedUsers` (array + subcollection) and legacy `blocks` docs.
  */
-import { isUserBlocked as isUserBlockedCore } from '@/services/block';
+import { isUserBlocked as isUserBlockedFirestore } from '@/services/block';
+import type { BlockFilterCurrentUser } from '@/utils/filter';
 import {
   blockUser as blockUserPersist,
   unblockUser as unblockUserPersist,
 } from '@/services/blocks';
+
+export type { BlockFilterCurrentUser } from '@/utils/filter';
 
 export async function blockUser(
   currentUserId: string,
@@ -25,11 +28,27 @@ export async function unblockUser(
 }
 
 /**
- * True if either user blocked the other (arrays, subcollections, legacy `blocks`).
+ * **Sync (instant UI):** pass `{ uid, hiddenUserIds }` from `useHiddenUserIds()`.
+ * True if `targetUserId` is in the hidden set (blocked either direction).
+ *
+ * **Async (server):** pass two strings — full Firestore check (arrays, subcollections, legacy `blocks`).
  */
-export async function isUserBlocked(
+export function isUserBlocked(
+  currentUser: BlockFilterCurrentUser,
+  targetUserId: string,
+): boolean;
+export function isUserBlocked(
   currentUserId: string,
   targetUserId: string,
-): Promise<boolean> {
-  return isUserBlockedCore(currentUserId, targetUserId);
+): Promise<boolean>;
+export function isUserBlocked(
+  currentUser: BlockFilterCurrentUser | string,
+  targetUserId: string,
+): boolean | Promise<boolean> {
+  if (typeof currentUser === 'string') {
+    return isUserBlockedFirestore(currentUser, targetUserId);
+  }
+  if (!targetUserId) return false;
+  if (currentUser.uid && targetUserId === currentUser.uid) return false;
+  return currentUser.hiddenUserIds.has(targetUserId);
 }

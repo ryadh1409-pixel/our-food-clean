@@ -15,7 +15,7 @@ import { systemActionSheet, systemConfirm } from '@/components/SystemDialogHost'
 import { getUserFriendlyError } from '@/utils/errorHandler';
 import { logError } from '@/utils/errorLogger';
 import { showError, showSuccess } from '@/utils/toast';
-import { filterBlockedUsers } from '@/utils/filterBlocked';
+import { filterBlockedUsers } from '@/utils/filter';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import type { User } from '@firebase/auth';

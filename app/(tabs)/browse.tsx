@@ -15,9 +15,11 @@ import {
   type FoodCard,
 } from '@/services/foodCards';
 import { subscribeJoinHintsForFoodCard } from '@/services/foodCardSlotOrders';
+import { useHiddenUserIds } from '@/hooks/useHiddenUserIds';
+import { filterBlockedUsers } from '@/utils/filter';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -136,11 +138,21 @@ function BrowseFoodCardRow({
 export default function BrowseScreen() {
   const router = useRouter();
   const { user } = useAuth();
+  const hiddenUserIds = useHiddenUserIds();
   const [cards, setCards] = useState<FoodCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
   const [joiningId, setJoiningId] = useState<string | null>(null);
+
+  const visibleCards = useMemo(() => {
+    if (!user?.uid || hiddenUserIds.size === 0) return cards;
+    return filterBlockedUsers(
+      cards,
+      { uid: user.uid, hiddenUserIds },
+      (c) => (typeof c.ownerId === 'string' ? c.ownerId : undefined),
+    );
+  }, [cards, hiddenUserIds, user?.uid]);
 
   useEffect(() => {
     setLoading(true);
@@ -201,7 +213,7 @@ export default function BrowseScreen() {
           <ActivityIndicator color="#34D399" />
           <Text style={styles.loadingHint}>Loading food cards…</Text>
         </View>
-      ) : cards.length === 0 ? (
+      ) : visibleCards.length === 0 ? (
         listError ? (
           <View style={styles.emptyWrap}>
             <Text style={styles.empty}>
@@ -221,7 +233,7 @@ export default function BrowseScreen() {
         )
       ) : (
         <FoodCardGrid
-          data={cards}
+          data={visibleCards}
           keyExtractor={(c) => c.id}
           contentContainerStyle={styles.content}
           renderItem={(card) => (

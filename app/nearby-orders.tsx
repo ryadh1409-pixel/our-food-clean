@@ -4,7 +4,7 @@ import { useHiddenUserIds } from '@/hooks/useHiddenUserIds';
 import { useNearbyOrders, type NearbyOrder } from '@/hooks/useNearbyOrders';
 import { haversineDistanceKm } from '@/lib/haversine';
 import { isUserBanned } from '@/services/adminGuard';
-import { isUserBlocked } from '@/services/block';
+import { isUserBlocked } from '@/services/blockService';
 import { auth, db } from '@/services/firebase';
 import { joinOrderWithParticipantRecord } from '@/services/orderLifecycle';
 import { trackOrderJoined } from '@/services/analytics';
@@ -31,7 +31,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { shadows, theme } from '@/constants/theme';
 import { getUserFriendlyError } from '@/utils/errorHandler';
-import { filterBlockedUsers } from '@/utils/filterBlocked';
+import { filterBlockedUsers } from '@/utils/filter';
 import { showError } from '@/utils/toast';
 
 const NEARBY_RADIUS_KM = 1;
@@ -93,7 +93,10 @@ export default function NearbyOrdersScreen() {
     setJoiningId(order.id);
     try {
       const hostId = String(order.creatorId ?? '');
-      if (hostId && (await isUserBlocked(uid, hostId))) {
+      if (
+        hostId &&
+        isUserBlocked({ uid, hiddenUserIds: hiddenUserIds }, hostId)
+      ) {
         throw new Error('You cannot join this order.');
       }
       const displayName =
