@@ -3,6 +3,9 @@
  * Use before persisting messages, bios, or other free-text fields.
  */
 
+/** Shown when text matches the banned-word list (case-insensitive). */
+export const CONTENT_NOT_ALLOWED = 'Content not allowed';
+
 export const BANNED_WORDS = [
   'kill yourself',
   'kys',
@@ -57,7 +60,7 @@ export function moderateUserContent(
   const lower = text.toLowerCase().replace(/\s+/g, ' ');
   for (const word of BANNED_WORDS) {
     if (lower.includes(word.toLowerCase())) {
-      return { ok: false, reason: 'This content is not allowed on HalfOrder.' };
+      return { ok: false, reason: CONTENT_NOT_ALLOWED };
     }
   }
   for (const frag of LINKISH) {

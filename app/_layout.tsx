@@ -18,10 +18,8 @@ import 'react-native-reanimated';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { SystemDialogHost } from '@/components/SystemDialogHost';
 import { isAdminUser } from '@/constants/adminUid';
-import {
-  TERMS_ACCEPTANCE_STORAGE_KEY,
-  normalizeReturnPathAfterTerms,
-} from '@/constants/termsAcceptance';
+import { normalizeReturnPathAfterTerms } from '@/constants/termsAcceptance';
+import { getTermsAcceptedAsync } from '@/lib/termsAcceptedStorage';
 import {
   PAYMENT_MATCH_ALERT_MESSAGE,
   PAYMENT_MATCH_ALERT_TITLE,
@@ -992,9 +990,9 @@ function RootLayoutNav() {
     if (onPublicShellRoutes) return;
     let cancelled = false;
     (async () => {
-      const t = await AsyncStorage.getItem(TERMS_ACCEPTANCE_STORAGE_KEY);
+      const accepted = await getTermsAcceptedAsync();
       if (cancelled) return;
-      if (typeof t === 'string' && t.trim().length > 0) return;
+      if (accepted) return;
       const ret = normalizeReturnPathAfterTerms(pathname && pathname !== '/' ? pathname : '/(tabs)');
       router.replace(
         `/terms-acceptance?returnTo=${encodeURIComponent(ret)}` as Parameters<

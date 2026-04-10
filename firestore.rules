@@ -706,7 +706,9 @@ service cloud.firestore {
           || request.resource.data.reason == 'inappropriate'
         )
         && request.resource.data.createdAt == request.time
+        && request.resource.data.userId == request.auth.uid
         && request.resource.data.keys().hasOnly([
+          'userId',
           'reporterId',
           'reportedUserId',
           'contentId',

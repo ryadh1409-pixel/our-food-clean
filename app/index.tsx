@@ -1,6 +1,6 @@
 import AppLogo from '@/components/AppLogo';
 import { ONBOARDING_COMPLETE_KEY } from '@/constants/onboarding';
-import { TERMS_ACCEPTANCE_STORAGE_KEY } from '@/constants/termsAcceptance';
+import { getTermsAcceptedAsync } from '@/lib/termsAcceptedStorage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Redirect } from 'expo-router';
 import React, { useEffect, useState } from 'react';
@@ -18,16 +18,15 @@ export default function Index() {
     let cancelled = false;
     (async () => {
       try {
-        const [obRaw, termsRaw] = await Promise.all([
+        const [obRaw, termsAccepted] = await Promise.all([
           AsyncStorage.getItem(ONBOARDING_COMPLETE_KEY),
-          AsyncStorage.getItem(TERMS_ACCEPTANCE_STORAGE_KEY),
+          getTermsAcceptedAsync(),
         ]);
         if (!cancelled) {
           setGate({
             phase: 'ready',
             onboardingDone: obRaw === 'true',
-            termsAccepted:
-              typeof termsRaw === 'string' && termsRaw.trim().length > 0,
+            termsAccepted,
           });
         }
       } catch {

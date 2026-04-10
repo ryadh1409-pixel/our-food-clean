@@ -24,6 +24,7 @@ export async function reportBlockedMessage(
 ): Promise<void> {
   try {
     await addDoc(collection(db, 'reports'), {
+      userId,
       reporterId: userId,
       reportedUserId: null,
       orderId: null,

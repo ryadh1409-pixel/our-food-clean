@@ -44,6 +44,8 @@ export async function submitReport(params: {
   }
 
   await addDoc(collection(db, 'reports'), {
+    /** Reporter (Guideline 1.2 schema); mirrors `reporterId`. */
+    userId: params.reporterId,
     reporterId: params.reporterId,
     reportedUserId: params.reportedUserId,
     contentId,

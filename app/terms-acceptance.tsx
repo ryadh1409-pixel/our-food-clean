@@ -1,15 +1,16 @@
 import {
-  TERMS_ACCEPTANCE_STORAGE_KEY,
   emitTermsAccepted,
   normalizeReturnPathAfterTerms,
 } from '@/constants/termsAcceptance';
+import { LEGAL_URLS } from '@/constants/legalLinks';
 import { theme } from '@/constants/theme';
+import { setTermsAcceptedAsync } from '@/lib/termsAcceptedStorage';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
+  Linking,
   ScrollView,
   StyleSheet,
   Text,
@@ -26,16 +27,19 @@ export default function TermsAcceptanceScreen() {
   const router = useRouter();
   const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
   const [loading, setLoading] = useState(false);
+  /** Required for Guideline 1.2 — explicit Terms + Privacy acknowledgment. */
+  const [termsPrivacyAccepted, setTermsPrivacyAccepted] = useState(false);
   const [whatsappConsent, setWhatsappConsent] = useState(false);
 
+  const openExternal = (url: string) => {
+    void Linking.openURL(url);
+  };
+
   const accept = async () => {
-    if (!whatsappConsent) return;
+    if (!termsPrivacyAccepted || !whatsappConsent) return;
     setLoading(true);
     try {
-      await AsyncStorage.setItem(
-        TERMS_ACCEPTANCE_STORAGE_KEY,
-        new Date().toISOString(),
-      );
+      await setTermsAcceptedAsync(new Date().toISOString());
       emitTermsAccepted();
       const next = normalizeReturnPathAfterTerms(
         typeof returnTo === 'string' ? returnTo : undefined,
@@ -48,7 +52,7 @@ export default function TermsAcceptanceScreen() {
     }
   };
 
-  const canContinue = whatsappConsent && !loading;
+  const canContinue = termsPrivacyAccepted && whatsappConsent && !loading;
 
   return (
     <SafeAreaView style={styles.screen} edges={['top', 'bottom']}>
@@ -57,35 +61,98 @@ export default function TermsAcceptanceScreen() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={styles.headline}>Terms of Use</Text>
+        <Text style={styles.kicker}>Before you continue</Text>
+        <Text style={styles.headline}>Terms &amp; Privacy</Text>
         <Text style={styles.lead}>
-          HalfOrder includes user-generated content. By continuing, you agree to follow these rules
-          and our full Terms of Use and Privacy Policy (linked in the app).
+          HalfOrder includes user-generated content (messages, profiles, order details). You must
+          agree to our Terms of Use and Privacy Policy to use the app.
         </Text>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Community guidelines</Text>
+          <Text style={styles.sectionTitle}>What you agree to</Text>
           <View style={styles.bulletBlock}>
-            <Text style={styles.bullet}>• No abusive or harmful content</Text>
-            <Text style={styles.bullet}>• No spam</Text>
-            <Text style={styles.bullet}>• Respect other users</Text>
+            <Text style={styles.bullet}>• Follow our community guidelines (no abuse, spam, or illegal content)</Text>
+            <Text style={styles.bullet}>• Use reporting and blocking tools when needed</Text>
+            <Text style={styles.bullet}>• Understand we may remove content or accounts that violate the rules</Text>
+          </View>
+          <View style={styles.linkRow}>
+            <TouchableOpacity
+              onPress={() => router.push('/terms' as Parameters<typeof router.push>[0])}
+              style={styles.linkBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Open Terms of Use in the app"
+            >
+              <MaterialIcons name="description" size={20} color={c.primary} />
+              <Text style={styles.linkBtnText}>Terms of Use (in app)</Text>
+              <MaterialIcons name="chevron-right" size={20} color={c.textMuted} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => router.push('/privacy' as Parameters<typeof router.push>[0])}
+              style={styles.linkBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Open Privacy Policy in the app"
+            >
+              <MaterialIcons name="privacy-tip" size={20} color={c.primary} />
+              <Text style={styles.linkBtnText}>Privacy Policy (in app)</Text>
+              <MaterialIcons name="chevron-right" size={20} color={c.textMuted} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => void openExternal(LEGAL_URLS.terms)}
+              style={styles.linkBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Open Terms of Use in browser"
+            >
+              <MaterialIcons name="open-in-new" size={18} color={c.textSecondary} />
+              <Text style={styles.linkBtnTextMuted}>Website: Terms</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => void openExternal(LEGAL_URLS.privacy)}
+              style={styles.linkBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Open Privacy Policy in browser"
+            >
+              <MaterialIcons name="open-in-new" size={18} color={c.textSecondary} />
+              <Text style={styles.linkBtnTextMuted}>Website: Privacy</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>WhatsApp Number Usage</Text>
-          <Text style={styles.sectionBody}>
-            We use your WhatsApp number only to help coordinate order pickup between users. Your number
-            is never sold or shared outside the app.
-          </Text>
+          <TouchableOpacity
+            style={styles.checkboxRow}
+            onPress={() => setTermsPrivacyAccepted((v) => !v)}
+            activeOpacity={0.75}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: termsPrivacyAccepted }}
+            accessibilityLabel="I agree to the Terms of Use and Privacy Policy"
+          >
+            <MaterialIcons
+              name={termsPrivacyAccepted ? 'check-box' : 'check-box-outline-blank'}
+              size={26}
+              color={termsPrivacyAccepted ? c.primary : 'rgba(255,255,255,0.45)'}
+              style={styles.checkboxIcon}
+            />
+            <Text style={styles.checkboxLabel}>
+              I have read and agree to the{' '}
+              <Text style={styles.checkboxEmphasis}>Terms of Use</Text> and{' '}
+              <Text style={styles.checkboxEmphasis}>Privacy Policy</Text>.
+            </Text>
+          </TouchableOpacity>
+        </View>
 
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>WhatsApp for coordination</Text>
+          <Text style={styles.sectionBody}>
+            We use your WhatsApp number only to coordinate pickup between users. It is not sold or used
+            for ads.
+          </Text>
           <TouchableOpacity
             style={styles.checkboxRow}
             onPress={() => setWhatsappConsent((v) => !v)}
             activeOpacity={0.75}
             accessibilityRole="checkbox"
             accessibilityState={{ checked: whatsappConsent }}
-            accessibilityLabel="I agree to share my WhatsApp number for order coordination purposes"
+            accessibilityLabel="I agree to share my WhatsApp number for order coordination"
           >
             <MaterialIcons
               name={whatsappConsent ? 'check-box' : 'check-box-outline-blank'}
@@ -94,7 +161,7 @@ export default function TermsAcceptanceScreen() {
               style={styles.checkboxIcon}
             />
             <Text style={styles.checkboxLabel}>
-              I agree to share my WhatsApp number for order coordination purposes.
+              I agree to share my WhatsApp number for order coordination.
             </Text>
           </TouchableOpacity>
         </View>
@@ -106,13 +173,19 @@ export default function TermsAcceptanceScreen() {
           onPress={() => void accept()}
           disabled={!canContinue}
           activeOpacity={0.9}
+          accessibilityRole="button"
+          accessibilityLabel="I Agree and continue"
         >
           {loading ? (
             <ActivityIndicator color={c.textOnPrimary} />
           ) : (
-            <Text style={styles.primaryText}>Agree and Continue</Text>
+            <Text style={styles.primaryText}>I Agree</Text>
           )}
         </TouchableOpacity>
+        <Text style={styles.footerHint}>
+          You cannot use HalfOrder without accepting the Terms, Privacy Policy, and WhatsApp
+          coordination consent above.
+        </Text>
       </View>
     </SafeAreaView>
   );
@@ -125,8 +198,16 @@ const styles = StyleSheet.create({
   },
   scroll: {
     paddingHorizontal: 22,
-    paddingTop: 24,
+    paddingTop: 20,
     paddingBottom: 28,
+  },
+  kicker: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: c.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 1.2,
+    marginBottom: 8,
   },
   headline: {
     fontSize: 28,
@@ -139,18 +220,18 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 24,
     color: c.textSecondary,
-    marginBottom: 28,
+    marginBottom: 22,
   },
   section: {
     backgroundColor: c.surfaceDark,
     borderRadius: 16,
-    padding: 22,
-    marginBottom: 16,
+    padding: 20,
+    marginBottom: 14,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '700',
     color: c.white,
     marginBottom: 12,
@@ -160,16 +241,40 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     color: c.textSecondary,
-    marginBottom: 18,
+    marginBottom: 14,
   },
   bulletBlock: {
-    gap: 12,
+    gap: 10,
+    marginBottom: 14,
   },
   bullet: {
-    fontSize: 16,
-    lineHeight: 24,
+    fontSize: 15,
+    lineHeight: 22,
     color: 'rgba(255,255,255,0.88)',
     fontWeight: '500',
+  },
+  linkRow: {
+    gap: 8,
+  },
+  linkBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    borderRadius: 10,
+  },
+  linkBtnText: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '600',
+    color: c.white,
+  },
+  linkBtnTextMuted: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: c.textSecondary,
   },
   checkboxRow: {
     flexDirection: 'row',
@@ -186,10 +291,14 @@ const styles = StyleSheet.create({
     color: c.white,
     fontWeight: '500',
   },
+  checkboxEmphasis: {
+    fontWeight: '700',
+    color: c.primary,
+  },
   footer: {
     paddingHorizontal: 22,
-    paddingTop: 16,
-    paddingBottom: 20,
+    paddingTop: 14,
+    paddingBottom: 22,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: 'rgba(255,255,255,0.12)',
     backgroundColor: c.sheetDark,
@@ -209,5 +318,12 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '700',
     color: c.textOnPrimary,
+  },
+  footerHint: {
+    marginTop: 14,
+    fontSize: 12,
+    lineHeight: 17,
+    color: c.textMuted,
+    textAlign: 'center',
   },
 });
