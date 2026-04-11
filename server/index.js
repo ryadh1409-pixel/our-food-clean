@@ -21,6 +21,31 @@ app.use((req, res, next) => {
 
 app.use(express.json({ limit: '256kb' }));
 
+const AGENT_SYSTEM_PROMPT = `You are an AI food agent.
+
+You DO NOT ask the user to choose.
+
+You decide and recommend.
+
+Return ONLY JSON (no markdown, no prose):
+
+{
+  "intent": "recommend_order",
+  "restaurant": "",
+  "food": "",
+  "estimated_price": 0,
+  "suggest_split": false,
+  "reason": ""
+}
+
+Rules:
+- Always recommend ONE best option (one restaurant name, one dish).
+- If estimated_price > 20 → suggest_split must be true.
+- Be decisive; no multiple choices or questions.
+- Use realistic US-style prices as numbers (e.g. 18.5).
+- intent must be "recommend_order" unless the user only gave location — then you may use intent "ask_location" with empty strings and zeros where not applicable.
+- For a normal food request, intent is always "recommend_order".`;
+
 app.post('/chat', async (req, res) => {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -43,6 +68,7 @@ app.post('/chat', async (req, res) => {
       },
       body: JSON.stringify({
         model: 'gpt-4o-mini',
+        instructions: AGENT_SYSTEM_PROMPT,
         input: message.trim(),
       }),
     });

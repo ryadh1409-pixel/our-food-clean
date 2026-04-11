@@ -8,7 +8,20 @@ export type AiDecision = {
   message?: string;
   suggest_split?: boolean;
   reason?: string;
+  /** Agent pick (intent recommend_order) */
+  restaurant?: string;
+  food?: string;
+  estimated_price?: number;
 };
+
+function stripJsonFence(text: string): string {
+  let t = text.trim();
+  if (!t.startsWith('```')) return t;
+  t = t.replace(/^```(?:json)?\s*/i, '');
+  const end = t.lastIndexOf('```');
+  if (end !== -1) t = t.slice(0, end);
+  return t.trim();
+}
 
 function extractModelText(data: unknown): string | null {
   if (!data || typeof data !== 'object') return null;
@@ -46,7 +59,7 @@ export function parseDecisionFromChatResponse(
     return { decision: { intent: 'fallback', message: 'No response from AI.' }, rawText: raw };
   }
 
-  const trimmed = raw.trim();
+  const trimmed = stripJsonFence(raw.trim());
   try {
     const parsed = JSON.parse(trimmed) as AiDecision;
     if (parsed && typeof parsed === 'object') {

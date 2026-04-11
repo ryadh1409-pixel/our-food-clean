@@ -14,11 +14,14 @@ import {
 } from '@/services/aiBackendDecision';
 import {
   getNearbyRestaurantsWithCoords,
+  matchPlaceRestaurantByName,
+  PLACE_IMAGE_FALLBACK,
   type PlaceRestaurant,
 } from '@/services/googlePlaces';
 import { POPULAR_PIZZAS, type LatLng } from '@/services/api';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { Image } from 'expo-image';
 import * as Linking from 'expo-linking';
 import React, {
   useCallback,
@@ -72,10 +75,18 @@ export type FlowStep =
   | 'need_location'
   | CoreFlowStep
   | 'loading_rests'
+  | 'recommended'
   | 'menu'
   | 'pick_action'
   | 'share_whatsapp'
   | 'order_cta';
+
+export type RecommendedPick = {
+  name: string;
+  food: string;
+  price: number;
+  image: string;
+};
 
 type ThreadLine =
   | { id: string; kind: 'assistant'; text: string }
@@ -102,6 +113,7 @@ export function ChatFlow({ userLocation, onOrderNow }: ChatFlowProps) {
   const [nudgeVisible, setNudgeVisible] = useState(false);
   const [aiInput, setAiInput] = useState('');
   const [aiSending, setAiSending] = useState(false);
+  const [recommended, setRecommended] = useState<RecommendedPick | null>(null);
 
   const lastInteractRef = useRef(Date.now());
   const nudgeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -150,7 +162,7 @@ export function ChatFlow({ userLocation, onOrderNow }: ChatFlowProps) {
         addMessage('Where are you? 📍');
         setStep('need_location');
       }
-      if (decision.suggest_split) {
+      if (decision.suggest_split && decision.intent !== 'recommend_order') {
         setShowSplit(true);
       }
       if (decision.intent === 'fallback' && decision.message) {
@@ -158,6 +170,84 @@ export function ChatFlow({ userLocation, onOrderNow }: ChatFlowProps) {
       }
     },
     [addMessage, pushAssistant],
+  );
+
+  const applyRecommendOrder = useCallback(
+    async (decision: AiDecision) => {
+      const aiRest =
+        typeof decision.restaurant === 'string' ? decision.restaurant.trim() : '';
+      const food =
+        typeof decision.food === 'string' && decision.food.trim()
+          ? decision.food.trim()
+          : 'Chef’s pick';
+      const price =
+        typeof decision.estimated_price === 'number' && !Number.isNaN(decision.estimated_price)
+          ? decision.estimated_price
+          : 18.99;
+
+      const locText =
+        selectedLocation.trim() ||
+        locationLabel.trim() ||
+        manualArea.trim() ||
+        'Toronto';
+
+      setShowSplit(false);
+      setLoadingRests(true);
+      setStep('loading_rests');
+
+      try {
+        const { restaurants: rows, coords } = await getNearbyRestaurantsWithCoords(
+          locText,
+          'pizza',
+        );
+        setRestaurants(rows);
+        if (coords) setSavedLoc(coords);
+        else setSavedLoc(FALLBACK_LOC);
+
+        const matched =
+          rows.length > 0 ? matchPlaceRestaurantByName(rows, aiRest) : null;
+        const image = matched?.image ?? PLACE_IMAGE_FALLBACK;
+        const displayName = matched?.name ?? (aiRest || 'Nearby spot');
+
+        const placeForOrder: PlaceRestaurant = matched ?? {
+          id: `ai-${Date.now()}`,
+          name: displayName,
+          rating: 4.2,
+          image,
+        };
+
+        setPickedRestaurant(placeForOrder);
+        setPizzaType(food);
+        setRecommended({
+          name: displayName,
+          food,
+          price,
+          image,
+        });
+
+        if (decision.suggest_split) {
+          addMessage('This is a bit pricey 👀 want to split it?');
+          setShowSplit(true);
+        }
+
+        setStep('recommended');
+        setTimeout(() => {
+          pushAssistant('Ready to order or want to share?');
+        }, 450);
+      } catch {
+        pushAssistant('Couldn’t load a photo — try again.');
+        setStep('chat');
+      } finally {
+        setLoadingRests(false);
+      }
+    },
+    [
+      addMessage,
+      locationLabel,
+      manualArea,
+      pushAssistant,
+      selectedLocation,
+    ],
   );
 
   const sendMessageToAI = useCallback(
@@ -177,12 +267,16 @@ export function ChatFlow({ userLocation, onOrderNow }: ChatFlowProps) {
           pushAssistant(`Assistant error: ${result.error}`);
           return;
         }
+        if (result.decision.intent === 'recommend_order') {
+          await applyRecommendOrder(result.decision);
+          return;
+        }
         handleDecision(result.decision);
       } finally {
         setAiSending(false);
       }
     },
-    [bumpInteraction, handleDecision, pushAssistant, pushUser],
+    [applyRecommendOrder, bumpInteraction, handleDecision, pushAssistant, pushUser],
   );
 
   const startAfterLocation = useCallback(
@@ -398,7 +492,8 @@ export function ChatFlow({ userLocation, onOrderNow }: ChatFlowProps) {
           </View>
         ) : null}
 
-        {aiChatUrl && (step === 'chat' || step === 'pizzaType') ? (
+        {aiChatUrl &&
+        (step === 'chat' || step === 'pizzaType' || step === 'recommended') ? (
           <View style={styles.aiBar}>
             <TextInput
               value={aiInput}
@@ -435,12 +530,57 @@ export function ChatFlow({ userLocation, onOrderNow }: ChatFlowProps) {
           </View>
         ) : null}
 
-        {(step === 'loading_rests' || loadingRests) && (
+        {(step === 'loading_rests' || loadingRests) && step !== 'recommended' ? (
           <View style={styles.loaderRow}>
             <ActivityIndicator color="#6EE7B7" />
-            <Text style={styles.loaderText}>Loading restaurants…</Text>
+            <Text style={styles.loaderText}>
+              {step === 'loading_rests' ? 'Finding your pick…' : 'Loading…'}
+            </Text>
           </View>
-        )}
+        ) : null}
+
+        {step === 'recommended' && recommended ? (
+          <View style={styles.recommendedBlock}>
+            <Text style={styles.recommendedLead}>I picked this for you 😎</Text>
+            <View style={styles.recommendedCard}>
+              <Image
+                source={{ uri: recommended.image }}
+                style={styles.recommendedImg}
+                contentFit="cover"
+                transition={200}
+              />
+              <View style={styles.recommendedCardBody}>
+                <Text style={styles.recommendedRestName} numberOfLines={2}>
+                  {recommended.name}
+                </Text>
+                <Text style={styles.recommendedFood} numberOfLines={2}>
+                  {recommended.food}
+                </Text>
+                <Text style={styles.recommendedPrice}>
+                  ${recommended.price.toFixed(2)}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.recommendedActions}>
+              <TouchableOpacity
+                style={[styles.actionBtn, styles.actionPrimary]}
+                onPress={handleOrderNow}
+                activeOpacity={0.9}
+              >
+                <Text style={styles.actionPrimaryText}>Order now 🛒</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.actionBtn, styles.actionSecondary]}
+                onPress={handleShareSplit}
+                activeOpacity={0.9}
+              >
+                <Text style={styles.actionSecondaryText}>
+                  Split with friend 🤝
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : null}
 
         {step === 'restaurants' && restaurants.length > 0 ? (
           <View style={styles.listSection}>
@@ -525,6 +665,7 @@ export function ChatFlow({ userLocation, onOrderNow }: ChatFlowProps) {
         {nudgeVisible &&
         step !== 'need_location' &&
         step !== 'order_cta' &&
+        step !== 'recommended' &&
         !loadingRests ? (
           <TouchableOpacity
             style={styles.nudge}
@@ -753,4 +894,46 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
   },
+  recommendedBlock: {
+    marginTop: 10,
+    gap: 12,
+  },
+  recommendedLead: {
+    color: '#F8FAFC',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  recommendedCard: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(110, 231, 183, 0.25)',
+  },
+  recommendedImg: {
+    width: '100%',
+    height: 140,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  recommendedCardBody: {
+    padding: 14,
+    gap: 6,
+  },
+  recommendedRestName: {
+    color: c.white,
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  recommendedFood: {
+    color: 'rgba(248,250,252,0.85)',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  recommendedPrice: {
+    color: '#6EE7B7',
+    fontSize: 20,
+    fontWeight: '800',
+    marginTop: 4,
+  },
+  recommendedActions: { gap: 10, marginTop: 4 },
 });

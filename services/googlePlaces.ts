@@ -148,3 +148,40 @@ export async function getNearbyRestaurants(
   );
   return restaurants;
 }
+
+/**
+ * Match AI-picked restaurant name to a Places row (fuzzy) for real photos.
+ */
+export function matchPlaceRestaurantByName(
+  places: PlaceRestaurant[],
+  aiRestaurantName: string,
+): PlaceRestaurant | null {
+  if (!places.length) return null;
+  const raw = aiRestaurantName.trim();
+  if (!raw) return places[0];
+
+  const normalize = (s: string) =>
+    s
+      .toLowerCase()
+      .replace(/[''`]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  const nn = normalize(raw);
+
+  for (const p of places) {
+    if (normalize(p.name) === nn) return p;
+  }
+  for (const p of places) {
+    const pn = normalize(p.name);
+    if (pn.includes(nn) || nn.includes(pn)) return p;
+  }
+  const firstWord = nn.split(' ')[0];
+  if (firstWord.length > 2) {
+    const hit = places.find((p) =>
+      normalize(p.name).split(' ').some((w) => w.startsWith(firstWord)),
+    );
+    if (hit) return hit;
+  }
+  return places[0];
+}

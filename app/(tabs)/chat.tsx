@@ -332,6 +332,25 @@ export default function ChatScreen() {
         setShowSplit(true);
       }
 
+      if (decision.intent === 'recommend_order') {
+        const r = decision.restaurant?.trim();
+        const f = decision.food?.trim();
+        const p =
+          typeof decision.estimated_price === 'number'
+            ? decision.estimated_price
+            : null;
+        const summary =
+          r && f
+            ? `I’d go with ${f} at ${r}${p != null ? ` (~$${p.toFixed(2)})` : ''}.`
+            : decision.reason?.trim() || 'Here’s a single pick — check Guided order above.';
+        addMessage(summary);
+        if (decision.suggest_split) {
+          addMessage('This is a bit pricey 👀 want to split it?');
+          setShowSplit(true);
+        }
+        return;
+      }
+
       if (decision.intent === 'order_food') {
         setStep('pizzaType');
       }
@@ -340,7 +359,7 @@ export default function ChatScreen() {
         addMessage('Where are you located? 📍');
       }
 
-      if (decision.suggest_split) {
+      if (decision.suggest_split && decision.intent !== 'recommend_order') {
         setShowSplit(true);
       }
 
