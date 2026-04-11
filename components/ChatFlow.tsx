@@ -19,6 +19,7 @@ import {
   type PlaceRestaurant,
 } from '@/services/googlePlaces';
 import { POPULAR_PIZZAS, type LatLng } from '@/services/api';
+import { acceptGroupOrderNotice } from '@/services/groupOrderNotice';
 import { auth, db } from '@/services/firebase';
 import {
   groupDocFromSnapshot,
@@ -45,6 +46,7 @@ import {
   Easing,
   FlatList,
   type ListRenderItemInfo,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
@@ -138,7 +140,12 @@ export function ChatFlow({ userLocation, onOrderNow }: ChatFlowProps) {
   const groupJoinStartedAtRef = useRef<number | null>(null);
   const groupWelcomePrevCountRef = useRef(-1);
   const groupAlmostFullPushedRef = useRef(false);
+  const groupCoordinationReminderSentRef = useRef(false);
+  const pendingGroupLocRef = useRef<{ lat: number; lng: number } | null>(null);
   const groupPulse = useRef(new Animated.Value(1)).current;
+
+  const [groupJoinModalVisible, setGroupJoinModalVisible] = useState(false);
+  const [groupJoining, setGroupJoining] = useState(false);
 
   const aiChatUrl = getAiChatUrl();
 
@@ -216,6 +223,7 @@ export function ChatFlow({ userLocation, onOrderNow }: ChatFlowProps) {
       setActiveGroupId(null);
       setGroupLive(null);
       setGroupTimedOut(false);
+      pendingGroupLocRef.current = null;
       groupJoinStartedAtRef.current = null;
       if (groupWaitTimerRef.current) {
         clearTimeout(groupWaitTimerRef.current);
@@ -262,21 +270,7 @@ export function ChatFlow({ userLocation, onOrderNow }: ChatFlowProps) {
         const locForMatch = coords
           ? { lat: coords.lat, lng: coords.lng }
           : FALLBACK_LOC;
-        const uid = auth.currentUser?.uid;
-        if (uid) {
-          try {
-            const gid = await smartMatch({
-              id: uid,
-              preferredFood: 'pizza',
-              location: locForMatch,
-            });
-            setActiveGroupId(gid);
-            groupJoinStartedAtRef.current = Date.now();
-            setGroupTimedOut(false);
-          } catch {
-            setActiveGroupId(null);
-          }
-        }
+        pendingGroupLocRef.current = locForMatch;
 
         setStep('recommended');
         setTimeout(() => {
@@ -394,6 +388,7 @@ export function ChatFlow({ userLocation, onOrderNow }: ChatFlowProps) {
   useEffect(() => {
     groupWelcomePrevCountRef.current = -1;
     groupAlmostFullPushedRef.current = false;
+    groupCoordinationReminderSentRef.current = false;
   }, [activeGroupId]);
 
   useEffect(() => {
@@ -414,6 +409,16 @@ export function ChatFlow({ userLocation, onOrderNow }: ChatFlowProps) {
       pushAssistant('🔥 Fast group found — almost ready!');
     }
     groupWelcomePrevCountRef.current = m;
+  }, [step, activeGroupId, groupLive, pushAssistant]);
+
+  useEffect(() => {
+    if (step !== 'recommended' || !groupLive || !activeGroupId) return;
+    if (groupLive.members.length < 2) return;
+    if (groupCoordinationReminderSentRef.current) return;
+    groupCoordinationReminderSentRef.current = true;
+    pushAssistant(
+      'Reminder: Please coordinate payment and pickup with your group.',
+    );
   }, [step, activeGroupId, groupLive, pushAssistant]);
 
   useEffect(() => {
@@ -604,6 +609,49 @@ export function ChatFlow({ userLocation, onOrderNow }: ChatFlowProps) {
     handleOrderNow();
   };
 
+  const handlePressJoinGroup = useCallback(() => {
+    bumpInteraction();
+    const uid = auth.currentUser?.uid;
+    if (!uid) {
+      pushAssistant('Sign in to join a group.');
+      return;
+    }
+    if (!pendingGroupLocRef.current) {
+      pushAssistant('Location isn’t ready — pick an area first.');
+      return;
+    }
+    setGroupJoinModalVisible(true);
+  }, [bumpInteraction, pushAssistant]);
+
+  const handleConfirmGroupJoin = useCallback(async () => {
+    const uid = auth.currentUser?.uid;
+    const loc = pendingGroupLocRef.current;
+    if (!uid || !loc) {
+      setGroupJoinModalVisible(false);
+      return;
+    }
+    setGroupJoining(true);
+    try {
+      await acceptGroupOrderNotice(uid);
+      const gid = await smartMatch({
+        id: uid,
+        preferredFood: 'pizza',
+        location: loc,
+      });
+      setActiveGroupId(gid);
+      groupJoinStartedAtRef.current = Date.now();
+      setGroupTimedOut(false);
+      setGroupJoinModalVisible(false);
+    } catch {
+      pushAssistant(
+        'Couldn’t join a group right now — try again or use Order now.',
+      );
+      setActiveGroupId(null);
+    } finally {
+      setGroupJoining(false);
+    }
+  }, [pushAssistant]);
+
   const suggestPopularPizza = () => {
     bumpInteraction();
     setNudgeVisible(false);
@@ -620,7 +668,11 @@ export function ChatFlow({ userLocation, onOrderNow }: ChatFlowProps) {
     [handleSelectRestaurant],
   );
 
+  const showJoinGroupCta =
+    step === 'recommended' && recommended && !activeGroupId;
+
   return (
+    <>
     <View style={styles.wrap}>
       <View style={styles.headerRow}>
         <MaterialIcons name="restaurant" size={20} color="#6EE7B7" />
@@ -752,6 +804,15 @@ export function ChatFlow({ userLocation, onOrderNow }: ChatFlowProps) {
               </View>
             </View>
             <View style={styles.recommendedActions}>
+              {showJoinGroupCta ? (
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.actionJoinGroup]}
+                  onPress={handlePressJoinGroup}
+                  activeOpacity={0.9}
+                >
+                  <Text style={styles.actionJoinGroupText}>Join group</Text>
+                </TouchableOpacity>
+              ) : null}
               <TouchableOpacity
                 style={[styles.actionBtn, styles.actionPrimary]}
                 onPress={handleOrderNow}
@@ -774,6 +835,12 @@ export function ChatFlow({ userLocation, onOrderNow }: ChatFlowProps) {
 
         {step === 'recommended' && activeGroupId ? (
           <View style={styles.groupWrap}>
+            <View style={styles.groupDisclaimerBanner}>
+              <Text style={styles.groupDisclaimerText}>
+                ⚠️ Payment happens outside the app. First arrival collects the
+                order.
+              </Text>
+            </View>
             {!groupLive ? (
               <View style={styles.groupBuilding}>
                 <ActivityIndicator color="#6EE7B7" size="small" />
@@ -783,7 +850,10 @@ export function ChatFlow({ userLocation, onOrderNow }: ChatFlowProps) {
               </View>
             ) : groupLive.members.length >= 4 || groupLive.status === 'full' ? (
               <View style={styles.groupReadyCard}>
-                <Text style={styles.groupReadyTitle}>🔥 Group ready!</Text>
+                <Text style={styles.groupReadyTitle}>Your group is ready 🎉</Text>
+                <Text style={styles.groupReadySubtitle}>
+                  Make sure someone is ready to pay and pick up the order.
+                </Text>
                 <Text style={styles.groupProgress}>
                   {groupLive.members.length}/4 people
                 </Text>
@@ -958,6 +1028,49 @@ export function ChatFlow({ userLocation, onOrderNow }: ChatFlowProps) {
         ) : null}
       </ScrollView>
     </View>
+
+    <Modal
+      visible={groupJoinModalVisible}
+      transparent
+      animationType="fade"
+      onRequestClose={() => {
+        if (!groupJoining) setGroupJoinModalVisible(false);
+      }}
+    >
+      <View style={styles.groupModalBackdrop}>
+        <View style={styles.groupModalCard}>
+          <Text style={styles.groupModalTitle}>Before you continue ⚠️</Text>
+          <Text style={styles.groupModalBody}>
+            • Payment is handled outside the app between users{'\n'}
+            • The first person to arrive will collect the order{'\n'}
+            • Please coordinate with your group
+          </Text>
+          <View style={styles.groupModalActions}>
+            <TouchableOpacity
+              style={[styles.groupModalBtn, styles.groupModalBtnPrimary]}
+              onPress={() => void handleConfirmGroupJoin()}
+              disabled={groupJoining}
+              activeOpacity={0.9}
+            >
+              {groupJoining ? (
+                <ActivityIndicator color="#0f172a" />
+              ) : (
+                <Text style={styles.groupModalBtnPrimaryText}>I agree ✅</Text>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.groupModalBtn, styles.groupModalBtnSecondary]}
+              onPress={() => !groupJoining && setGroupJoinModalVisible(false)}
+              disabled={groupJoining}
+              activeOpacity={0.9}
+            >
+              <Text style={styles.groupModalBtnSecondaryText}>Cancel ❌</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+    </>
   );
 }
 
@@ -1214,7 +1327,86 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     marginTop: 4,
   },
-  recommendedActions: { gap: 10, marginTop: 4 },
+  recommendedActions: { gap: 10, marginTop: 4, width: '100%' },
+  actionJoinGroup: {
+    backgroundColor: 'rgba(110, 231, 183, 0.16)',
+    borderWidth: 2,
+    borderColor: 'rgba(110, 231, 183, 0.55)',
+  },
+  actionJoinGroupText: {
+    color: '#A7F3D0',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  groupModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.72)',
+    justifyContent: 'center',
+    paddingHorizontal: 22,
+  },
+  groupModalCard: {
+    borderRadius: 18,
+    padding: 20,
+    backgroundColor: '#1e293b',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.35)',
+    gap: 14,
+    maxWidth: 400,
+    width: '100%',
+    alignSelf: 'center',
+  },
+  groupModalTitle: {
+    color: '#F8FAFC',
+    fontSize: 18,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  groupModalBody: {
+    color: 'rgba(248,250,252,0.88)',
+    fontSize: 15,
+    fontWeight: '600',
+    lineHeight: 22,
+  },
+  groupModalActions: { gap: 10, marginTop: 4 },
+  groupModalBtn: {
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
+  },
+  groupModalBtnPrimary: { backgroundColor: '#6EE7B7' },
+  groupModalBtnPrimaryText: {
+    color: '#0f172a',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  groupModalBtnSecondary: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: 'rgba(248,250,252,0.28)',
+  },
+  groupModalBtnSecondaryText: {
+    color: '#F8FAFC',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  groupDisclaimerBanner: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(251, 191, 36, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(251, 191, 36, 0.35)',
+    marginBottom: 10,
+  },
+  groupDisclaimerText: {
+    color: '#FDE68A',
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 18,
+    textAlign: 'center',
+  },
   groupWrap: { marginTop: 14 },
   groupBuilding: {
     flexDirection: 'row',
@@ -1299,6 +1491,12 @@ const styles = StyleSheet.create({
     color: '#FDBA74',
     fontSize: 18,
     fontWeight: '900',
+  },
+  groupReadySubtitle: {
+    color: 'rgba(248,250,252,0.9)',
+    fontSize: 14,
+    fontWeight: '600',
+    lineHeight: 20,
   },
   groupTimeoutCard: {
     padding: 14,
