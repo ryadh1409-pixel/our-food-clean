@@ -13,7 +13,7 @@ export type SuggestedMessageOrder = {
 };
 
 const SUGGESTED_TITLE_BY_PERIOD: Record<TimeOfDayPeriod, string> = {
-  morning: 'Coffee & bakery (suggested) ☕',
+  morning: 'Breakfast & bakery (suggested) 🥐',
   lunch: 'Pizza or lunch (suggested) 🍕',
   evening: 'Dinner (suggested) 🍽️',
   late_night: 'Snack run (suggested) 🌙',

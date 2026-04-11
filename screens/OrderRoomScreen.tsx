@@ -97,6 +97,12 @@ type OrderState = {
   userId?: string;
   userName?: string;
   mealType?: string;
+  /** AI builder / swipe display title */
+  foodName?: string;
+  foodType?: string;
+  foodSize?: string;
+  distanceKm?: number | null;
+  spots?: number;
   sharePrice?: number;
   serviceFee?: number;
   whatsappNumber?: string;
@@ -304,6 +310,18 @@ export default function OrderRoomScreen() {
           typeof d?.maxPeople === 'number' && d.maxPeople >= 1
             ? d.maxPeople
             : 2;
+        const foodNameRaw =
+          typeof d?.foodName === 'string' ? d.foodName.trim() : '';
+        const foodType =
+          typeof d?.foodType === 'string' ? d.foodType.trim() : undefined;
+        const foodSize =
+          typeof d?.size === 'string' ? d.size.trim() : undefined;
+        const distanceKmOrder =
+          typeof d?.distanceKm === 'number' && Number.isFinite(d.distanceKm)
+            ? d.distanceKm
+            : null;
+        const spots =
+          typeof d?.spots === 'number' && d.spots >= 1 ? d.spots : maxPeople;
         const expRaw = d?.expiresAt;
         const expiresAtMs =
           typeof expRaw === 'number'
@@ -324,6 +342,11 @@ export default function OrderRoomScreen() {
           userId,
           userName,
           mealType,
+          foodName: foodNameRaw || undefined,
+          foodType,
+          foodSize,
+          distanceKm: distanceKmOrder,
+          spots,
           sharePrice,
           serviceFee,
           whatsappNumber,
@@ -1440,7 +1463,15 @@ export default function OrderRoomScreen() {
     );
   }
 
-  const orderTitle = hostLabel || order.restaurantName || 'Order';
+  const orderTitle =
+    (order.foodName?.trim() ? order.foodName.trim() : '') ||
+    hostLabel ||
+    order.restaurantName ||
+    'Order';
+
+  const builderTimeLabel =
+    expiryLabel ??
+    (timerMessageUnderCardJoin ? `Time left: ${timerMessageUnderCardJoin}` : null);
 
   return (
     <SafeAreaView
@@ -1472,16 +1503,57 @@ export default function OrderRoomScreen() {
           >
             {orderTitle}
           </Text>
-          <Text
-            style={{
-              fontSize: 16,
-              color: c.textSlateDark,
-              marginBottom: 12,
-              textAlign: 'center',
-            }}
-          >
-            Meal Type: {order.mealType ?? '—'}
-          </Text>
+          {order.foodType ? (
+            <View
+              style={{
+                alignSelf: 'stretch',
+                marginBottom: 14,
+                padding: 14,
+                borderRadius: 14,
+                backgroundColor: 'rgba(15,23,42,0.55)',
+                borderWidth: 1,
+                borderColor: 'rgba(148,163,184,0.25)',
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 15,
+                  lineHeight: 22,
+                  color: c.text,
+                  fontWeight: '600',
+                }}
+              >
+                {`🍽️ ${order.foodType}${
+                  order.foodSize ? ` (${order.foodSize})` : ''
+                }`}
+                {'\n'}
+                {`📍 ${order.restaurantName} — ${
+                  order.distanceKm != null
+                    ? `${order.distanceKm.toFixed(1)} km`
+                    : '—'
+                }`}
+                {'\n'}
+                {`💰 $${(order.totalPrice ?? 0).toFixed(2)} total`}
+                {'\n'}
+                {`👥 $${((order.totalPrice ?? 0) / 2).toFixed(2)} per person`}
+                {'\n'}
+                {`🟢 ${participantsCount}/${order.spots ?? maxPeople} joined`}
+                {'\n'}
+                {`⏱ ${builderTimeLabel ?? '—'}`}
+              </Text>
+            </View>
+          ) : (
+            <Text
+              style={{
+                fontSize: 16,
+                color: c.textSlateDark,
+                marginBottom: 12,
+                textAlign: 'center',
+              }}
+            >
+              Meal Type: {order.mealType ?? '—'}
+            </Text>
+          )}
           {hasLocationCoords && orderLat != null && orderLng != null ? (
             Platform.OS === 'web' ? (
               <iframe

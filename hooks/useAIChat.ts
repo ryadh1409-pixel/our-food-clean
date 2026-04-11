@@ -1,17 +1,17 @@
 import type { TimeContext } from '@/services/chatAssistantOrders';
 import {
   handleUserChatTurn,
-  initialChatState,
+  initialAiSessionState,
   type AssistantUserContext,
-  type ChatState,
+  type AiSessionState,
 } from '@/services/ai';
 import { useCallback, useRef } from 'react';
 
 /**
- * Conversation state + pipeline for the assistant tab (intent, confirmation, de-dupe).
+ * Conversation state + pipeline for the assistant tab (order builder state machine, de-dupe).
  */
 export function useAIChat() {
-  const stateRef = useRef<ChatState>({ ...initialChatState });
+  const stateRef = useRef<AiSessionState>(initialAiSessionState());
 
   const markIntroSuggestedTemplate = useCallback(() => {
     stateRef.current = {
@@ -21,7 +21,7 @@ export function useAIChat() {
   }, []);
 
   const resetChatState = useCallback(() => {
-    stateRef.current = { ...initialChatState };
+    stateRef.current = initialAiSessionState();
   }, []);
 
   const runUserTurn = useCallback(
@@ -32,6 +32,11 @@ export function useAIChat() {
       timeContext: TimeContext;
       awaitingPartnerAlone?: boolean;
       assistantContext?: AssistantUserContext | null;
+      userLocation?: {
+        lat: number | null;
+        lng: number | null;
+        label?: string | null;
+      } | null;
     }) => {
       const result = await handleUserChatTurn({
         text: params.text,
@@ -41,6 +46,7 @@ export function useAIChat() {
         timeContext: params.timeContext,
         awaitingPartnerAlone: params.awaitingPartnerAlone,
         assistantContext: params.assistantContext,
+        userLocation: params.userLocation ?? null,
       });
       stateRef.current = result.state;
       return result;

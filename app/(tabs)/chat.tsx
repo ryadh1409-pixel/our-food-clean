@@ -81,8 +81,8 @@ const ASSISTANT_SEND_COOLDOWN_MS = 2000;
 const QUICK_ACTIONS = [
   { label: '🍕 Pizza', message: 'Pizza 🍕' },
   { label: '🍔 Burger', message: 'Burger 🍔' },
-  { label: '☕ Coffee', message: 'Hungry — coffee and a bite ☕' },
-  { label: '🥗 Healthy', message: 'Healthy lunch 🥗' },
+  { label: '🥗 Healthy', message: 'Healthy meal 🥗' },
+  { label: '🍽️ Other', message: 'Other meal 🍽️' },
 ] as const;
 
 const IDEA_CHIPS = [
@@ -397,6 +397,7 @@ export default function ChatScreen() {
         const awaitingPartnerAlone = await userHasSoloWaitingHalfOrder(uid);
         const dn =
           profile?.name || authUser.displayName || 'Friend';
+        const loc = profile?.location;
         const result = await runUserTurn({
           text: outgoingText,
           uid,
@@ -407,6 +408,14 @@ export default function ChatScreen() {
             displayName: dn,
             email: profile?.email ?? authUser.email ?? null,
           },
+          userLocation:
+            loc && typeof loc.lat === 'number' && typeof loc.lng === 'number'
+              ? {
+                  lat: loc.lat,
+                  lng: loc.lng,
+                  label: profile?.name ?? null,
+                }
+              : null,
         });
 
         const baseId = Date.now();
@@ -449,6 +458,7 @@ export default function ChatScreen() {
       authUser?.email,
       profile?.name,
       profile?.email,
+      profile?.location,
       router,
       runUserTurn,
     ],

@@ -1,40 +1,36 @@
 /**
- * HalfOrder product assistant: orders + short, friendly guidance + feedback prompts.
+ * HalfOrder product assistant: structured order builder + short guidance.
+ * @see ORDER_BUILDER_SYSTEM_PROMPT in `aiOrderBuilder.ts`
  */
-import { autoInvite } from '@/services/autoInvite';
 import { detectFoodIntent } from '@/services/chatAssistantOrders';
 import type { TimeContext } from '@/services/chatAssistantOrders';
 import { generateSuggestedOrder, SUGGESTED_ORDER_BOT_COPY } from '@/services/suggestedOrder';
-import { db } from '@/services/firebase';
 import {
-  addDoc,
-  collection,
-  serverTimestamp,
-} from 'firebase/firestore';
+  initialAiSessionState,
+  locationPromptForCategory,
+  mealCategoryFromText,
+  processOrderBuilderTurn,
+  startOrderBuilderSession,
+  type AiSessionState,
+  type MealCategory,
+  type UserLocationContext,
+} from '@/services/aiOrderBuilder';
+
+export { initialAiSessionState };
 
 export type ChatIntent = 'food' | 'confirm' | 'reject' | 'hungry' | 'unknown';
+
+/** @deprecated Use `AiSessionState` — kept for incremental refactors */
+export type ChatState = AiSessionState;
 
 export type FoodSuggestionKind = 'pizza' | 'burger' | 'general';
 
 export type AssistantUserContext = {
-  /** Shown as “You are helping {displayName}” in product copy — use first name in replies. */
   displayName: string;
   email?: string | null;
 };
 
-export type ChatState = {
-  lastSuggestion: FoodSuggestionKind | null;
-  awaitingConfirmation: boolean;
-  templateSuggestedOnce: boolean;
-  lastBotResponseText: string | null;
-};
-
-export const initialChatState: ChatState = {
-  lastSuggestion: null,
-  awaitingConfirmation: false,
-  templateSuggestedOnce: false,
-  lastBotResponseText: null,
-};
+export const initialChatState: AiSessionState = initialAiSessionState();
 
 export type AiOrderRef = {
   id: string;
@@ -49,6 +45,9 @@ export type AiBotMessage = {
   action: 'join_order' | 'create_order' | 'none';
   orders?: AiOrderRef[];
 };
+
+export { ORDER_BUILDER_SYSTEM_PROMPT } from '@/services/aiOrderBuilder';
+export { validateOrderForCreate, validateOrder } from '@/services/aiOrderBuilder';
 
 function norm(s: string): string {
   return s.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -106,12 +105,19 @@ function detectProductAssistantIntent(message: string): ProductAssistantIntent {
   return 'none';
 }
 
-/** Keyword intent layered with broader food detection from chatAssistantOrders. */
 export function detectIntent(message: string): ChatIntent {
   const text = message.trim().toLowerCase();
   if (!text) return 'unknown';
 
-  if (text.includes('pizza') || text.includes('burger')) return 'food';
+  if (
+    text.includes('pizza') ||
+    text.includes('burger') ||
+    text.includes('healthy') ||
+    text.includes('other meal') ||
+    text.includes('🥗')
+  ) {
+    return 'food';
+  }
   if (
     /\byes\b/.test(text) ||
     text === 'ok' ||
@@ -121,7 +127,10 @@ export function detectIntent(message: string): ChatIntent {
     /\byeah\b/.test(text) ||
     /\byep\b/.test(text) ||
     text.includes('👍') ||
-    text.includes('sounds good')
+    text.includes('sounds good') ||
+    text.includes('create it') ||
+    text.includes('go ahead') ||
+    text.includes('do it')
   ) {
     return 'confirm';
   }
@@ -150,107 +159,11 @@ export function pickRandom<T>(items: readonly T[]): T {
   return items[Math.floor(Math.random() * items.length)]!;
 }
 
-const PIZZA_PROMPTS = [
-  'Want pizza? 🍕',
-  'How about a slice or a whole pie? 🍕',
-  "Pizza night — I'm in if you are 🍕",
-] as const;
-
-const BURGER_PROMPTS = [
-  'How about a burger? 🍔',
-  'Craving a smash burger? 🍔',
-  'Burger run? 🍔',
-] as const;
-
 const GENERIC_FOOD_PROMPTS = [
   'Craving something? 😋',
   'What are you in the mood for?',
-  'Want pizza or a burger — or something else?',
+  'Say pizza, burger, healthy, or other meal.',
 ] as const;
-
-const REJECT_ALTERNATIVE: Record<
-  FoodSuggestionKind,
-  readonly string[]
-> = {
-  pizza: [
-    'No problem — how about a burger instead? 🍔',
-    'All good — want to switch to a burger? 🍔',
-  ],
-  burger: [
-    'Sure thing — pizza instead? 🍕',
-    'Got it — want a pizza order? 🍕',
-  ],
-  general: [
-    'Got it — want pizza 🍕 or a burger 🍔?',
-    'No worries — tell me pizza, burger, or another craving.',
-  ],
-};
-
-const PIZZA_PRESET = {
-  foodName: 'Half-order wood-fired pizza 🍕',
-  image:
-    'https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=1200&q=80',
-  totalPrice: 28,
-} as const;
-
-const BURGER_PRESET = {
-  foodName: 'Half-order smash burger 🍔',
-  image:
-    'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=1200&q=80',
-  totalPrice: 26,
-} as const;
-
-const GENERAL_PRESET = {
-  foodName: 'Shared meal (your pick)',
-  image:
-    'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=1200&q=80',
-  totalPrice: 24,
-} as const;
-
-function presetForKind(kind: FoodSuggestionKind | null) {
-  if (kind === 'pizza') return PIZZA_PRESET;
-  if (kind === 'burger') return BURGER_PRESET;
-  return GENERAL_PRESET;
-}
-
-function confirmLine(kind: FoodSuggestionKind | null): string {
-  if (kind === 'pizza')
-    return 'Great! I created a pizza order 🍕 — others can now join.';
-  if (kind === 'burger')
-    return 'Great! I created a burger order 🍔 — others can now join.';
-  return 'Great! I created your order — others can now join.';
-}
-
-/**
- * Creates a swipe-style `orders` document (matches `isValidOrderCreate` rules).
- */
-export async function createAssistantSwipeOrder(args: {
-  uid: string;
-  kind: FoodSuggestionKind | null;
-}): Promise<string> {
-  const p = presetForKind(args.kind);
-  const uid = args.uid;
-  const ref = await addDoc(collection(db, 'orders'), {
-    foodName: p.foodName,
-    image: p.image,
-    pricePerPerson: Number((p.totalPrice / 2).toFixed(2)),
-    totalPrice: Number(p.totalPrice.toFixed(2)),
-    maxPeople: 2,
-    usersAccepted: [],
-    participants: [uid],
-    joinedAtMap: { [uid]: serverTimestamp() },
-    createdBy: uid,
-    createdAt: serverTimestamp(),
-  });
-  void autoInvite({
-    id: ref.id,
-    foodName: p.foodName,
-    creatorUid: uid,
-    latitude: null,
-    longitude: null,
-  });
-  return ref.id;
-}
 
 function shouldSkipDuplicate(
   nextText: string,
@@ -261,9 +174,9 @@ function shouldSkipDuplicate(
 }
 
 function withState(
-  base: ChatState,
-  patch: Partial<ChatState>,
-): ChatState {
+  base: AiSessionState,
+  patch: Partial<AiSessionState>,
+): AiSessionState {
   return { ...base, ...patch };
 }
 
@@ -273,7 +186,7 @@ function lateNightLocal(): boolean {
 }
 
 function productHelpLine(name: string): string {
-  return `${name}, here’s the gist: browse or swipe an order, join or start one, then use order chat to coordinate and meet up. Want pizza 🍕 or burger 🍔?`;
+  return `${name}, here’s the gist: browse or swipe an order, join or start one, then use order chat to coordinate. Say pizza, burger, healthy, or other meal to build an order step by step.`;
 }
 
 function productFeedbackLine(name: string): string {
@@ -285,47 +198,70 @@ function productDefaultLine(
   nearbyJoinableCount: number,
 ): string {
   if (lateNightLocal()) {
-    return `${name}, 🌙 Late night snack? Say pizza or burger and I’ll line up an order you can share.`;
+    return `${name}, 🌙 Late night? Say pizza, burger, healthy, or other meal — I’ll walk you through it.`;
   }
   if (nearbyJoinableCount > 0) {
-    return `${name}, check Smart matches above for live orders — or say what you’re craving. What do you like most so far?`;
+    return `${name}, check Smart matches above for live orders — or tell me what you’re craving.`;
   }
-  return `${name}, say pizza, burger, or “hungry” and I’ll help you start or join. Anything confusing?`;
+  return `${name}, say pizza, burger, healthy, or other meal to start the order builder. Anything confusing?`;
+}
+
+function isCoffeeOrDrinkOrder(text: string): boolean {
+  const t = norm(text);
+  return (
+    /\bcoffee\b/.test(t) ||
+    /\b(latte|cappuccino|espresso|matcha|bubble tea|boba|drink)\b/.test(t) ||
+    t.includes('☕')
+  );
+}
+
+function builderIntentForState(
+  orderState: AiSessionState['orderState'],
+  chatIntent: ChatIntent,
+): 'confirm' | 'reject' | 'other' {
+  if (orderState === 'confirm') {
+    if (chatIntent === 'confirm') return 'confirm';
+    if (chatIntent === 'reject') return 'reject';
+    return 'other';
+  }
+  if (chatIntent === 'reject') return 'reject';
+  return 'other';
 }
 
 /**
  * Runs one user turn → next state + outgoing bot message(s) + optional navigation.
- * Uses `assistantContext` so copy stays personal (“You are helping ${displayName}”).
  */
 export async function handleUserChatTurn(input: {
   text: string;
-  state: ChatState;
+  state: AiSessionState;
   uid: string;
   nearbyJoinableCount: number;
   timeContext: TimeContext;
   awaitingPartnerAlone?: boolean;
   assistantContext?: AssistantUserContext | null;
+  /** Profile / GPS for the order builder */
+  userLocation?: UserLocationContext | null;
 }): Promise<{
-  state: ChatState;
+  state: AiSessionState;
   messages: AiBotMessage[];
   navigateToOrderId?: string;
 }> {
   const name = assistantFirstName(input.assistantContext ?? undefined);
   const productIntent = detectProductAssistantIntent(input.text);
   const intent = detectIntent(input.text);
-  let state = { ...input.state };
+  let session = { ...input.state, draft: { ...input.state.draft } };
   const messages: AiBotMessage[] = [];
 
   const push = (m: AiBotMessage) => {
-    if (shouldSkipDuplicate(m.text, state.lastBotResponseText)) return;
-    state.lastBotResponseText = m.text.trim();
+    if (shouldSkipDuplicate(m.text, session.lastBotResponseText)) return;
+    session.lastBotResponseText = m.text.trim();
     messages.push(m);
   };
 
   const suggestTemplateOnce = () => {
-    if (state.templateSuggestedOnce) return;
+    if (session.templateSuggestedOnce) return;
     const suggested = generateSuggestedOrder(input.timeContext);
-    state = withState(state, { templateSuggestedOnce: true });
+    session = withState(session, { templateSuggestedOnce: true });
     push({
       text: SUGGESTED_ORDER_BOT_COPY,
       action: 'join_order',
@@ -333,101 +269,98 @@ export async function handleUserChatTurn(input: {
     });
   };
 
-  if (intent === 'confirm' && state.awaitingConfirmation) {
-    const kind = state.lastSuggestion;
-    const orderId = await createAssistantSwipeOrder({
+  if (isCoffeeOrDrinkOrder(input.text)) {
+    push({
+      text: `${name}, I don’t start drink-only orders here. Try pizza 🍕, burger 🍔, healthy 🥗, or another meal.`,
+      action: 'none',
+    });
+    return { state: session, messages };
+  }
+
+  /** Structured order builder (multi-step) — always complete this turn here (no fall-through). */
+  if (input.state.orderState !== 'idle') {
+    const bIntent = builderIntentForState(input.state.orderState, intent);
+    const built = await processOrderBuilderTurn({
+      text: input.text,
+      session,
       uid: input.uid,
-      kind,
+      userLocation: input.userLocation ?? null,
+      intent: bIntent,
     });
-    const line = confirmLine(kind);
-    state.lastBotResponseText = line.trim();
-    messages.push({ text: line, action: 'none' });
-    const outState = withState(initialChatState, {
-      templateSuggestedOnce: state.templateSuggestedOnce,
-      lastBotResponseText: line.trim(),
-    });
+    session = built.session;
+    for (const m of built.messages) {
+      push(m);
+    }
     return {
-      state: outState,
+      state: session,
       messages,
-      navigateToOrderId: orderId,
+      navigateToOrderId: built.navigateToOrderId,
     };
-  }
-
-  if (intent === 'confirm' && !state.awaitingConfirmation) {
-    push({
-      text: `${name}, tell me what you're craving first (pizza or burger) — then say yes and I'll start the order.`,
-      action: 'none',
-    });
-    return { state, messages };
-  }
-
-  if (intent === 'reject') {
-    const kind = state.lastSuggestion ?? 'general';
-    state = withState(state, {
-      awaitingConfirmation: false,
-      lastSuggestion: null,
-    });
-    push({
-      text: pickRandom(REJECT_ALTERNATIVE[kind]),
-      action: 'none',
-    });
-    return { state, messages };
   }
 
   if (productIntent === 'help_app') {
     push({ text: productHelpLine(name), action: 'none' });
-    return { state, messages };
+    return { state: session, messages };
   }
 
   if (productIntent === 'feedback') {
     push({ text: productFeedbackLine(name), action: 'none' });
-    return { state, messages };
+    return { state: session, messages };
   }
 
   if (intent === 'food') {
-    const kind = foodKindFromText(input.text) ?? 'general';
-    state = withState(state, {
-      lastSuggestion: kind,
-      awaitingConfirmation: true,
-    });
-    const line =
-      kind === 'pizza'
-        ? pickRandom(PIZZA_PROMPTS)
-        : kind === 'burger'
-          ? pickRandom(BURGER_PROMPTS)
-          : pickRandom(GENERIC_FOOD_PROMPTS);
-    const confirmHint =
-      kind === 'general'
-        ? '\n\nReply yes when you want me to create it.'
-        : '\n\nSay yes and I’ll create this order for you.';
-    const joinHint =
-      input.nearbyJoinableCount > 0
-        ? '\n\nTip: Smart matches above may have live orders to join.'
-        : '';
+    const cat = mealCategoryFromText(input.text);
+    if (cat) {
+      session = startOrderBuilderSession({
+        mealCategory: cat as MealCategory,
+        session,
+      });
+      push({
+        text: locationPromptForCategory(cat as MealCategory),
+        action: 'none',
+      });
+      return { state: session, messages };
+    }
     push({
-      text: `${line}${confirmHint}${joinHint}`,
+      text: `${name}, say pizza 🍕, burger 🍔, healthy 🥗, or “other meal” so I can line up the builder.`,
       action: 'none',
     });
-    return { state, messages };
+    return { state: session, messages };
+  }
+
+  if (intent === 'confirm' && session.orderState === 'idle') {
+    push({
+      text: `${name}, tell me what you want first — pizza, burger, healthy, or other meal.`,
+      action: 'none',
+    });
+    return { state: session, messages };
+  }
+
+  if (intent === 'reject') {
+    push({
+      text: `No problem — say pizza, burger, healthy, or other meal when you’re ready.`,
+      action: 'none',
+    });
+    return { state: session, messages };
   }
 
   if (intent === 'hungry') {
     if (input.nearbyJoinableCount === 0) {
-      if (!state.templateSuggestedOnce) {
+      if (!session.templateSuggestedOnce) {
         suggestTemplateOnce();
       } else {
         push({
-          text: `${name}, ${pickRandom(GENERIC_FOOD_PROMPTS)} Tap “Create order” below to start — others can join after you publish.`,
+          text: `${name}, ${pickRandom(GENERIC_FOOD_PROMPTS)} Tap “Create order” below to start — or say pizza, burger, healthy, or other meal.`,
           action: 'create_order',
         });
       }
     } else {
       push({
-        text: `${name}, ${pickRandom(GENERIC_FOOD_PROMPTS)} There are open orders — check Smart matches, or say pizza or burger.`,
+        text: `${name}, ${pickRandom(GENERIC_FOOD_PROMPTS)} There are open orders — check Smart matches, or say pizza, burger, healthy, or other meal.`,
         action: 'none',
       });
     }
-    return { state, messages };
+    return { state: session, messages };
   }
 
   if (intent === 'unknown') {
@@ -436,18 +369,18 @@ export async function handleUserChatTurn(input: {
         text: `${name}, want to invite a friend and get a reward? 🎁 Use Invite on your order, or tell me what’s confusing.`,
         action: 'none',
       });
-      return { state, messages };
+      return { state: session, messages };
     }
-    if (input.nearbyJoinableCount === 0 && !state.templateSuggestedOnce) {
+    if (input.nearbyJoinableCount === 0 && !session.templateSuggestedOnce) {
       suggestTemplateOnce();
-      return { state, messages };
+      return { state: session, messages };
     }
     push({
       text: productDefaultLine(name, input.nearbyJoinableCount),
       action: 'none',
     });
-    return { state, messages };
+    return { state: session, messages };
   }
 
-  return { state, messages: [] };
+  return { state: session, messages: [] };
 }

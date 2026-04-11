@@ -24,6 +24,10 @@ const FOOD_INTENT_KEYWORDS = [
   'burger',
   'snack',
   'restaurant',
+  'healthy',
+  'salad',
+  'bowl',
+  'other meal',
 ] as const;
 
 export type AssistantOrderSummary = {
@@ -59,22 +63,21 @@ export function detectTimeContext(date: Date = new Date()): TimeContext {
     return {
       period: 'morning',
       greetingLabel: 'Morning',
-      segmentEmoji: '☕',
+      segmentEmoji: '🌅',
       matchKeywords: [
-        'coffee',
-        'cafe',
         'bakery',
         'breakfast',
         'bagel',
         'donut',
-        'espresso',
         'muffin',
         'croissant',
         'pastry',
-        'latte',
+        'brunch',
+        'egg',
+        'avo',
       ],
       emptyLabel: 'breakfast',
-      emptyEmoji: '☕',
+      emptyEmoji: '🥐',
       fallbackFood: 'breakfast',
     };
   }
