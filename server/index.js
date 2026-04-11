@@ -26,7 +26,7 @@ function replyFromOpenAiError(data) {
   return 'OpenAI request failed';
 }
 
-// CHAT — OpenAI Responses API (response body is always `{ reply: string }`)
+// CHAT — OpenAI Responses API → structured JSON { food, category, searchQuery }
 app.post('/chat', async (req, res) => {
   try {
     const { message } = req.body;
@@ -45,6 +45,26 @@ app.post('/chat', async (req, res) => {
 
     console.log('User:', message);
 
+    const prompt = `
+You are a food assistant.
+
+Return ONLY JSON.
+
+Extract:
+- food
+- category
+- searchQuery
+
+Example:
+{
+  "food": "pizza",
+  "category": "fast food",
+  "searchQuery": "pizza near me"
+}
+
+User message: ${message}
+`;
+
     const response = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
@@ -53,20 +73,20 @@ app.post('/chat', async (req, res) => {
       },
       body: JSON.stringify({
         model: 'gpt-4o-mini',
-        input: message,
+        input: prompt,
       }),
     });
 
     const data = await response.json();
 
     if (!response.ok) {
-      const text = replyFromOpenAiError(data);
-      console.log('Clean AI:', text);
+      const errText = replyFromOpenAiError(data);
+      console.log('Clean AI:', errText);
       const status =
         response.status >= 400 && response.status < 600
           ? response.status
           : 502;
-      return res.status(status).json({ reply: text });
+      return res.status(status).json({ reply: errText });
     }
 
     const text =
@@ -74,14 +94,24 @@ app.post('/chat', async (req, res) => {
 
     console.log('Clean AI:', text);
 
-    return res.json({
-      reply: text,
-    });
+    let parsed;
+
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      parsed = {
+        food: text,
+        category: 'unknown',
+        searchQuery: `${text} near me`,
+      };
+    }
+
+    return res.json(parsed);
   } catch (err) {
     console.error(err);
-    const text = err instanceof Error ? err.message : String(err);
-    console.log('Clean AI:', text);
-    return res.status(500).json({ reply: text });
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.log('Clean AI:', errMsg);
+    return res.status(500).json({ reply: errMsg });
   }
 });
 

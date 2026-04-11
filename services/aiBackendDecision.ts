@@ -1,6 +1,6 @@
 /**
- * Backend AI (/chat) may return OpenAI Responses JSON or `{ reply: string }` from the proxy.
- * Set EXPO_PUBLIC_AI_CHAT_URL e.g. http://192.168.1.10:3000/chat
+ * Backend AI (/chat) may return `{ reply }`, structured `{ food, category, searchQuery }`,
+ * or raw OpenAI Responses JSON. Set EXPO_PUBLIC_AI_CHAT_URL e.g. http://192.168.1.10:3000/chat
  */
 
 export type AiDecision = {
@@ -29,6 +29,27 @@ function extractModelText(data: unknown): string | null {
 
   /** Server proxy may return `{ reply: string }` instead of raw OpenAI JSON */
   if (typeof d.reply === 'string' && d.reply.trim()) return d.reply;
+
+  /** Structured extractor from food assistant proxy */
+  if (
+    'food' in d ||
+    'category' in d ||
+    'searchQuery' in d
+  ) {
+    const food = typeof d.food === 'string' ? d.food : '';
+    const category = typeof d.category === 'string' ? d.category : 'unknown';
+    const searchQuery =
+      typeof d.searchQuery === 'string' ? d.searchQuery : '';
+    return JSON.stringify({
+      intent: 'recommend_order',
+      food,
+      reason: category,
+      restaurant: '',
+      estimated_price: 18.99,
+      suggest_split: false,
+      message: searchQuery || `${food} near me`.trim(),
+    });
+  }
 
   const out = d.output;
   if (Array.isArray(out) && out[0] && typeof out[0] === 'object') {
