@@ -1,9 +1,8 @@
 /**
- * Terms + Privacy acceptance for App Store Guideline 1.2.
+ * Legacy device-local Terms flags (AsyncStorage).
  *
- * - Primary key: `acceptedTerms` (App Store / audit clarity).
- * - Legacy key: `TERMS_ACCEPTANCE_STORAGE_KEY` from `@/constants/termsAcceptance`
- *   (existing installs stay accepted; we migrate forward when read).
+ * **Signed-in gating** uses Firestore `users/{uid}.hasAcceptedTerms` (`useUserTermsStatus`,
+ * `acceptTermsOfService`). These helpers remain for migration / any offline-only reads.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 

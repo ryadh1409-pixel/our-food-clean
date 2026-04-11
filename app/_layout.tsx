@@ -19,7 +19,7 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { SystemDialogHost } from '@/components/SystemDialogHost';
 import { isAdminUser } from '@/constants/adminUid';
 import { normalizeReturnPathAfterTerms } from '@/constants/termsAcceptance';
-import { getTermsAcceptedAsync } from '@/lib/termsAcceptedStorage';
+import { useUserTermsStatus } from '@/hooks/useUserTermsStatus';
 import {
   PAYMENT_MATCH_ALERT_MESSAGE,
   PAYMENT_MATCH_ALERT_TITLE,
@@ -96,6 +96,8 @@ export const linking = {
 
 function RootLayoutNav() {
   const { user, loading: authLoading, firestoreUserRole } = useAuth();
+  const { ready: termsFirestoreReady, accepted: hasAcceptedTermsFs } =
+    useUserTermsStatus(user?.uid);
   const router = useRouter();
   const segments = useSegments();
   const currentUserRef = useRef(user);
@@ -977,9 +979,10 @@ function RootLayoutNav() {
       ? `/(auth)/login?redirectTo=${encodeURIComponent(pathname)}`
       : '/(auth)/login';
 
-  /** Deep links must not bypass Terms / UGC acceptance for signed-in users. */
+  /** Deep links must not bypass Firestore Terms acceptance for signed-in users. */
   useEffect(() => {
     if (authLoading || !user) return;
+    if (!termsFirestoreReady) return;
     if (
       inAuthGroup ||
       seg0 === 'onboarding' ||
@@ -988,22 +991,26 @@ function RootLayoutNav() {
     )
       return;
     if (onPublicShellRoutes) return;
-    let cancelled = false;
-    (async () => {
-      const accepted = await getTermsAcceptedAsync();
-      if (cancelled) return;
-      if (accepted) return;
-      const ret = normalizeReturnPathAfterTerms(pathname && pathname !== '/' ? pathname : '/(tabs)');
-      router.replace(
-        `/terms-acceptance?returnTo=${encodeURIComponent(ret)}` as Parameters<
-          typeof router.replace
-        >[0],
-      );
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [authLoading, user, inAuthGroup, seg0, onPublicShellRoutes, pathname, router]);
+    if (hasAcceptedTermsFs) return;
+    const ret = normalizeReturnPathAfterTerms(
+      pathname && pathname !== '/' ? pathname : '/(tabs)',
+    );
+    router.replace(
+      `/terms-acceptance?returnTo=${encodeURIComponent(ret)}` as Parameters<
+        typeof router.replace
+      >[0],
+    );
+  }, [
+    authLoading,
+    user,
+    termsFirestoreReady,
+    hasAcceptedTermsFs,
+    inAuthGroup,
+    seg0,
+    onPublicShellRoutes,
+    pathname,
+    router,
+  ]);
 
   return (
     <>
@@ -1027,7 +1034,12 @@ function RootLayoutNav() {
         />
         <Stack.Screen
           name="terms-acceptance"
-          options={{ headerShown: false, title: 'Terms' }}
+          options={{
+            headerShown: false,
+            title: 'Terms',
+            gestureEnabled: false,
+            animation: 'fade',
+          }}
         />
         <Stack.Screen
           name="verify-email"

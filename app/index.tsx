@@ -1,6 +1,7 @@
 import AppLogo from '@/components/AppLogo';
 import { ONBOARDING_COMPLETE_KEY } from '@/constants/onboarding';
-import { getTermsAcceptedAsync } from '@/lib/termsAcceptedStorage';
+import { useUserTermsStatus } from '@/hooks/useUserTermsStatus';
+import { useAuth } from '@/services/AuthContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Redirect } from 'expo-router';
 import React, { useEffect, useState } from 'react';
@@ -8,25 +9,28 @@ import { ActivityIndicator, View } from 'react-native';
 
 type GateState =
   | { phase: 'loading' }
-  | { phase: 'ready'; onboardingDone: boolean; termsAccepted: boolean };
+  | { phase: 'ready'; onboardingDone: boolean };
 
-/** Onboarding → Terms / UEG acceptance → tabs. */
+/**
+ * Onboarding → (signed-in) Firestore Terms → tabs.
+ * Terms are enforced per account via `users/{uid}.hasAcceptedTerms`, not device storage.
+ */
 export default function Index() {
   const [gate, setGate] = useState<GateState>({ phase: 'loading' });
+  const { user, loading: authLoading } = useAuth();
+  const { ready: termsReady, accepted: termsAccepted } = useUserTermsStatus(
+    user?.uid,
+  );
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const [obRaw, termsAccepted] = await Promise.all([
-          AsyncStorage.getItem(ONBOARDING_COMPLETE_KEY),
-          getTermsAcceptedAsync(),
-        ]);
+        const obRaw = await AsyncStorage.getItem(ONBOARDING_COMPLETE_KEY);
         if (!cancelled) {
           setGate({
             phase: 'ready',
             onboardingDone: obRaw === 'true',
-            termsAccepted,
           });
         }
       } catch {
@@ -34,7 +38,6 @@ export default function Index() {
           setGate({
             phase: 'ready',
             onboardingDone: false,
-            termsAccepted: false,
           });
         }
       }
@@ -44,7 +47,10 @@ export default function Index() {
     };
   }, []);
 
-  if (gate.phase === 'loading') {
+  const waitingForTerms =
+    Boolean(user) && !termsReady && gate.phase === 'ready';
+
+  if (gate.phase === 'loading' || authLoading || waitingForTerms) {
     return (
       <View
         style={{
@@ -64,7 +70,7 @@ export default function Index() {
     return <Redirect href="/onboarding" />;
   }
 
-  if (!gate.termsAccepted) {
+  if (user && termsReady && !termsAccepted) {
     return (
       <Redirect
         href={
