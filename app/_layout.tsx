@@ -19,6 +19,7 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { SystemDialogHost } from '@/components/SystemDialogHost';
 import { isAdminUser } from '@/constants/adminUid';
 import { normalizeReturnPathAfterTerms } from '@/constants/termsAcceptance';
+import { useSplitPokeListener } from '@/hooks/useSplitPokeListener';
 import { useUserTermsStatus } from '@/hooks/useUserTermsStatus';
 import {
   PAYMENT_MATCH_ALERT_MESSAGE,
@@ -95,6 +96,7 @@ export const linking = {
 };
 
 function RootLayoutNav() {
+  useSplitPokeListener();
   const { user, loading: authLoading, firestoreUserRole } = useAuth();
   const { ready: termsFirestoreReady, accepted: hasAcceptedTermsFs } =
     useUserTermsStatus(user?.uid);

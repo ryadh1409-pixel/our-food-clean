@@ -827,6 +827,15 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow create, update: if (request.auth != null && request.auth.uid == userId) || isAdmin();
       allow delete: if (request.auth != null && request.auth.uid == userId) || isAdmin();
+      /** Split-match partner joined — writer is `fromId`, must be another signed-in user. */
+      match /splitPoke/{fromId} {
+        allow create: if request.auth != null
+          && request.auth.uid == fromId
+          && fromId != userId
+          && request.resource.data.fromUid == fromId;
+        allow read, delete: if request.auth != null && request.auth.uid == userId;
+        allow update: if false;
+      }
       match /messages/{messageId} {
         allow read, write: if (request.auth != null && request.auth.uid == userId) || isAdmin();
       }

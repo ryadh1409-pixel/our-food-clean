@@ -19,10 +19,20 @@ import {
   type PlaceRestaurant,
 } from '@/services/googlePlaces';
 import { POPULAR_PIZZAS, type LatLng } from '@/services/api';
+import { auth } from '@/services/firebase';
+import {
+  clearUserSplitMatching,
+  findMatch,
+  formatSplitDistance,
+  pokePeerClearSplitMatch,
+  setUserLookingToSplit,
+  type SplitMatchCandidate,
+} from '@/services/matching';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Image } from 'expo-image';
 import * as Linking from 'expo-linking';
+import { useRouter } from 'expo-router';
 import React, {
   useCallback,
   useEffect,
@@ -98,6 +108,7 @@ export type ChatFlowProps = {
 };
 
 export function ChatFlow({ userLocation, onOrderNow }: ChatFlowProps) {
+  const router = useRouter();
   const [step, setStep] = useState<FlowStep>('need_location');
   const [savedLoc, setSavedLoc] = useState<LatLng | null>(null);
   const [locationLabel, setLocationLabel] = useState('');
@@ -114,6 +125,8 @@ export function ChatFlow({ userLocation, onOrderNow }: ChatFlowProps) {
   const [aiInput, setAiInput] = useState('');
   const [aiSending, setAiSending] = useState(false);
   const [recommended, setRecommended] = useState<RecommendedPick | null>(null);
+  const [splitMatch, setSplitMatch] = useState<SplitMatchCandidate | null>(null);
+  const [showNoMatchInvite, setShowNoMatchInvite] = useState(false);
 
   const lastInteractRef = useRef(Date.now());
   const nudgeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -192,6 +205,8 @@ export function ChatFlow({ userLocation, onOrderNow }: ChatFlowProps) {
         'Toronto';
 
       setShowSplit(false);
+      setSplitMatch(null);
+      setShowNoMatchInvite(false);
       setLoadingRests(true);
       setStep('loading_rests');
 
@@ -228,6 +243,28 @@ export function ChatFlow({ userLocation, onOrderNow }: ChatFlowProps) {
         if (decision.suggest_split) {
           addMessage('This is a bit pricey 👀 want to split it?');
           setShowSplit(true);
+        }
+
+        const locForMatch = coords
+          ? { lat: coords.lat, lng: coords.lng }
+          : FALLBACK_LOC;
+        const uid = auth.currentUser?.uid;
+        if (uid) {
+          try {
+            await setUserLookingToSplit(uid, 'pizza', locForMatch);
+            const peer = await findMatch({
+              id: uid,
+              preferredFood: 'pizza',
+              location: locForMatch,
+            });
+            setSplitMatch(peer);
+            setShowNoMatchInvite(!peer);
+          } catch {
+            setSplitMatch(null);
+            setShowNoMatchInvite(true);
+          }
+        } else {
+          setShowNoMatchInvite(true);
         }
 
         setStep('recommended');
@@ -414,6 +451,27 @@ export function ChatFlow({ userLocation, onOrderNow }: ChatFlowProps) {
     void Linking.openURL('https://wa.me/?text=Join%20my%20order%20on%20HalfOrder');
   };
 
+  const handleJoinSplitMatch = useCallback(async () => {
+    if (!splitMatch) return;
+    const me = auth.currentUser?.uid;
+    if (!me) return;
+    bumpInteraction();
+    try {
+      await clearUserSplitMatching(me);
+      await pokePeerClearSplitMatch(splitMatch.id, me);
+    } catch {
+      /* still proceed */
+    }
+    pushUser('Join now 🤝');
+    setSplitMatch(null);
+    router.push({ pathname: '/(tabs)/join' } as never);
+  }, [bumpInteraction, pushUser, router, splitMatch]);
+
+  const handleIgnoreSplitMatch = useCallback(() => {
+    bumpInteraction();
+    setSplitMatch(null);
+  }, [bumpInteraction]);
+
   const suggestPopularPizza = () => {
     bumpInteraction();
     setNudgeVisible(false);
@@ -579,6 +637,51 @@ export function ChatFlow({ userLocation, onOrderNow }: ChatFlowProps) {
                 </Text>
               </TouchableOpacity>
             </View>
+          </View>
+        ) : null}
+
+        {step === 'recommended' && splitMatch ? (
+          <View style={styles.hotMatchWrap}>
+            <View style={styles.hotMatchCard}>
+              <Text style={styles.hotMatchTitle}>
+                🔥 Someone nearby wants to split!
+              </Text>
+              <Text style={styles.hotMatchName}>{splitMatch.name}</Text>
+              <Text style={styles.hotMatchMeta}>
+                {recommended?.food ?? splitMatch.preferredFood} ·{' '}
+                {formatSplitDistance(splitMatch.distanceMeters)} away
+              </Text>
+              <View style={styles.hotMatchRow}>
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.actionPrimary]}
+                  onPress={() => void handleJoinSplitMatch()}
+                  activeOpacity={0.9}
+                >
+                  <Text style={styles.actionPrimaryText}>Join now 🤝</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.actionSecondary]}
+                  onPress={handleIgnoreSplitMatch}
+                  activeOpacity={0.9}
+                >
+                  <Text style={styles.actionSecondaryText}>Ignore</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        ) : null}
+
+        {step === 'recommended' && !splitMatch && showNoMatchInvite ? (
+          <View style={styles.noMatchWrap}>
+            <Text style={styles.noMatchText}>Invite a friend via WhatsApp</Text>
+            <TouchableOpacity
+              style={styles.splitWa}
+              onPress={openSplitBannerWhatsApp}
+              activeOpacity={0.9}
+            >
+              <FontAwesome name="whatsapp" size={18} color="#fff" />
+              <Text style={styles.splitWaText}>Share via WhatsApp</Text>
+            </TouchableOpacity>
           </View>
         ) : null}
 
@@ -936,4 +1039,51 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   recommendedActions: { gap: 10, marginTop: 4 },
+  hotMatchWrap: { marginTop: 14 },
+  hotMatchCard: {
+    borderRadius: 16,
+    padding: 14,
+    backgroundColor: 'rgba(249, 115, 22, 0.12)',
+    borderWidth: 2,
+    borderColor: 'rgba(251, 146, 60, 0.85)',
+    gap: 8,
+    shadowColor: '#F97316',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  hotMatchTitle: {
+    color: '#FDBA74',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  hotMatchName: {
+    color: '#F8FAFC',
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  hotMatchMeta: {
+    color: 'rgba(248,250,252,0.8)',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  hotMatchRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 8,
+    flexWrap: 'wrap',
+  },
+  noMatchWrap: {
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    gap: 10,
+  },
+  noMatchText: {
+    color: 'rgba(248,250,252,0.85)',
+    fontSize: 14,
+    fontWeight: '700',
+  },
 });
