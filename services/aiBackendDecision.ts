@@ -1,5 +1,5 @@
 /**
- * Backend AI (/chat) returns OpenAI Responses JSON; we parse structured decisions from model text.
+ * Backend AI (/chat) may return OpenAI Responses JSON or `{ reply: string }` from the proxy.
  * Set EXPO_PUBLIC_AI_CHAT_URL e.g. http://192.168.1.10:3000/chat
  */
 
@@ -26,6 +26,9 @@ function stripJsonFence(text: string): string {
 function extractModelText(data: unknown): string | null {
   if (!data || typeof data !== 'object') return null;
   const d = data as Record<string, unknown>;
+
+  /** Server proxy may return `{ reply: string }` instead of raw OpenAI JSON */
+  if (typeof d.reply === 'string' && d.reply.trim()) return d.reply;
 
   const out = d.output;
   if (Array.isArray(out) && out[0] && typeof out[0] === 'object') {

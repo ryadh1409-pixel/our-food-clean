@@ -51,7 +51,14 @@ app.post('/chat', async (req, res) => {
       return res.status(response.status).json(data);
     }
 
-    return res.json(data);
+    const text =
+      data?.output?.[0]?.content?.[0]?.text || 'No response';
+
+    console.log('Clean AI:', text);
+
+    return res.json({
+      reply: text,
+    });
   } catch (err) {
     console.error(err);
     return res.status(500).json({
