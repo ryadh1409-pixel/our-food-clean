@@ -101,8 +101,12 @@ export async function sendMessageToAI(
 
     if (!res.ok) {
       const errBody =
-        data && typeof data === 'object' && 'error' in data
-          ? String((data as { error?: unknown }).error)
+        data && typeof data === 'object'
+          ? typeof (data as { reply?: unknown }).reply === 'string'
+            ? String((data as { reply: string }).reply)
+            : 'error' in data
+              ? String((data as { error?: unknown }).error)
+              : res.statusText
           : res.statusText;
       return {
         ok: false,

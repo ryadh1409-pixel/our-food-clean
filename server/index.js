@@ -13,19 +13,33 @@ app.get('/', (req, res) => {
   res.send('Server works');
 });
 
-// CHAT — OpenAI Responses API
+function replyFromOpenAiError(data) {
+  if (!data || typeof data !== 'object') return 'OpenAI request failed';
+  if (typeof data.error === 'string') return data.error;
+  if (
+    data.error &&
+    typeof data.error === 'object' &&
+    typeof data.error.message === 'string'
+  ) {
+    return data.error.message;
+  }
+  return 'OpenAI request failed';
+}
+
+// CHAT — OpenAI Responses API (response body is always `{ reply: string }`)
 app.post('/chat', async (req, res) => {
   try {
     const { message } = req.body;
 
     if (!message) {
-      return res.status(400).json({ error: 'No message' });
+      return res.status(400).json({ reply: 'No message' });
     }
 
     if (!process.env.OPENAI_API_KEY) {
       console.error('OPENAI_API_KEY is not set');
       return res.status(500).json({
-        error: 'OPENAI_API_KEY is not set. Add it to .env (see .env.example).',
+        reply:
+          'OPENAI_API_KEY is not set. Add it to .env (see .env.example).',
       });
     }
 
@@ -45,10 +59,14 @@ app.post('/chat', async (req, res) => {
 
     const data = await response.json();
 
-    console.log('AI:', data);
-
     if (!response.ok) {
-      return res.status(response.status).json(data);
+      const text = replyFromOpenAiError(data);
+      console.log('Clean AI:', text);
+      const status =
+        response.status >= 400 && response.status < 600
+          ? response.status
+          : 502;
+      return res.status(status).json({ reply: text });
     }
 
     const text =
@@ -61,9 +79,9 @@ app.post('/chat', async (req, res) => {
     });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({
-      error: err instanceof Error ? err.message : String(err),
-    });
+    const text = err instanceof Error ? err.message : String(err);
+    console.log('Clean AI:', text);
+    return res.status(500).json({ reply: text });
   }
 });
 
