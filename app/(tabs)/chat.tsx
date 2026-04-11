@@ -1,3 +1,4 @@
+import { ChatFlow } from '@/components/ChatFlow';
 import { systemActionSheet } from '@/components/SystemDialogHost';
 import { LEGAL_URLS } from '@/constants/legalLinks';
 import { useAIChat } from '@/hooks/useAIChat';
@@ -581,6 +582,34 @@ export default function ChatScreen() {
           contentContainerStyle={styles.messagesContent}
           ListHeaderComponent={
             <View style={styles.growthHeader}>
+              {authUser?.uid ? (
+                <ChatFlow
+                  userLocation={
+                    profile?.location &&
+                    typeof profile.location.lat === 'number' &&
+                    typeof profile.location.lng === 'number'
+                      ? {
+                          lat: profile.location.lat,
+                          lng: profile.location.lng,
+                          label: profile.name,
+                        }
+                      : null
+                  }
+                  onOrderNow={(ctx) => {
+                    const title = ctx.restaurant
+                      ? `${ctx.pizzaType} · ${ctx.restaurant.name}`
+                      : 'Pizza order';
+                    router.push({
+                      pathname: '/(tabs)/create',
+                      params: {
+                        prefillTitle: title,
+                        prefillPriceSplit: '$14',
+                        prefillMealCategory: ctx.locationLabel,
+                      },
+                    } as never);
+                  }}
+                />
+              ) : null}
               {!profile?.location ? (
                 <Text style={styles.growthHint}>
                   Enable location on your profile for AI + nearby order matches (2km).
