@@ -1,5 +1,5 @@
 /**
- * Guided pizza ordering assistant — always advances with clear next actions.
+ * AI-guided ordering: backend decisions + Google Places (or mock) + forward-only UI.
  */
 import { PizzaItem } from '@/components/PizzaItem';
 import {
@@ -8,11 +8,15 @@ import {
 } from '@/components/RestaurantCard';
 import { theme } from '@/constants/theme';
 import {
-  getNearbyRestaurants,
-  POPULAR_PIZZAS,
-  type LatLng,
-  type NearbyRestaurant,
-} from '@/services/api';
+  getAiChatUrl,
+  sendMessageToAI as fetchAiDecision,
+  type AiDecision,
+} from '@/services/aiBackendDecision';
+import {
+  getNearbyRestaurantsWithCoords,
+  type PlaceRestaurant,
+} from '@/services/googlePlaces';
+import { POPULAR_PIZZAS, type LatLng } from '@/services/api';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import * as Linking from 'expo-linking';
@@ -40,10 +44,9 @@ const c = theme.colors;
 const INACTIVITY_MS = 5000;
 
 const PIZZA_TYPES = [
-  { id: 'pepperoni', label: 'Pepperoni 🍕' },
-  { id: 'margherita', label: 'Margherita 🍕' },
-  { id: 'veggie', label: 'Veggie 🥗' },
-  { id: 'custom', label: 'Custom ✏️' },
+  { id: 'pepperoni', label: 'Pepperoni' },
+  { id: 'margherita', label: 'Margherita' },
+  { id: 'veggie', label: 'Veggie' },
 ] as const;
 
 const FALLBACK_LOC: LatLng = { lat: 43.6532, lng: -79.3832 };
@@ -58,15 +61,17 @@ export type GuidedOrderContext = {
   location: LatLng;
   locationLabel: string;
   pizzaType: string;
-  restaurant: NearbyRestaurant | null;
+  restaurant: PlaceRestaurant | null;
 };
 
-type Phase =
+/** Primary guided steps (spec) + post-pick flow */
+export type FlowStep =
   | 'need_location'
-  | 'pick_type'
+  | 'chat'
+  | 'pizzaType'
   | 'loading_rests'
-  | 'pick_restaurant'
-  | 'show_menu'
+  | 'restaurants'
+  | 'menu'
   | 'pick_action'
   | 'share_whatsapp'
   | 'order_cta';
@@ -81,21 +86,27 @@ export type ChatFlowProps = {
 };
 
 export function ChatFlow({ userLocation, onOrderNow }: ChatFlowProps) {
-  const [phase, setPhase] = useState<Phase>('need_location');
+  const [step, setStep] = useState<FlowStep>('need_location');
   const [savedLoc, setSavedLoc] = useState<LatLng | null>(null);
   const [locationLabel, setLocationLabel] = useState('');
+  const [selectedLocation, setSelectedLocation] = useState('');
   const [manualArea, setManualArea] = useState('');
   const [thread, setThread] = useState<ThreadLine[]>([]);
   const [pizzaType, setPizzaType] = useState<string | null>(null);
-  const [restaurants, setRestaurants] = useState<NearbyRestaurant[]>([]);
+  const [restaurants, setRestaurants] = useState<PlaceRestaurant[]>([]);
   const [pickedRestaurant, setPickedRestaurant] =
-    useState<NearbyRestaurant | null>(null);
-  const [nudgeVisible, setNudgeVisible] = useState(false);
+    useState<PlaceRestaurant | null>(null);
+  const [showSplit, setShowSplit] = useState(false);
   const [loadingRests, setLoadingRests] = useState(false);
+  const [nudgeVisible, setNudgeVisible] = useState(false);
+  const [aiInput, setAiInput] = useState('');
+  const [aiSending, setAiSending] = useState(false);
 
   const lastInteractRef = useRef(Date.now());
   const nudgeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const didStartFromProfileLoc = useRef(false);
+
+  const aiChatUrl = getAiChatUrl();
 
   const bumpInteraction = useCallback(() => {
     lastInteractRef.current = Date.now();
@@ -116,15 +127,78 @@ export function ChatFlow({ userLocation, onOrderNow }: ChatFlowProps) {
     ]);
   }, []);
 
+  const addMessage = useCallback(
+    (text: string) => {
+      bumpInteraction();
+      pushAssistant(text);
+    },
+    [bumpInteraction, pushAssistant],
+  );
+
+  const handleDecision = useCallback(
+    (decision: AiDecision) => {
+      if (decision.reason === 'price_high') {
+        addMessage('This is a bit expensive 👀 want to split it?');
+        setShowSplit(true);
+      }
+      if (decision.intent === 'order_food') {
+        setStep('pizzaType');
+        pushAssistant('Pick a pizza style below.');
+      }
+      if (decision.intent === 'ask_location') {
+        addMessage('Where are you? 📍');
+        setStep('need_location');
+      }
+      if (decision.suggest_split) {
+        setShowSplit(true);
+      }
+      if (decision.intent === 'fallback' && decision.message) {
+        addMessage(decision.message);
+      }
+    },
+    [addMessage, pushAssistant],
+  );
+
+  const sendMessageToAI = useCallback(
+    async (message: string) => {
+      const url = getAiChatUrl();
+      if (!url?.trim()) return;
+      const trimmed = message.trim();
+      if (!trimmed) return;
+
+      bumpInteraction();
+      pushUser(trimmed);
+      setAiInput('');
+      setAiSending(true);
+      try {
+        const result = await fetchAiDecision(trimmed, url);
+        if (!result.ok) {
+          pushAssistant(`Assistant error: ${result.error}`);
+          return;
+        }
+        handleDecision(result.decision);
+      } finally {
+        setAiSending(false);
+      }
+    },
+    [bumpInteraction, handleDecision, pushAssistant, pushUser],
+  );
+
   const startAfterLocation = useCallback(
-    (loc: LatLng, label: string) => {
+    (loc: LatLng, label: string, areaText: string) => {
       bumpInteraction();
       setSavedLoc(loc);
       setLocationLabel(label);
+      setSelectedLocation(areaText.trim() || label);
       pushAssistant(`Got it 📍 ${label}. Let’s get you some pizza 🍕`);
-      setPhase('pick_type');
+      if (aiChatUrl) {
+        setStep('chat');
+        pushAssistant('Tell me what you want — I’ll guide you to real spots nearby.');
+      } else {
+        setStep('pizzaType');
+      }
     },
-    [bumpInteraction, pushAssistant],
+    [aiChatUrl, bumpInteraction, pushAssistant],
   );
 
   useLayoutEffect(() => {
@@ -132,71 +206,88 @@ export function ChatFlow({ userLocation, onOrderNow }: ChatFlowProps) {
     if (didStartFromProfileLoc.current) return;
     didStartFromProfileLoc.current = true;
     const label = userLocation.label?.trim() || 'Near you';
+    const area = userLocation.label?.trim() || 'Near you';
     startAfterLocation(
       { lat: userLocation.lat, lng: userLocation.lng },
       label,
+      area,
     );
   }, [userLocation, startAfterLocation]);
 
   useEffect(() => {
     nudgeTimerRef.current = setInterval(() => {
-      if (phase === 'need_location' || phase === 'order_cta') return;
+      if (step === 'need_location' || step === 'order_cta') return;
       const idle = Date.now() - lastInteractRef.current;
-      if (idle >= INACTIVITY_MS) {
-        setNudgeVisible(true);
-      }
+      if (idle >= INACTIVITY_MS) setNudgeVisible(true);
     }, 800);
     return () => {
       if (nudgeTimerRef.current) clearInterval(nudgeTimerRef.current);
     };
-  }, [phase]);
+  }, [step]);
 
   const handleManualLocation = () => {
     const label = manualArea.trim() || 'Your area';
     didStartFromProfileLoc.current = true;
-    bumpInteraction();
-    startAfterLocation(FALLBACK_LOC, label);
+    setSelectedLocation(manualArea.trim() || label);
+    startAfterLocation(FALLBACK_LOC, label, manualArea.trim() || label);
   };
 
   const handlePickPizzaType = async (id: string, label: string) => {
-    if (!savedLoc) return;
+    const locText =
+      selectedLocation.trim() ||
+      locationLabel.trim() ||
+      manualArea.trim() ||
+      'Toronto';
     bumpInteraction();
     setPizzaType(id);
     pushUser(label);
-    setPhase('loading_rests');
+    setStep('loading_rests');
     setLoadingRests(true);
-    pushAssistant('Searching the best pizza spots near you…');
+    setShowSplit(false);
+    pushAssistant('Finding real spots near you with photos…');
     try {
-      const rows = await getNearbyRestaurants(savedLoc, 'pizza');
+      const { restaurants: rows, coords } = await getNearbyRestaurantsWithCoords(
+        locText,
+        'pizza',
+      );
       setRestaurants(rows);
-      pushAssistant('Here’s what’s close — pick a place:');
-      setPhase('pick_restaurant');
+      if (coords) setSavedLoc(coords);
+      if (rows.length === 0) {
+        pushAssistant('No places found — try a different area in your profile or above.');
+        setStep('pizzaType');
+      } else {
+        pushAssistant('Here’s what’s close — tap a restaurant.');
+        setStep('restaurants');
+      }
     } catch {
-      pushAssistant('Couldn’t load restaurants — try again in a second.');
-      setPhase('pick_type');
+      pushAssistant('Couldn’t load restaurants — try again.');
+      setStep('pizzaType');
     } finally {
       setLoadingRests(false);
     }
   };
 
-  const handleSelectRestaurant = useCallback((r: NearbyRestaurant) => {
-    bumpInteraction();
-    setPickedRestaurant(r);
-    pushUser(r.name);
-    pushAssistant('Nice choice 😎 Here’s what people love:');
-    setPhase('show_menu');
-    setTimeout(() => {
-      pushAssistant('What do you want to do?');
-      setPhase('pick_action');
-    }, 400);
-  }, [bumpInteraction, pushAssistant, pushUser]);
+  const handleSelectRestaurant = useCallback(
+    (r: PlaceRestaurant) => {
+      bumpInteraction();
+      setPickedRestaurant(r);
+      pushUser(r.name);
+      pushAssistant('Nice choice 😎 Here’s what people love:');
+      setStep('menu');
+      setTimeout(() => {
+        pushAssistant('What do you want to do?');
+        setStep('pick_action');
+      }, 400);
+    },
+    [bumpInteraction, pushAssistant, pushUser],
+  );
 
   const handleOrderNow = () => {
     if (!savedLoc || !pizzaType || !pickedRestaurant) return;
     bumpInteraction();
     pushUser('Order now 🛒');
     pushAssistant('Opening checkout — you’re almost there.');
-    setPhase('order_cta');
+    setStep('order_cta');
     onOrderNow({
       location: savedLoc,
       locationLabel,
@@ -211,29 +302,34 @@ export function ChatFlow({ userLocation, onOrderNow }: ChatFlowProps) {
     pushAssistant(
       'Invite a friend via WhatsApp to complete your order faster ⚡',
     );
-    setPhase('share_whatsapp');
+    setStep('share_whatsapp');
   };
 
   const openWhatsAppInvite = () => {
     bumpInteraction();
     const text = 'Join my order on HalfOrder';
-    const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
-    void Linking.openURL(url);
-    pushAssistant('Shared — when you’re ready, finish with Order now 🛒');
+    void Linking.openURL(
+      `https://wa.me/?text=${encodeURIComponent(text)}`,
+    );
+    pushAssistant('Shared — finish with Order now 🛒 when you’re ready.');
   };
 
-  const dismissNudge = () => {
+  const openSplitBannerWhatsApp = () => {
     bumpInteraction();
-    setNudgeVisible(false);
+    void Linking.openURL('https://wa.me/?text=Join%20my%20order%20on%20HalfOrder');
   };
 
   const suggestPopularPizza = () => {
-    dismissNudge();
-    pushAssistant('Here’s a crowd favorite: Classic Pepperoni — want to lock it in?');
+    bumpInteraction();
+    setNudgeVisible(false);
+    pushAssistant(
+      'Try a classic: Pepperoni — tap it above to see real restaurants.',
+    );
+    if (step === 'chat' || step === 'need_location') setStep('pizzaType');
   };
 
   const renderRestaurant = useCallback(
-    ({ item }: ListRenderItemInfo<NearbyRestaurant>) => (
+    ({ item }: ListRenderItemInfo<PlaceRestaurant>) => (
       <RestaurantCard item={item} onSelect={handleSelectRestaurant} />
     ),
     [handleSelectRestaurant],
@@ -278,10 +374,10 @@ export function ChatFlow({ userLocation, onOrderNow }: ChatFlowProps) {
           </View>
         ))}
 
-        {phase === 'need_location' && !userLocation ? (
+        {step === 'need_location' && !userLocation ? (
           <View style={styles.panel}>
             <Text style={styles.panelText}>
-              Add your area to start — or enable location on your profile.
+              Add your area so we can search nearby — or enable profile location.
             </Text>
             <TextInput
               value={manualArea}
@@ -301,7 +397,28 @@ export function ChatFlow({ userLocation, onOrderNow }: ChatFlowProps) {
           </View>
         ) : null}
 
-        {phase === 'pick_type' && (
+        {aiChatUrl && (step === 'chat' || step === 'pizzaType') ? (
+          <View style={styles.aiBar}>
+            <TextInput
+              value={aiInput}
+              onChangeText={setAiInput}
+              placeholder="Ask the assistant…"
+              placeholderTextColor="rgba(248,250,252,0.4)"
+              style={styles.aiInput}
+              onSubmitEditing={() => void sendMessageToAI(aiInput)}
+              editable={!aiSending}
+            />
+            <TouchableOpacity
+              style={[styles.aiSend, aiSending && styles.aiSendDisabled]}
+              onPress={() => void sendMessageToAI(aiInput)}
+              disabled={aiSending || !aiInput.trim()}
+            >
+              <Text style={styles.aiSendText}>Send</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
+        {step === 'pizzaType' && step !== 'need_location' ? (
           <View style={styles.chipWrap}>
             {PIZZA_TYPES.map((t) => (
               <TouchableOpacity
@@ -309,21 +426,22 @@ export function ChatFlow({ userLocation, onOrderNow }: ChatFlowProps) {
                 style={styles.typeChip}
                 onPress={() => void handlePickPizzaType(t.id, t.label)}
                 activeOpacity={0.85}
+                disabled={loadingRests}
               >
                 <Text style={styles.typeChipText}>{t.label}</Text>
               </TouchableOpacity>
             ))}
           </View>
-        )}
+        ) : null}
 
-        {(phase === 'loading_rests' || loadingRests) && (
+        {(step === 'loading_rests' || loadingRests) && (
           <View style={styles.loaderRow}>
             <ActivityIndicator color="#6EE7B7" />
-            <Text style={styles.loaderText}>Finding restaurants…</Text>
+            <Text style={styles.loaderText}>Loading restaurants…</Text>
           </View>
         )}
 
-        {phase === 'pick_restaurant' && restaurants.length > 0 ? (
+        {step === 'restaurants' && restaurants.length > 0 ? (
           <View style={styles.listSection}>
             <FlatList
               horizontal
@@ -337,10 +455,10 @@ export function ChatFlow({ userLocation, onOrderNow }: ChatFlowProps) {
           </View>
         ) : null}
 
-        {phase === 'show_menu' ||
-        phase === 'pick_action' ||
-        phase === 'share_whatsapp' ||
-        phase === 'order_cta' ? (
+        {step === 'menu' ||
+        step === 'pick_action' ||
+        step === 'share_whatsapp' ||
+        step === 'order_cta' ? (
           <View style={styles.menuBlock}>
             {POPULAR_PIZZAS.map((p) => (
               <PizzaItem key={p.id} item={p} />
@@ -348,7 +466,23 @@ export function ChatFlow({ userLocation, onOrderNow }: ChatFlowProps) {
           </View>
         ) : null}
 
-        {phase === 'pick_action' ? (
+        {showSplit ? (
+          <View style={styles.splitBanner}>
+            <Text style={styles.splitBannerText}>
+              Split this order with a friend ⚡
+            </Text>
+            <TouchableOpacity
+              style={styles.splitWa}
+              onPress={openSplitBannerWhatsApp}
+              activeOpacity={0.9}
+            >
+              <FontAwesome name="whatsapp" size={18} color="#fff" />
+              <Text style={styles.splitWaText}>Share via WhatsApp</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
+        {step === 'pick_action' ? (
           <View style={styles.actionRow}>
             <TouchableOpacity
               style={[styles.actionBtn, styles.actionPrimary]}
@@ -367,7 +501,7 @@ export function ChatFlow({ userLocation, onOrderNow }: ChatFlowProps) {
           </View>
         ) : null}
 
-        {phase === 'share_whatsapp' ? (
+        {step === 'share_whatsapp' ? (
           <View style={styles.shareActions}>
             <TouchableOpacity
               style={styles.waBtn}
@@ -387,7 +521,10 @@ export function ChatFlow({ userLocation, onOrderNow }: ChatFlowProps) {
           </View>
         ) : null}
 
-        {nudgeVisible && phase !== 'need_location' && phase !== 'order_cta' ? (
+        {nudgeVisible &&
+        step !== 'need_location' &&
+        step !== 'order_cta' &&
+        !loadingRests ? (
           <TouchableOpacity
             style={styles.nudge}
             onPress={suggestPopularPizza}
@@ -428,32 +565,18 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.2,
   },
-  thread: {
-    maxHeight: 520,
-  },
-  threadContent: {
-    padding: 12,
-    paddingBottom: 20,
-  },
-  bubbleRow: {
-    marginBottom: 10,
-    width: '100%',
-  },
-  bubbleRowBot: {
-    alignItems: 'flex-start',
-  },
-  bubbleRowUser: {
-    alignItems: 'flex-end',
-  },
+  thread: { maxHeight: 520 },
+  threadContent: { padding: 12, paddingBottom: 20 },
+  bubbleRow: { marginBottom: 10, width: '100%' },
+  bubbleRowBot: { alignItems: 'flex-start' },
+  bubbleRowUser: { alignItems: 'flex-end' },
   bubble: {
     maxWidth: '92%',
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 16,
   },
-  bubbleBot: {
-    backgroundColor: 'rgba(255,255,255,0.07)',
-  },
+  bubbleBot: { backgroundColor: 'rgba(255,255,255,0.07)' },
   bubbleUser: {
     backgroundColor: 'rgba(110, 231, 183, 0.2)',
     borderWidth: 1,
@@ -470,10 +593,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
   },
-  panel: {
-    marginTop: 8,
-    gap: 10,
-  },
+  panel: { marginTop: 8, gap: 10 },
   panelText: {
     color: 'rgba(248,250,252,0.75)',
     fontSize: 14,
@@ -499,6 +619,31 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
   },
+  aiBar: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  aiInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: c.white,
+    fontSize: 15,
+  },
+  aiSend: {
+    backgroundColor: '#0EA5E9',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  aiSendDisabled: { opacity: 0.5 },
+  aiSendText: { color: '#fff', fontWeight: '800', fontSize: 14 },
   chipWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -529,29 +674,16 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-  listSection: {
-    marginTop: 8,
-    marginHorizontal: -4,
-  },
-  hList: {
-    paddingVertical: 4,
-    paddingRight: 12,
-  },
-  menuBlock: {
-    marginTop: 8,
-  },
-  actionRow: {
-    gap: 10,
-    marginTop: 12,
-  },
+  listSection: { marginTop: 8, marginHorizontal: -4 },
+  hList: { paddingVertical: 4, paddingRight: 12 },
+  menuBlock: { marginTop: 8 },
+  actionRow: { gap: 10, marginTop: 12 },
   actionBtn: {
     paddingVertical: 14,
     borderRadius: 14,
     alignItems: 'center',
   },
-  actionPrimary: {
-    backgroundColor: '#F97316',
-  },
+  actionPrimary: { backgroundColor: '#F97316' },
   actionPrimaryText: {
     color: '#fff',
     fontSize: 16,
@@ -567,10 +699,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   },
-  shareActions: {
-    marginTop: 12,
-    gap: 10,
-  },
+  shareActions: { marginTop: 12, gap: 10 },
   waBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -585,6 +714,30 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
   },
+  splitBanner: {
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: 'rgba(30, 27, 75, 0.55)',
+    borderWidth: 1,
+    borderColor: 'rgba(167, 139, 250, 0.35)',
+    gap: 10,
+  },
+  splitBannerText: {
+    color: '#E9D5FF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  splitWa: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#25D366',
+  },
+  splitWaText: { color: '#fff', fontSize: 15, fontWeight: '800' },
   nudge: {
     marginTop: 14,
     padding: 12,

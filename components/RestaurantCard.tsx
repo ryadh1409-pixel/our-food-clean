@@ -1,22 +1,27 @@
 import { theme } from '@/constants/theme';
+import type { PlaceRestaurant } from '@/services/googlePlaces';
 import { Image } from 'expo-image';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-import type { NearbyRestaurant } from '@/services/api';
-
 const c = theme.colors;
 const CARD_W = 220;
-const IMG_H = 112;
+const IMG_H = 120;
 
 export type RestaurantCardProps = {
-  item: NearbyRestaurant;
-  onSelect: (item: NearbyRestaurant) => void;
+  item: PlaceRestaurant;
+  onSelect: (item: PlaceRestaurant) => void;
 };
 
 export function RestaurantCard({ item, onSelect }: RestaurantCardProps) {
   return (
-    <View style={styles.card}>
+    <TouchableOpacity
+      style={styles.card}
+      activeOpacity={0.88}
+      onPress={() => onSelect(item)}
+      accessibilityRole="button"
+      accessibilityLabel={`${item.name}, rating ${item.rating.toFixed(1)}`}
+    >
       <Image
         source={{ uri: item.image }}
         style={styles.image}
@@ -28,23 +33,15 @@ export function RestaurantCard({ item, onSelect }: RestaurantCardProps) {
           {item.name}
         </Text>
         <Text style={styles.meta}>
-          ⭐ {item.rating.toFixed(1)} · {item.distance}
+          ⭐ {item.rating.toFixed(1)}
+          {item.distance ? ` · ${item.distance}` : ''}
         </Text>
-        <TouchableOpacity
-          style={styles.selectBtn}
-          onPress={() => onSelect(item)}
-          activeOpacity={0.85}
-          accessibilityRole="button"
-          accessibilityLabel={`Select ${item.name}`}
-        >
-          <Text style={styles.selectText}>Select</Text>
-        </TouchableOpacity>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 
-export function restaurantCardKeyExtractor(item: NearbyRestaurant) {
+export function restaurantCardKeyExtractor(item: PlaceRestaurant) {
   return item.id;
 }
 
@@ -65,7 +62,7 @@ const styles = StyleSheet.create({
   },
   body: {
     padding: 12,
-    gap: 6,
+    gap: 4,
   },
   name: {
     color: c.white,
@@ -77,19 +74,5 @@ const styles = StyleSheet.create({
     color: 'rgba(248,250,252,0.65)',
     fontSize: 13,
     fontWeight: '600',
-  },
-  selectBtn: {
-    marginTop: 4,
-    paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: 'rgba(110, 231, 183, 0.18)',
-    borderWidth: 1,
-    borderColor: 'rgba(110, 231, 183, 0.45)',
-    alignItems: 'center',
-  },
-  selectText: {
-    color: '#6EE7B7',
-    fontSize: 14,
-    fontWeight: '800',
   },
 });
