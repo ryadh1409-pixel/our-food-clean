@@ -4,6 +4,11 @@ import { LEGAL_URLS } from '@/constants/legalLinks';
 import { useAIChat } from '@/hooks/useAIChat';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { buildProductAssistantIntro } from '@/services/ai';
+import {
+  getAiChatUrl,
+  sendMessageToAI,
+  type AiDecision,
+} from '@/services/aiBackendDecision';
 import { useAuth } from '@/services/AuthContext';
 import {
   buildSmartMatchIntroText,
@@ -24,6 +29,7 @@ import {
 } from '@/services/suggestedOrder';
 import { moderateChatMessage } from '@/utils/contentModeration';
 import { showError, showNotice } from '@/utils/toast';
+import FontAwesome from '@expo/vector-icons/FontAwesome';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
@@ -91,6 +97,13 @@ const IDEA_CHIPS = [
   { label: 'Lunch deal 🍱', message: 'Lunch deal 🍱' },
 ] as const;
 
+/** Shown when backend decision intent is `order_food` (EXPO_PUBLIC_AI_CHAT_URL) */
+const AI_PIZZA_TYPE_CHIPS = [
+  'Pepperoni 🍕',
+  'Margherita 🍕',
+  'Veggie 🥗',
+] as const;
+
 function buildIntroSuggestionMessage(
   ctx: TimeContext,
   rows: AssistantOrderSummary[],
@@ -133,6 +146,9 @@ export default function ChatScreen() {
     aiText: string;
     nearbyOrders: SmartMatchOrder[];
   } | null>(null);
+  /** AI-driven guided UI (backend decisions), not only chat text */
+  const [step, setStep] = useState<'chat' | 'pizzaType'>('chat');
+  const [showSplit, setShowSplit] = useState(false);
   const flatListRef = useRef<FlatList<Message> | null>(null);
   const inputRef = useRef<TextInput | null>(null);
   const assistantInFlightRef = useRef(false);
@@ -296,6 +312,45 @@ export default function ChatScreen() {
     router.push({ pathname: '/(tabs)/create' } as never);
   };
 
+  const addMessage = useCallback((text: string) => {
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `${Date.now()}-ai-${Math.random().toString(36).slice(2)}`,
+        text,
+        sender: 'bot',
+        createdAt: Date.now(),
+        action: 'none',
+      },
+    ]);
+  }, []);
+
+  const handleAIDecision = useCallback(
+    (decision: AiDecision) => {
+      if (decision.reason === 'price_high') {
+        addMessage('This is a bit expensive 👀 want to split it?');
+        setShowSplit(true);
+      }
+
+      if (decision.intent === 'order_food') {
+        setStep('pizzaType');
+      }
+
+      if (decision.intent === 'ask_location') {
+        addMessage('Where are you located? 📍');
+      }
+
+      if (decision.suggest_split) {
+        setShowSplit(true);
+      }
+
+      if (decision.intent === 'fallback' && decision.message) {
+        addMessage(decision.message);
+      }
+    },
+    [addMessage],
+  );
+
   const openSafetyAndReportingMenu = useCallback(() => {
     void systemActionSheet({
       title: 'Safety & reporting',
@@ -360,6 +415,9 @@ export default function ChatScreen() {
       };
       setMessages((prev) => [...prev, userMessage]);
 
+      setStep('chat');
+      setShowSplit(false);
+
       const uid = authUser?.uid;
       if (!uid) {
         setMessages((prev) => [
@@ -388,6 +446,27 @@ export default function ChatScreen() {
       assistantInFlightRef.current = true;
       setLoading(true);
       try {
+        const aiChatUrl = getAiChatUrl();
+        if (aiChatUrl) {
+          const aiResult = await sendMessageToAI(outgoingText, aiChatUrl);
+          if (!aiResult.ok) {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `${Date.now()}-ai-err`,
+                text: `Assistant unavailable: ${aiResult.error}`,
+                sender: 'bot',
+                createdAt: Date.now(),
+                action: 'none',
+              },
+            ]);
+            setError('AI backend request failed.');
+            return;
+          }
+          handleAIDecision(aiResult.decision);
+          return;
+        }
+
         const ctx = detectTimeContext();
         const fetched = await fetchActiveJoinableOrdersForContext(
           ctx,
@@ -462,6 +541,7 @@ export default function ChatScreen() {
       profile?.location,
       router,
       runUserTurn,
+      handleAIDecision,
     ],
   );
 
@@ -482,6 +562,13 @@ export default function ChatScreen() {
       'Please type your message for now. Voice input is not available in this version.',
     );
   };
+
+  const openSplitWhatsApp = useCallback(() => {
+    const text = 'Join my order on HalfOrder';
+    void Linking.openURL(
+      `https://wa.me/?text=${encodeURIComponent(text)}`,
+    );
+  }, []);
 
   const renderItem = ({ item }: { item: Message }) => {
     const isUser = item.sender === 'user';
@@ -732,6 +819,41 @@ export default function ChatScreen() {
           </Text>
         ) : null}
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+        {step === 'pizzaType' && authUser?.uid ? (
+          <View style={styles.guidedPanel}>
+            <Text style={styles.guidedPanelTitle}>Pick a style</Text>
+            <View style={styles.guidedChipRow}>
+              {AI_PIZZA_TYPE_CHIPS.map((label) => (
+                <TouchableOpacity
+                  key={label}
+                  style={styles.guidedChip}
+                  activeOpacity={0.85}
+                  disabled={loading}
+                  onPress={() => void submitAssistantText(label, { clearInput: true })}
+                >
+                  <Text style={styles.guidedChipText}>{label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        ) : null}
+
+        {showSplit && authUser?.uid ? (
+          <View style={styles.splitPanel}>
+            <Text style={styles.splitPanelText}>
+              Split this order with a friend ⚡
+            </Text>
+            <TouchableOpacity
+              style={styles.splitWaBtn}
+              onPress={openSplitWhatsApp}
+              activeOpacity={0.9}
+            >
+              <FontAwesome name="whatsapp" size={20} color="#fff" />
+              <Text style={styles.splitWaBtnText}>Share via WhatsApp</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
 
         <View style={styles.inputContainer}>
           <TouchableOpacity onPress={handleMicPress} style={styles.micButton}>
@@ -1020,4 +1142,68 @@ const styles = StyleSheet.create({
   },
   chipTitle: { color: '#F8FAFC', fontWeight: '700', fontSize: 14 },
   chipMeta: { color: '#9CA3AF', fontSize: 12, marginTop: 4 },
+  guidedPanel: {
+    marginHorizontal: 12,
+    marginBottom: 10,
+    padding: 14,
+    borderRadius: 14,
+    backgroundColor: 'rgba(15, 23, 42, 0.9)',
+    borderWidth: 1,
+    borderColor: 'rgba(110, 231, 183, 0.28)',
+  },
+  guidedPanelTitle: {
+    color: '#6EE7B7',
+    fontSize: 13,
+    fontWeight: '800',
+    marginBottom: 10,
+    letterSpacing: 0.3,
+  },
+  guidedChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  guidedChip: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
+  guidedChipText: {
+    color: '#F8FAFC',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  splitPanel: {
+    marginHorizontal: 12,
+    marginBottom: 10,
+    padding: 14,
+    borderRadius: 14,
+    backgroundColor: 'rgba(30, 27, 75, 0.55)',
+    borderWidth: 1,
+    borderColor: 'rgba(167, 139, 250, 0.35)',
+    gap: 12,
+  },
+  splitPanelText: {
+    color: '#E9D5FF',
+    fontSize: 15,
+    fontWeight: '700',
+    lineHeight: 21,
+  },
+  splitWaBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: '#25D366',
+  },
+  splitWaBtnText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '800',
+  },
 });
