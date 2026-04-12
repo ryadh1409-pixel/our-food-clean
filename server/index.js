@@ -75,9 +75,9 @@ function replyFromOpenAiError(data) {
 
 app.post('/chat', async (req, res) => {
   try {
-    const { message: userMessage } = req.body;
+    const { message } = req.body;
 
-    if (!userMessage) {
+    if (!message) {
       return res.status(400).json({ reply: 'No message', places: [] });
     }
 
@@ -90,7 +90,7 @@ app.post('/chat', async (req, res) => {
       });
     }
 
-    console.log('User:', userMessage);
+    console.log('User:', message);
 
     const prompt = `
 You are a food assistant.
@@ -109,7 +109,7 @@ Example:
   "searchQuery": "pizza near me"
 }
 
-User message: ${userMessage}
+User message: ${message}
 `;
 
     const response = await fetch('https://api.openai.com/v1/responses', {
@@ -145,32 +145,26 @@ User message: ${userMessage}
     try {
       parsed = JSON.parse(aiText);
     } catch {
-      parsed = {
-        food: aiText,
-        category: 'unknown',
-        searchQuery: userMessage,
-      };
+      parsed = { searchQuery: message };
     }
 
-    const base =
-      parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-        ? parsed
-        : {
-            food: String(aiText),
-            category: 'unknown',
-            searchQuery: userMessage,
-          };
+    const query =
+      parsed && parsed.searchQuery ? parsed.searchQuery : message;
 
-    const sq =
-      typeof base.searchQuery === 'string'
-        ? base.searchQuery.trim()
-        : '';
-    const query = sq || userMessage;
-    const placesRaw = await searchPlaces(query);
+    let placesRaw = [];
+    try {
+      placesRaw = await searchPlaces(query);
+    } catch (e) {
+      console.error(
+        'Places error:',
+        e instanceof Error ? e.message : String(e),
+      );
+      placesRaw = [];
+    }
 
     return res.json({
       reply: aiText,
-      places: placesRaw.slice(0, 5),
+      places: (placesRaw || []).slice(0, 5),
     });
   } catch (err) {
     console.error(err);
