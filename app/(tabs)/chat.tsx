@@ -26,6 +26,7 @@ import {
   runFoodPlaceAssist,
 } from '@/services/chatFoodAssist';
 import { detectLocalAssistantIntent } from '@/services/chatLocalIntent';
+import { createAiPlaceFoodCardAndOrder } from '@/services/aiChatFoodOrder';
 import { saveAssistantChatFeedback } from '@/services/chatService';
 import {
   getSmartMatches,
@@ -69,6 +70,8 @@ export type MessageOrderRef = {
   mealCategory?: string;
 };
 
+export type MessageAiPlacePick = { placeName: string; address: string };
+
 export type Message = {
   id: string;
   text: string;
@@ -78,6 +81,8 @@ export type Message = {
   orders?: MessageOrderRef[];
   /** From `/chat` backend: Google Places (New) results */
   places?: unknown[];
+  /** Structured picks for “Start Order” (Swipe + Firestore). */
+  aiPlacePicks?: MessageAiPlacePick[];
 };
 
 function extractReplyFromChatData(data: unknown): string {
@@ -203,17 +208,25 @@ function placeDisplayName(p: PlacesSearchTextPlace): string {
  * Google Places API (New) — Text Search (`places:searchText`).
  * https://developers.google.com/maps/documentation/places/web-service/text-search
  */
+type PlacesTextSearchResult =
+  | { ok: true; text: string; picks: MessageAiPlacePick[] }
+  | { ok: false; message: string };
+
 async function placesTextSearchChatMessage(input: {
   keyword: string;
   location: string;
   bias?: { lat: number; lng: number } | null;
-}): Promise<string> {
+}): Promise<PlacesTextSearchResult> {
   const API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
   const keyTrim =
     typeof API_KEY === 'string' ? API_KEY.trim() : '';
   if (!keyTrim) {
     console.error('Missing Google Maps API key');
-    return 'Could not search places (missing EXPO_PUBLIC_GOOGLE_MAPS_API_KEY).';
+    return {
+      ok: false,
+      message:
+        'Could not search places (missing EXPO_PUBLIC_GOOGLE_MAPS_API_KEY).',
+    };
   }
 
   const textQuery =
@@ -262,26 +275,35 @@ async function placesTextSearchChatMessage(input: {
     });
   } catch (e) {
     if (__DEV__) console.warn('[Places API New] network error', e);
-    return 'Could not reach Google Places. Check your connection.';
+    return {
+      ok: false,
+      message: 'Could not reach Google Places. Check your connection.',
+    };
   }
 
   let data: PlacesSearchTextResponse;
   try {
     data = (await res.json()) as PlacesSearchTextResponse;
   } catch {
-    return 'Invalid response from Google Places.';
+    return { ok: false, message: 'Invalid response from Google Places.' };
   }
 
   console.log('[Places API New] full API response', data);
 
   if (!res.ok) {
     const msg = data.error?.message ?? res.statusText;
-    return `Places search failed (${res.status}): ${msg}`;
+    return {
+      ok: false,
+      message: `Places search failed (${res.status}): ${msg}`,
+    };
   }
 
   const places = Array.isArray(data.places) ? data.places : [];
   if (places.length === 0) {
-    return `No results found for ${input.keyword.trim()}. Try another area or cuisine.`;
+    return {
+      ok: false,
+      message: `No results found for ${input.keyword.trim()}. Try another area or cuisine.`,
+    };
   }
 
   const top = places.slice(0, 3);
@@ -297,7 +319,11 @@ async function placesTextSearchChatMessage(input: {
     const addr = (p.formattedAddress ?? '').trim() || 'Address unavailable';
     return `${i + 1}. ${name} ⭐${stars} - ${addr}`;
   });
-  return head + lines.join('\n');
+  const picks: MessageAiPlacePick[] = top.map((p) => ({
+    placeName: placeDisplayName(p),
+    address: (p.formattedAddress ?? '').trim() || 'Address unavailable',
+  }));
+  return { ok: true, text: head + lines.join('\n'), picks };
 }
 
 function detectNorthYorkChatFood(
@@ -340,6 +366,7 @@ export default function ChatScreen() {
   const assistantInFlightRef = useRef(false);
   const lastAssistantSendAtRef = useRef(0);
   const foodLocationPendingRef = useRef<{ foodKeyword: string } | null>(null);
+  const [startingPlaceKey, setStartingPlaceKey] = useState<string | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -762,16 +789,30 @@ export default function ChatScreen() {
               bias,
             });
             foodLocationPendingRef.current = null;
-            setMessages((prev) => [
-              ...prev,
-              {
-                id: `${Date.now()}-places-ts`,
-                text: results,
-                sender: 'bot',
-                createdAt: Date.now(),
-                action: 'none',
-              },
-            ]);
+            if (!results.ok) {
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: `${Date.now()}-places-ts`,
+                  text: results.message,
+                  sender: 'bot',
+                  createdAt: Date.now(),
+                  action: 'none',
+                },
+              ]);
+            } else {
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: `${Date.now()}-places-ts`,
+                  text: results.text,
+                  sender: 'bot',
+                  createdAt: Date.now(),
+                  action: 'none',
+                  aiPlacePicks: results.picks,
+                },
+              ]);
+            }
             return;
           }
 
@@ -817,7 +858,14 @@ export default function ChatScreen() {
                 sender: 'bot',
                 createdAt: Date.now(),
                 action: 'none',
-                places: assist.picks.length > 0 ? assist.picks : undefined,
+                aiPlacePicks:
+                  assist.picks.length > 0
+                    ? assist.picks.map((p) => ({
+                        placeName: p.name.trim() || 'Restaurant',
+                        address:
+                          p.address.trim() || 'Address unavailable',
+                      }))
+                    : undefined,
               },
             ]);
             return;
@@ -964,6 +1012,62 @@ export default function ChatScreen() {
     );
   }, []);
 
+  const handleStartOrderFromPick = useCallback(
+    async (
+      messageId: string,
+      pickIndex: number,
+      pick: MessageAiPlacePick,
+    ) => {
+      const uid = authUser?.uid;
+      if (!uid) {
+        showError('Sign in to start a shared order.');
+        return;
+      }
+      const rowKey = `${messageId}:${pickIndex}`;
+      setStartingPlaceKey(rowKey);
+      try {
+        const displayName =
+          profile?.name?.trim() ||
+          authUser?.displayName?.trim() ||
+          'Host';
+        const photoUrl =
+          profile?.avatar ??
+          (typeof authUser?.photoURL === 'string'
+            ? authUser.photoURL
+            : null);
+        const loc = profile?.location;
+        const lat =
+          loc && typeof loc.lat === 'number' ? loc.lat : undefined;
+        const lng =
+          loc && typeof loc.lng === 'number' ? loc.lng : undefined;
+        await createAiPlaceFoodCardAndOrder({
+          uid,
+          placeName: pick.placeName,
+          address: pick.address,
+          displayName,
+          photoUrl,
+          lat,
+          lng,
+        });
+        showNotice(
+          'Order started',
+          'Your pick is live on Swipe. Invite a friend from the card.',
+        );
+        router.push('/(tabs)/' as never);
+      } catch (e) {
+        if (__DEV__) console.warn('[chat] start order from pick', e);
+        const msg =
+          e instanceof Error && e.message.trim()
+            ? e.message.trim()
+            : 'Try again.';
+        showError(`Could not start order: ${msg}`);
+      } finally {
+        setStartingPlaceKey(null);
+      }
+    },
+    [authUser, profile, router],
+  );
+
   const renderItem = ({ item }: { item: Message }) => {
     const isUser = item.sender === 'user';
     const joinable =
@@ -1015,9 +1119,39 @@ export default function ChatScreen() {
           <Text style={styles.text}>{item.text}</Text>
         )}
         {!isUser &&
-        item.places &&
-        Array.isArray(item.places) &&
-        item.places.length > 0 ? (
+        item.aiPlacePicks &&
+        item.aiPlacePicks.length > 0 ? (
+          <View style={styles.aiPickBlock}>
+            {item.aiPlacePicks.map((pick, idx) => {
+              const rowKey = `${item.id}:${idx}`;
+              const busy = startingPlaceKey === rowKey;
+              return (
+                <View key={rowKey} style={styles.aiPickRow}>
+                  <Text style={styles.aiPickName}>{pick.placeName}</Text>
+                  <Text style={styles.aiPickAddr}>{pick.address}</Text>
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    style={[
+                      styles.startOrderBtn,
+                      busy && styles.startOrderBtnDisabled,
+                    ]}
+                    disabled={busy}
+                    onPress={() =>
+                      void handleStartOrderFromPick(item.id, idx, pick)
+                    }
+                  >
+                    <Text style={styles.startOrderBtnText}>
+                      {busy ? 'Starting…' : 'Start Order'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
+          </View>
+        ) : !isUser &&
+          item.places &&
+          Array.isArray(item.places) &&
+          item.places.length > 0 ? (
           <View style={styles.placesBlock}>
             {item.places.slice(0, 5).map((p, idx) => (
               <Text key={`${item.id}-p-${idx}`} style={styles.placeLine}>
@@ -1470,6 +1604,46 @@ const styles = StyleSheet.create({
     color: 'rgba(248,250,252,0.88)',
     fontSize: 13,
     fontWeight: '600',
+  },
+  aiPickBlock: {
+    marginTop: 10,
+    alignSelf: 'stretch',
+    gap: 10,
+  },
+  aiPickRow: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0,0,0,0.22)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
+  aiPickName: {
+    color: '#F8FAFC',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  aiPickAddr: {
+    color: 'rgba(248,250,252,0.72)',
+    fontSize: 13,
+    marginTop: 4,
+    lineHeight: 18,
+  },
+  startOrderBtn: {
+    marginTop: 10,
+    alignSelf: 'flex-start',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    backgroundColor: 'rgba(52, 211, 153, 0.22)',
+    borderWidth: 1,
+    borderColor: 'rgba(52, 211, 153, 0.5)',
+  },
+  startOrderBtnDisabled: { opacity: 0.55 },
+  startOrderBtnText: {
+    color: '#6EE7B7',
+    fontSize: 14,
+    fontWeight: '800',
   },
   typingRow: {
     flexDirection: 'row',

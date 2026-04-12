@@ -44,6 +44,7 @@ import {
   doc,
   documentId,
   getDoc,
+  limit,
   onSnapshot,
   query,
   runTransaction,
@@ -90,6 +91,9 @@ export type FoodCard = {
 };
 
 const FOOD_CARDS = 'food_cards';
+
+/** Matches `FOOD_CARD_DECK_SOURCE_AI_CHAT` in `aiChatFoodOrder.ts` (no cross-import). */
+const FOOD_CARD_DECK_SOURCE_AI_CHAT = 'ai_chat';
 
 /** Listing lifetime from creation (45 minutes). */
 export const FOOD_CARD_TTL_MS = 45 * 60 * 1000;
@@ -304,6 +308,40 @@ export function countFoodCardsWithStatus(
 /**
  * Real-time listener: admin catalog slots `1`–`10` only. Active slots use `active: true`.
  */
+/**
+ * User-created listings from the AI assistant (`deckSource === "ai_chat"`).
+ * Shown alongside admin catalog slots on the Swipe tab.
+ */
+export function subscribeAiChatFoodCards(
+  onData: (cards: FoodCard[]) => void,
+  onError?: (err: Error) => void,
+): () => void {
+  return onSnapshot(
+    query(
+      collection(db, FOOD_CARDS),
+      where('deckSource', '==', FOOD_CARD_DECK_SOURCE_AI_CHAT),
+      limit(40),
+    ),
+    (snap) => {
+      const now = Date.now();
+      const cards = snap.docs
+        .map((d) => mapSlotOrLegacyFoodCard(d))
+        .filter((c): c is FoodCard => c != null)
+        .filter(
+          (c) =>
+            c.status === 'active' &&
+            (c.expiresAt > 1e15 || c.expiresAt > now),
+        );
+      onData(cards);
+    },
+    (e) => {
+      console.warn('[food_cards] AI deck listener error', e);
+      onData([]);
+      onError?.(e instanceof Error ? e : new Error('Failed to load AI food cards'));
+    },
+  );
+}
+
 export function subscribeActiveFoodCards(
   onData: (cards: FoodCard[]) => void,
   onError?: (err: Error) => void,

@@ -15,6 +15,7 @@ import {
   joinOrder,
   skipFoodCard,
   subscribeActiveFoodCards,
+  subscribeAiChatFoodCards,
   type FoodCard,
 } from '@/services/foodCards';
 import { subscribeJoinHintsForFoodCard } from '@/services/foodCardSlotOrders';
@@ -23,6 +24,7 @@ import type { FoodTemplate } from '@/types/food';
 import { AIDescription } from '@/components/AIDescription';
 import { showError, showNotice } from '@/utils/toast';
 import { BlurView } from 'expo-blur';
+import * as Linking from 'expo-linking';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -53,7 +55,8 @@ export default function SwipeScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { user, firestoreUserRole } = useAuth();
-  const [cards, setCards] = useState<FoodCard[]>([]);
+  const [catalogCards, setCatalogCards] = useState<FoodCard[]>([]);
+  const [aiDeckCards, setAiDeckCards] = useState<FoodCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [cardsError, setCardsError] = useState(false);
   const [cardsRetryKey, setCardsRetryKey] = useState(0);
@@ -68,22 +71,40 @@ export default function SwipeScreen() {
   useEffect(() => {
     setLoading(true);
     setCardsError(false);
-    const unsub = subscribeActiveFoodCards(
+    const unsubCatalog = subscribeActiveFoodCards(
       (rows) => {
         console.log(
-          `[swipe] deck count=${rows.length} (food_cards · status==active · onSnapshot)`,
-        );
-        rows.forEach((c) =>
-          console.log(`[swipe] card ${c.id} status=${c.status}`),
+          `[swipe] catalog deck count=${rows.length} (food_cards · admin slots)`,
         );
         setCardsError(false);
-        setCards(rows);
+        setCatalogCards(rows);
         setLoading(false);
       },
       () => setCardsError(true),
     );
-    return () => unsub();
+    const unsubAi = subscribeAiChatFoodCards(
+      (rows) => {
+        console.log(`[swipe] AI deck count=${rows.length}`);
+        setAiDeckCards(rows);
+      },
+      () => setAiDeckCards([]),
+    );
+    return () => {
+      unsubCatalog();
+      unsubAi();
+    };
   }, [cardsRetryKey]);
+
+  const cards = useMemo(() => {
+    const seen = new Set<string>();
+    const out: FoodCard[] = [];
+    for (const c of [...aiDeckCards, ...catalogCards]) {
+      if (seen.has(c.id)) continue;
+      seen.add(c.id);
+      out.push(c);
+    }
+    return out;
+  }, [aiDeckCards, catalogCards]);
 
   useEffect(() => {
     const unsub = subscribeActiveFoodTemplates(
@@ -118,10 +139,36 @@ export default function SwipeScreen() {
   }, [cards, adminPreview, uid, hiddenUserIds]);
   const topCard = deckCards[0] ?? null;
   const secondCard = deckCards[1] ?? null;
+
   const [topJoinHint, setTopJoinHint] = useState<{
     primaryOpenUsers: string[];
     anyOpenOrderMemberIds: string[];
   } | null>(null);
+
+  const isOwnAiListing =
+    !!uid &&
+    !!topCard &&
+    !isAdminFoodCardSlotId(topCard.id) &&
+    typeof topCard.ownerId === 'string' &&
+    topCard.ownerId === uid;
+
+  const participantCount =
+    topJoinHint?.anyOpenOrderMemberIds?.length ??
+    (topCard?.user1 ? 1 : 0);
+
+  const openWhatsAppInvite = () => {
+    if (!topCard) return;
+    const loc =
+      topCard.venueLocation?.trim() ||
+      (topCard.location ? 'See app for location' : 'Location in app');
+    const inviteText = `Join my order on HalfOrder 🍕
+${topCard.title}
+Location: ${loc}
+Join here: https://halforder.app/order/${topCard.orderId ?? topCard.id}`;
+    void Linking.openURL(
+      `https://wa.me/?text=${encodeURIComponent(inviteText)}`,
+    );
+  };
 
   useEffect(() => {
     if (!topCard?.id) {
@@ -151,7 +198,8 @@ export default function SwipeScreen() {
   }, [uid, topJoinHint]);
 
   const removeCardById = (cardId: string) => {
-    setCards((prev) => prev.filter((c) => c.id !== cardId));
+    setCatalogCards((prev) => prev.filter((c: FoodCard) => c.id !== cardId));
+    setAiDeckCards((prev) => prev.filter((c: FoodCard) => c.id !== cardId));
   };
 
   const onLike = async (cardId?: string) => {
@@ -386,7 +434,14 @@ export default function SwipeScreen() {
               <Image source={{ uri: secondCard.image }} style={styles.image} />
             </View>
           ) : null}
-          <Animated.View style={[styles.card, topStyle]} {...panResponder.panHandlers}>
+          <Animated.View
+            style={[
+              styles.card,
+              isOwnAiListing && styles.cardOwnAi,
+              topStyle,
+            ]}
+            {...panResponder.panHandlers}
+          >
             <Image source={{ uri: topCard.image }} style={styles.image} />
             <Animated.View style={[styles.swipeBadgeLeft, { opacity: nopeOpacity }]}>
               <Text style={styles.swipeBadgeTextLeft}>NOPE ❌</Text>
@@ -402,7 +457,16 @@ export default function SwipeScreen() {
               </Animated.View>
             ) : null}
             <View style={styles.info}>
+              {isOwnAiListing ? (
+                <View style={styles.createdByYouBadge}>
+                  <Text style={styles.createdByYouText}>Created by you</Text>
+                </View>
+              ) : null}
               <Text style={styles.cardTitle}>{topCard.title}</Text>
+              <Text style={styles.participantCount}>
+                {participantCount} participant
+                {participantCount === 1 ? '' : 's'}
+              </Text>
               <AIDescription
                 description={topCard.aiDescription}
                 title={topCard.title}
@@ -437,6 +501,18 @@ export default function SwipeScreen() {
               >
                 <Text style={styles.detailsBtnText}>View details →</Text>
               </TouchableOpacity>
+              {isOwnAiListing ? (
+                <Text style={styles.yourOrderLabel}>Your order</Text>
+              ) : null}
+              {isOwnAiListing ? (
+                <TouchableOpacity
+                  activeOpacity={0.88}
+                  onPress={openWhatsAppInvite}
+                  style={styles.inviteWaBtn}
+                >
+                  <Text style={styles.inviteWaBtnText}>Invite via WhatsApp</Text>
+                </TouchableOpacity>
+              ) : null}
               <TouchableOpacity
                 activeOpacity={0.85}
                 disabled={joinPrimaryDisabled}
@@ -787,5 +863,55 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0,0,0,0.45)',
     textShadowOffset: { width: 0, height: 3 },
     textShadowRadius: 8,
+  },
+  cardOwnAi: {
+    borderColor: 'rgba(52, 211, 153, 0.45)',
+    borderWidth: 1.5,
+    shadowColor: '#34D399',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  createdByYouBadge: {
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: 'rgba(52, 211, 153, 0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(52, 211, 153, 0.4)',
+  },
+  createdByYouText: {
+    color: '#6EE7B7',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  participantCount: {
+    marginTop: 6,
+    color: 'rgba(248, 250, 252, 0.65)',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  yourOrderLabel: {
+    marginTop: 10,
+    color: '#A7F3D0',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  inviteWaBtn: {
+    marginTop: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(37, 211, 102, 0.55)',
+    backgroundColor: 'rgba(37, 211, 102, 0.12)',
+  },
+  inviteWaBtnText: {
+    color: '#86EFAC',
+    fontWeight: '800',
+    fontSize: 14,
   },
 });
