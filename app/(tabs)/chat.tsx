@@ -182,25 +182,30 @@ function buildIntroSuggestionMessage(
   };
 }
 
-/** Fixed search anchor for “pizza in North York” flow (Places Nearby Search). */
+/** North York + food flow (Places Text Search). */
 async function getNearbyRestaurants(food: string): Promise<string> {
   const API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ?? '';
-  const keyword = encodeURIComponent(food.trim());
+  const query = encodeURIComponent(`${food.trim()} in North York`);
   const res = await fetch(
-    `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=43.7615,-79.4111&radius=1500&type=restaurant&keyword=${keyword}&key=${encodeURIComponent(API_KEY)}`,
+    `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${query}&key=${encodeURIComponent(API_KEY)}`,
   );
   const data = (await res.json()) as {
-    results?: { name: string; rating?: number; vicinity?: string }[];
+    results?: {
+      name: string;
+      rating?: number;
+      vicinity?: string;
+      formatted_address?: string;
+    }[];
   };
   if (!data.results || data.results.length === 0) {
     return 'No real results from Google.';
   }
   return data.results
     .slice(0, 3)
-    .map(
-      (r) =>
-        `${r.name} ⭐ ${r.rating != null ? String(r.rating) : 'N/A'} 📍 ${r.vicinity ?? ''}`,
-    )
+    .map((r) => {
+      const addr = (r.vicinity || r.formatted_address || '').trim();
+      return `${r.name} ⭐ ${r.rating != null ? String(r.rating) : 'N/A'} 📍 ${addr}`;
+    })
     .join('\n\n');
 }
 

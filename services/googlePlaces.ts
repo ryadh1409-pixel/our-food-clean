@@ -1,5 +1,5 @@
 /**
- * Google Maps Geocoding + Places Nearby Search + Place Photos.
+ * Google Maps Geocoding + Places Text Search + Place Photos.
  * Prefer `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY`; falls back to `EXPO_PUBLIC_GOOGLE_API_KEY`.
  * Requires enabled APIs + billing on the key.
  */
@@ -36,7 +36,7 @@ export type PlaceRestaurant = {
   distance?: string;
 };
 
-type NearbySearchResult = {
+type PlacesTextSearchResult = {
   results: {
     place_id: string;
     name: string;
@@ -71,7 +71,7 @@ export const PLACE_IMAGE_FALLBACK =
 
 /**
  * Maps Place Photo API URL, or the canonical fallback image (spec).
- * `photos[0].photo_reference` from Nearby Search results.
+ * `photos[0].photo_reference` from Places search results.
  */
 export function getPlacePhoto(
   photos: { photo_reference: string }[] | undefined | null,
@@ -131,9 +131,10 @@ async function nearbyFromCoords(
   const key = PLACES_WEB_KEY;
   if (!key) return [];
 
-  const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=2000&keyword=${encodeURIComponent(keyword)}&key=${encodeURIComponent(key)}`;
+  const query = `${keyword.trim()} restaurant near ${lat},${lng}`;
+  const url = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&key=${encodeURIComponent(key)}`;
   const res = await fetch(url);
-  const data = (await res.json()) as NearbySearchResult;
+  const data = (await res.json()) as PlacesTextSearchResult;
 
   if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
     return [];
@@ -148,7 +149,7 @@ async function nearbyFromCoords(
 }
 
 /**
- * Geocode + nearby search; returns restaurants and coordinates for checkout.
+ * Geocode + text search; returns restaurants and coordinates for checkout.
  * Without API key or empty text → mock data + default coords (Toronto centroid).
  */
 export async function getNearbyRestaurantsWithCoords(
@@ -219,10 +220,10 @@ export function matchPlaceRestaurantByName(
 }
 
 /**
- * Google Places Nearby Search (legacy JSON) for chat — real restaurants only.
- * Uses `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY` when set.
+ * Google Places Text Search (legacy JSON) for chat.
+ * Uses `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY` when set. Query carries place context (no location/radius params).
  */
-async function nearbySearchForChat(
+async function textSearchForChat(
   lat: number,
   lng: number,
   keyword: string,
@@ -231,20 +232,18 @@ async function nearbySearchForChat(
   const key = nearbySearchApiKey();
   if (!key || !Number.isFinite(lat) || !Number.isFinite(lng)) return [];
 
+  const queryText = `${keyword.trim()} restaurant near ${lat},${lng}`;
   const url =
-    `https://maps.googleapis.com/maps/api/place/nearbysearch/json` +
-    `?location=${encodeURIComponent(`${lat},${lng}`)}` +
-    `&radius=1500` +
-    `&type=restaurant` +
-    `&keyword=${encodeURIComponent(keyword.trim())}` +
+    `https://maps.googleapis.com/maps/api/place/textsearch/json` +
+    `?query=${encodeURIComponent(queryText)}` +
     `&key=${encodeURIComponent(key)}`;
 
   try {
     const res = await fetch(url);
-    const data = (await res.json()) as NearbySearchResult;
+    const data = (await res.json()) as PlacesTextSearchResult;
     if (__DEV__ && data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
       console.warn(
-        '[Places nearbysearch]',
+        '[Places textsearch]',
         data.status,
         data.error_message ?? '',
       );
@@ -267,14 +266,52 @@ async function nearbySearchForChat(
         'Address unavailable',
     }));
   } catch (e) {
-    if (__DEV__) console.warn('[Places nearbysearch] fetch failed', e);
+    if (__DEV__) console.warn('[Places textsearch] fetch failed', e);
+    return [];
+  }
+}
+
+async function textSearchFoodInLocation(
+  food: string,
+  location: string,
+  limit: number,
+): Promise<ChatRestaurantPick[]> {
+  const key = nearbySearchApiKey();
+  const f = food.trim();
+  const loc = location.trim();
+  if (!key || !f || !loc) return [];
+
+  const queryText = `${f} in ${loc}`;
+  const url =
+    `https://maps.googleapis.com/maps/api/place/textsearch/json` +
+    `?query=${encodeURIComponent(queryText)}` +
+    `&key=${encodeURIComponent(key)}`;
+
+  try {
+    const res = await fetch(url);
+    const data = (await res.json()) as PlacesTextSearchResult;
+    if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
+      return [];
+    }
+    const rows = data.results ?? [];
+    const sorted = [...rows].sort(
+      (a, b) => (b.rating ?? 0) - (a.rating ?? 0),
+    );
+    return sorted.slice(0, limit).map((p) => ({
+      name: p.name,
+      rating: typeof p.rating === 'number' ? p.rating : 0,
+      priceLevel: typeof p.price_level === 'number' ? p.price_level : null,
+      address:
+        (p.vicinity || p.formatted_address || '').trim() ||
+        'Address unavailable',
+    }));
+  } catch {
     return [];
   }
 }
 
 /**
- * Food + area → top 3 restaurants (name, rating, address/vicinity).
- * Coordinates: North York uses a fixed point; other areas use Geocoding.
+ * Food + area → top 3 restaurants (name, rating, address) via Text Search `query=food in location`.
  */
 export async function getNearbyRestaurants(
   food: string,
@@ -283,15 +320,11 @@ export async function getNearbyRestaurants(
   const f = food.trim();
   const loc = location.trim();
   if (!f || !loc) return [];
-
-  const coords = await resolveLocationCoordsForFoodChat(loc);
-  if (!coords) return [];
-
-  return nearbySearchForChat(coords.lat, coords.lng, f, 3);
+  return textSearchFoodInLocation(f, loc, 3);
 }
 
 /**
- * Same Nearby Search given coordinates (e.g. profile “near you”).
+ * Text Search biased by coordinates in the query string (e.g. profile “near you”).
  */
 export async function fetchTopCheapestNearbyForChat(
   lat: number,
@@ -299,5 +332,5 @@ export async function fetchTopCheapestNearbyForChat(
   keyword: string,
   limit = 3,
 ): Promise<ChatRestaurantPick[]> {
-  return nearbySearchForChat(lat, lng, keyword, limit);
+  return textSearchForChat(lat, lng, keyword, limit);
 }
