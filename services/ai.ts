@@ -366,7 +366,7 @@ export async function handleUserChatTurn(input: {
   if (intent === 'unknown') {
     if (input.awaitingPartnerAlone) {
       push({
-        text: `${name}, want to invite a friend and get a reward? 🎁 Use Invite on your order, or tell me what’s confusing.`,
+        text: `${name}, you’re waiting on your other half. Ping them on WhatsApp from the order screen, or say what you’d like to do next.`,
         action: 'none',
       });
       return { state: session, messages };

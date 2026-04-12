@@ -3,6 +3,7 @@ import { systemActionSheet } from '@/components/SystemDialogHost';
 import { LEGAL_URLS } from '@/constants/legalLinks';
 import { useAIChat } from '@/hooks/useAIChat';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { openWhatsAppWithText } from '@/lib/orderWhatsAppInvite';
 import { buildProductAssistantIntro } from '@/services/ai';
 import {
   getAiChatUrl,
@@ -17,7 +18,13 @@ import {
   type AssistantOrderSummary,
   type TimeContext,
 } from '@/services/chatAssistantOrders';
-import { runFoodPlaceAssist } from '@/services/chatFoodAssist';
+import {
+  buildFoodAssistUserMessage,
+  detectFoodKeyword,
+  foodNeedLocationPrompt,
+  runFoodPlaceAssist,
+} from '@/services/chatFoodAssist';
+import { detectLocalAssistantIntent } from '@/services/chatLocalIntent';
 import { saveAssistantChatFeedback } from '@/services/chatService';
 import {
   getSmartMatches,
@@ -193,10 +200,12 @@ export default function ChatScreen() {
   /** AI-driven guided UI (backend decisions), not only chat text */
   const [step, setStep] = useState<'chat' | 'pizzaType'>('chat');
   const [showSplit, setShowSplit] = useState(false);
+  const [showPartnerInvite, setShowPartnerInvite] = useState(false);
   const flatListRef = useRef<FlatList<Message> | null>(null);
   const inputRef = useRef<TextInput | null>(null);
   const assistantInFlightRef = useRef(false);
   const lastAssistantSendAtRef = useRef(0);
+  const foodLocationPendingRef = useRef<{ foodKeyword: string } | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -406,7 +415,9 @@ export default function ChatScreen() {
       }
 
       if (decision.intent === 'ask_location') {
-        addMessage('Where are you located? 📍');
+        addMessage(
+          'Which neighbourhood or city should I use? You can type it (“pizza in Liberty Village”) or set your map pin in Profile.',
+        );
       }
 
       if (decision.suggest_split && decision.intent !== 'recommend_order') {
@@ -486,6 +497,7 @@ export default function ChatScreen() {
 
       setStep('chat');
       setShowSplit(false);
+      setShowPartnerInvite(false);
 
       const uid = authUser?.uid;
       if (!uid) {
@@ -493,7 +505,7 @@ export default function ChatScreen() {
           ...prev,
           {
             id: `${Date.now()}-b`,
-            text: 'Sign in to create orders from chat.',
+            text: 'Sign in to use the assistant and create or join orders.',
             sender: 'bot',
             createdAt: Date.now(),
             action: 'none',
@@ -514,7 +526,9 @@ export default function ChatScreen() {
 
       assistantInFlightRef.current = true;
       setLoading(true);
+      let awaitingPartnerAlone = false;
       try {
+        awaitingPartnerAlone = await userHasSoloWaitingHalfOrder(uid);
         const aiChatUrl = getAiChatUrl();
         if (aiChatUrl) {
           const aiResult = await sendMessageToAI(outgoingText, aiChatUrl);
@@ -523,7 +537,7 @@ export default function ChatScreen() {
               ...prev,
               {
                 id: `${Date.now()}-ai-err`,
-                text: `Assistant unavailable: ${aiResult.error}`,
+                text: `Assistant is temporarily unavailable (${aiResult.error}). Try again in a moment.`,
                 sender: 'bot',
                 createdAt: Date.now(),
                 action: 'none',
@@ -556,36 +570,78 @@ export default function ChatScreen() {
           return;
         }
 
-        const assist = await runFoodPlaceAssist(
-          outgoingText,
-          profile?.location ?? null,
-        );
-        if (assist.kind === 'need_location') {
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: `${Date.now()}-food-loc`,
-              text: `You're looking for ${assist.foodKeyword} — which area should I search? Try: "${assist.foodKeyword} in North York" — or set your location in Profile for results near you.`,
-              sender: 'bot',
-              createdAt: Date.now(),
-              action: 'none',
-            },
-          ]);
-          return;
+        const intent = detectLocalAssistantIntent(outgoingText);
+        if (
+          /^(thanks|thank you|thx)\b/i.test(outgoingText.trim()) &&
+          foodLocationPendingRef.current
+        ) {
+          foodLocationPendingRef.current = null;
         }
-        if (assist.kind === 'found') {
+
+        if (intent.primary !== 'join') {
+          const kwNow = detectFoodKeyword(outgoingText);
+          if (
+            kwNow &&
+            foodLocationPendingRef.current &&
+            foodLocationPendingRef.current.foodKeyword !== kwNow
+          ) {
+            foodLocationPendingRef.current = null;
+          }
+          const foodMsg = buildFoodAssistUserMessage(
+            outgoingText,
+            foodLocationPendingRef.current,
+          );
+          const assist = await runFoodPlaceAssist(
+            foodMsg,
+            profile?.location ?? null,
+          );
+          if (assist.kind === 'need_location') {
+            foodLocationPendingRef.current = {
+              foodKeyword: assist.foodKeyword,
+            };
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `${Date.now()}-food-loc`,
+                text: foodNeedLocationPrompt(assist.foodKeyword),
+                sender: 'bot',
+                createdAt: Date.now(),
+                action: 'none',
+              },
+            ]);
+            return;
+          }
+          foodLocationPendingRef.current = null;
+          if (assist.kind === 'found') {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `${Date.now()}-food-res`,
+                text: assist.intro,
+                sender: 'bot',
+                createdAt: Date.now(),
+                action: 'none',
+                places: assist.picks.length > 0 ? assist.picks : undefined,
+              },
+            ]);
+            return;
+          }
+        } else {
+          foodLocationPendingRef.current = null;
+        }
+
+        if (intent.primary === 'location_help') {
           setMessages((prev) => [
             ...prev,
             {
-              id: `${Date.now()}-food-res`,
-              text: assist.intro,
+              id: `${Date.now()}-loc-tip`,
+              text:
+                'Set your map pin in Profile for “near you” searches and ~2 km order matching. For a one-off, say something like “sushi in Midtown”.',
               sender: 'bot',
               createdAt: Date.now(),
               action: 'none',
-              places: assist.picks.length > 0 ? assist.picks : undefined,
             },
           ]);
-          return;
         }
 
         const ctx = detectTimeContext();
@@ -595,7 +651,6 @@ export default function ChatScreen() {
           48,
           authUser?.uid,
         );
-        const awaitingPartnerAlone = await userHasSoloWaitingHalfOrder(uid);
         const dn =
           profile?.name || authUser.displayName || 'Friend';
         const loc = profile?.location;
@@ -652,7 +707,7 @@ export default function ChatScreen() {
           ...prev,
           {
             id: `${Date.now()}-err`,
-            text: 'Could not complete that. Check your connection and try again.',
+            text: 'Something went wrong. Check your connection and try again.',
             sender: 'bot',
             createdAt: Date.now(),
             action: 'none',
@@ -662,6 +717,7 @@ export default function ChatScreen() {
       } finally {
         assistantInFlightRef.current = false;
         setLoading(false);
+        setShowPartnerInvite(awaitingPartnerAlone);
       }
     },
     [
@@ -696,9 +752,18 @@ export default function ChatScreen() {
   };
 
   const openSplitWhatsApp = useCallback(() => {
-    const text = 'Join my order on HalfOrder';
     void Linking.openURL(
-      `https://wa.me/?text=${encodeURIComponent(text)}`,
+      openWhatsAppWithText(
+        'Join my HalfOrder split — grab the other half in the app: https://halforder.app',
+      ),
+    );
+  }, []);
+
+  const openPartnerInviteWhatsApp = useCallback(() => {
+    void Linking.openURL(
+      openWhatsAppWithText(
+        "I've started a split order on HalfOrder — open the app to join my half.\nhttps://halforder.app",
+      ),
     );
   }, []);
 
@@ -733,7 +798,11 @@ export default function ChatScreen() {
               </View>
             ) : null}
             <Text style={styles.actionHint}>
-              {isSuggestedCard ? 'Start from this template →' : 'Join order →'}
+              {isSuggestedCard
+                ? 'Start from this template →'
+                : (item.orders?.length ?? 0) > 1
+                  ? 'Browse Join tab or tap to explore →'
+                  : 'View order & invite your other half →'}
             </Text>
           </TouchableOpacity>
         ) : creatable ? (
@@ -788,7 +857,7 @@ export default function ChatScreen() {
             <View style={styles.screenHeaderTextCol}>
               <Text style={styles.screenTitle}>AI Assistant</Text>
               <Text style={styles.screenSubtitle}>
-                Tell me what you want to eat 🍕
+                Food near you, open orders, or split invites — just ask.
               </Text>
             </View>
             <TouchableOpacity
@@ -954,7 +1023,7 @@ export default function ChatScreen() {
         {loading ? (
           <View style={styles.typingRow}>
             <ActivityIndicator size="small" color="#6EE7B7" />
-            <Text style={styles.typingText}>Assistant is thinking…</Text>
+            <Text style={styles.typingText}>Finding the best reply…</Text>
           </View>
         ) : null}
         {introFetchFailed ? (
@@ -986,7 +1055,7 @@ export default function ChatScreen() {
         {showSplit && authUser?.uid ? (
           <View style={styles.splitPanel}>
             <Text style={styles.splitPanelText}>
-              Split this order with a friend ⚡
+              Split the bill? Send a quick WhatsApp to your other half.
             </Text>
             <TouchableOpacity
               style={styles.splitWaBtn}
@@ -999,6 +1068,22 @@ export default function ChatScreen() {
           </View>
         ) : null}
 
+        {showPartnerInvite && authUser?.uid ? (
+          <View style={styles.partnerInvitePanel}>
+            <Text style={styles.partnerInviteText}>
+              You have a half-order waiting. Nudge your partner on WhatsApp with an app link.
+            </Text>
+            <TouchableOpacity
+              style={styles.splitWaBtn}
+              onPress={openPartnerInviteWhatsApp}
+              activeOpacity={0.9}
+            >
+              <FontAwesome name="whatsapp" size={20} color="#fff" />
+              <Text style={styles.splitWaBtnText}>WhatsApp invite</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         <View style={styles.inputContainer}>
           <TouchableOpacity onPress={handleMicPress} style={styles.micButton}>
             <Text style={styles.micText}>🎤</Text>
@@ -1007,7 +1092,7 @@ export default function ChatScreen() {
             ref={inputRef}
             value={input}
             onChangeText={setInput}
-            placeholder="Ask anything…"
+            placeholder="e.g. pizza in North York, or find orders to join"
             placeholderTextColor="#8A8A8A"
             style={styles.input}
             editable={!loading}
@@ -1362,5 +1447,21 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '800',
+  },
+  partnerInvitePanel: {
+    marginHorizontal: 12,
+    marginBottom: 10,
+    padding: 14,
+    borderRadius: 14,
+    backgroundColor: 'rgba(6, 78, 59, 0.45)',
+    borderWidth: 1,
+    borderColor: 'rgba(52, 211, 153, 0.45)',
+    gap: 12,
+  },
+  partnerInviteText: {
+    color: 'rgba(209, 250, 229, 0.98)',
+    fontSize: 15,
+    fontWeight: '700',
+    lineHeight: 21,
   },
 });

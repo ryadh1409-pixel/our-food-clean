@@ -63,15 +63,39 @@ function priceLevelLabel(level: number | null): string {
   return '$'.repeat(Math.min(level, 4));
 }
 
+/** Merge “North York” reply after we asked for an area. */
+export function buildFoodAssistUserMessage(
+  raw: string,
+  pending: { foodKeyword: string } | null,
+): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return raw;
+  if (detectFoodKeyword(trimmed)) return raw;
+  if (!pending) return raw;
+  if (trimmed.length < 2) return raw;
+  if (
+    /^(thanks|thank you|thx|ok|okay|yes|no|nope|nah|cancel|skip|later|bye)\b/i.test(
+      trimmed,
+    )
+  ) {
+    return raw;
+  }
+  return `${pending.foodKeyword} in ${trimmed}`;
+}
+
+export function foodNeedLocationPrompt(foodKeyword: string): string {
+  return `I can search restaurants for ${foodKeyword} — I just need an area.\n\nTry: “${foodKeyword} in North York”\n\nOr set your location in Profile and I’ll use “near you” automatically.`;
+}
+
 export function formatFoodAssistMessage(
   foodKeyword: string,
   locationLabel: string,
   picks: ChatRestaurantPick[],
 ): string {
   if (picks.length === 0) {
-    return `No ${foodKeyword} spots found near ${locationLabel}. Try another area or cuisine.`;
+    return `No ${foodKeyword} matches near ${locationLabel}. Try a nearby neighbourhood or a different cuisine.`;
   }
-  const head = `Top ${picks.length} ${foodKeyword} near ${locationLabel} (budget-friendly first):\n`;
+  const head = `Here are ${picks.length} budget-friendly ${foodKeyword} picks near ${locationLabel}:\n`;
   const lines = picks.map((p, i) => {
     const price = priceLevelLabel(p.priceLevel);
     return `${i + 1}. ${p.name}\n   ★${p.rating.toFixed(1)} · ${price}\n   ${p.address}`;
