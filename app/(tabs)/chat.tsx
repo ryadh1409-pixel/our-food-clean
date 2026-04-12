@@ -21,6 +21,7 @@ import {
 import {
   buildFoodAssistUserMessage,
   detectFoodKeyword,
+  extractLocationFromMessage,
   foodNeedLocationPrompt,
   runFoodPlaceAssist,
 } from '@/services/chatFoodAssist';
@@ -181,8 +182,44 @@ function buildIntroSuggestionMessage(
   };
 }
 
+/** Fixed search anchor for “pizza in North York” flow (Places Nearby Search). */
+async function getNearbyRestaurants(food: string): Promise<string> {
+  const API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ?? '';
+  const keyword = encodeURIComponent(food.trim());
+  const res = await fetch(
+    `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=43.7615,-79.4111&radius=1500&type=restaurant&keyword=${keyword}&key=${encodeURIComponent(API_KEY)}`,
+  );
+  const data = (await res.json()) as {
+    results?: { name: string; rating?: number; vicinity?: string }[];
+  };
+  if (!data.results || data.results.length === 0) {
+    return 'No real results from Google.';
+  }
+  return data.results
+    .slice(0, 3)
+    .map(
+      (r) =>
+        `${r.name} ⭐ ${r.rating != null ? String(r.rating) : 'N/A'} 📍 ${r.vicinity ?? ''}`,
+    )
+    .join('\n\n');
+}
+
+function detectNorthYorkChatFood(
+  text: string,
+): 'pizza' | 'burger' | 'healthy' | 'other' | null {
+  const t = text.toLowerCase();
+  if (/\bpizza\b/.test(t)) return 'pizza';
+  if (/\bburger(s)?\b/.test(t)) return 'burger';
+  if (/\bhealthy\b|\bsalad\b|🥗/.test(text)) return 'healthy';
+  if (/\bother meal\b|\bother\b.*\bmeal\b|🍽️/.test(text)) return 'other';
+  return null;
+}
+
+function hasNorthYork(text: string): boolean {
+  return /\bnorth\s+york\b/i.test(text);
+}
+
 export default function ChatScreen() {
-  console.log("GOOGLE:", process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY);
   const router = useRouter();
   const { user: authUser } = useAuth();
   const { profile } = useCurrentUser();
@@ -580,6 +617,65 @@ export default function ChatScreen() {
         }
 
         if (intent.primary !== 'join') {
+          const simpleFood = detectNorthYorkChatFood(outgoingText);
+          const ny = hasNorthYork(outgoingText);
+          const explicitLoc = extractLocationFromMessage(outgoingText);
+          const anyAssistFood = detectFoodKeyword(outgoingText);
+          const profileHasCoords =
+            profile?.location &&
+            typeof profile.location.lat === 'number' &&
+            typeof profile.location.lng === 'number';
+
+          if (ny && !anyAssistFood && !simpleFood) {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `${Date.now()}-ask-food-ny`,
+                text: 'What should I look up? Say pizza, burger, healthy meal, or other meal — together with “North York”.',
+                sender: 'bot',
+                createdAt: Date.now(),
+                action: 'none',
+              },
+            ]);
+            return;
+          }
+
+          if (
+            simpleFood &&
+            !ny &&
+            !explicitLoc &&
+            !profileHasCoords
+          ) {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `${Date.now()}-ask-loc-simple`,
+                text: 'Which area should I search? Try something like “pizza in North York”.',
+                sender: 'bot',
+                createdAt: Date.now(),
+                action: 'none',
+              },
+            ]);
+            return;
+          }
+
+          if (simpleFood && ny) {
+            const foodKey = simpleFood === 'other' ? 'restaurant' : simpleFood;
+            const results = await getNearbyRestaurants(foodKey);
+            foodLocationPendingRef.current = null;
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `${Date.now()}-places-ny`,
+                text: `North York · ${simpleFood}\n\n${results}`,
+                sender: 'bot',
+                createdAt: Date.now(),
+                action: 'none',
+              },
+            ]);
+            return;
+          }
+
           const kwNow = detectFoodKeyword(outgoingText);
           if (
             kwNow &&
@@ -728,6 +824,7 @@ export default function ChatScreen() {
       profile?.name,
       profile?.email,
       profile?.location,
+      profile,
       router,
       runUserTurn,
       handleAIDecision,

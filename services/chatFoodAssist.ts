@@ -4,7 +4,8 @@
 import {
   type ChatRestaurantPick,
   fetchTopCheapestNearbyForChat,
-  getCoordinates,
+  getNearbyRestaurants,
+  resolveLocationCoordsForFoodChat,
 } from '@/services/googlePlaces';
 
 const FOOD_ENTRIES: { match: RegExp; keyword: string }[] = [
@@ -47,20 +48,15 @@ export function detectFoodKeyword(text: string): string | null {
   return null;
 }
 
-/** "pizza in North York" → "North York" */
+/** "pizza in North York" → "North York"; also "pizza North York" / "North York pizza". */
 export function extractLocationFromMessage(text: string): string | null {
   const m = text.match(/\b(?:in|near|around|at)\s+([^.!?\n]{2,70})/i);
   if (m?.[1]) {
     const s = m[1].trim().replace(/\s+$/i, '');
     if (s.length >= 2) return s;
   }
+  if (/\bnorth\s+york\b/i.test(text)) return 'North York';
   return null;
-}
-
-function priceLevelLabel(level: number | null): string {
-  if (level == null) return 'Price n/a';
-  if (level === 0) return 'Free';
-  return '$'.repeat(Math.min(level, 4));
 }
 
 /** Merge “North York” reply after we asked for an area. */
@@ -93,12 +89,11 @@ export function formatFoodAssistMessage(
   picks: ChatRestaurantPick[],
 ): string {
   if (picks.length === 0) {
-    return `No ${foodKeyword} matches near ${locationLabel}. Try a nearby neighbourhood or a different cuisine.`;
+    return 'No real results from Google.';
   }
-  const head = `Here are ${picks.length} budget-friendly ${foodKeyword} picks near ${locationLabel}:\n`;
+  const head = `Top ${picks.length} ${foodKeyword} near ${locationLabel}:\n`;
   const lines = picks.map((p, i) => {
-    const price = priceLevelLabel(p.priceLevel);
-    return `${i + 1}. ${p.name}\n   ★${p.rating.toFixed(1)} · ${price}\n   ${p.address}`;
+    return `${i + 1}. ${p.name}\n   ★${p.rating.toFixed(1)}\n   ${p.address}`;
   });
   return head + '\n' + lines.join('\n\n');
 }
@@ -116,33 +111,40 @@ export async function runFoodPlaceAssist(
 
   const explicit = extractLocationFromMessage(message);
 
-  let lat: number;
-  let lng: number;
-  let locationLabel: string;
-
   if (explicit) {
-    const coords = await getCoordinates(explicit);
-    if (!coords) {
-      return { kind: 'need_location', foodKeyword: food };
+    const picks = await getNearbyRestaurants(food, explicit);
+    if (picks.length === 0) {
+      const coords = await resolveLocationCoordsForFoodChat(explicit);
+      if (!coords) {
+        return { kind: 'need_location', foodKeyword: food };
+      }
     }
-    lat = coords.lat;
-    lng = coords.lng;
-    locationLabel = explicit;
-  } else if (profileCoords) {
-    lat = profileCoords.lat;
-    lng = profileCoords.lng;
-    locationLabel = 'near you';
-  } else {
+    const intro = formatFoodAssistMessage(food, explicit, picks);
+    return {
+      kind: 'found',
+      foodKeyword: food,
+      locationLabel: explicit,
+      picks,
+      intro,
+    };
+  }
+
+  if (!profileCoords) {
     return { kind: 'need_location', foodKeyword: food };
   }
 
-  const picks = await fetchTopCheapestNearbyForChat(lat, lng, food, 3);
-  const intro = formatFoodAssistMessage(food, locationLabel, picks);
+  const picks = await fetchTopCheapestNearbyForChat(
+    profileCoords.lat,
+    profileCoords.lng,
+    food,
+    3,
+  );
+  const intro = formatFoodAssistMessage(food, 'near you', picks);
 
   return {
     kind: 'found',
     foodKeyword: food,
-    locationLabel,
+    locationLabel: 'near you',
     picks,
     intro,
   };

@@ -1,6 +1,7 @@
 /**
  * Google Maps Geocoding + Places Nearby Search + Place Photos.
- * Requires EXPO_PUBLIC_GOOGLE_API_KEY and enabled APIs + billing on the key.
+ * Prefer `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY`; falls back to `EXPO_PUBLIC_GOOGLE_API_KEY`.
+ * Requires enabled APIs + billing on the key.
  */
 
 import {
@@ -9,7 +10,23 @@ import {
   type NearbyRestaurant,
 } from '@/services/api';
 
-const GOOGLE_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_API_KEY ?? '';
+/** Web service key for Geocoding / Places (Nearby, Photo). */
+const PLACES_WEB_KEY = (
+  process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ||
+  process.env.EXPO_PUBLIC_GOOGLE_API_KEY ||
+  ''
+).trim();
+
+/** Nearby Search for chat: prefer the Maps-named env var (Expo embeds at build time). */
+function nearbySearchApiKey(): string {
+  return (
+    (process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '').trim() ||
+    PLACES_WEB_KEY
+  );
+}
+
+/** Fixed anchor for “North York” while geocoding is optional (per product spec). */
+export const NORTH_YORK_FIXED_COORDS = { lat: 43.7615, lng: -79.4111 } as const;
 
 export type PlaceRestaurant = {
   id: string;
@@ -30,6 +47,7 @@ type NearbySearchResult = {
     photos?: { photo_reference: string }[];
   }[];
   status: string;
+  error_message?: string;
 };
 
 /** Chat assistant: ranked pick with price level for sorting / UI */
@@ -58,7 +76,7 @@ export const PLACE_IMAGE_FALLBACK =
 export function getPlacePhoto(
   photos: { photo_reference: string }[] | undefined | null,
 ): string {
-  const key = GOOGLE_API_KEY.trim();
+  const key = PLACES_WEB_KEY;
   if (!photos?.length || !key) {
     return PLACE_IMAGE_FALLBACK;
   }
@@ -69,7 +87,7 @@ export function getPlacePhoto(
 export async function getCoordinates(
   placeName: string,
 ): Promise<{ lat: number; lng: number } | null> {
-  const key = GOOGLE_API_KEY.trim();
+  const key = PLACES_WEB_KEY;
   const q = placeName.trim();
   if (!key || !q) return null;
 
@@ -78,6 +96,21 @@ export async function getCoordinates(
   const data = (await res.json()) as GeocodeResult;
   if (data.status !== 'OK' || !data.results?.length) return null;
   return data.results[0].geometry.location;
+}
+
+/**
+ * Resolves a user-written area to lat/lng. North York uses a fixed anchor for now;
+ * other areas use Geocoding.
+ */
+export async function resolveLocationCoordsForFoodChat(
+  locationLabel: string,
+): Promise<{ lat: number; lng: number } | null> {
+  const q = locationLabel.trim();
+  if (!q) return null;
+  if (/\bnorth\s+york\b/i.test(q)) {
+    return { lat: NORTH_YORK_FIXED_COORDS.lat, lng: NORTH_YORK_FIXED_COORDS.lng };
+  }
+  return getCoordinates(q);
 }
 
 function toPlaceRestaurant(r: NearbyRestaurant): PlaceRestaurant {
@@ -95,7 +128,7 @@ async function nearbyFromCoords(
   lng: number,
   keyword: string,
 ): Promise<PlaceRestaurant[]> {
-  const key = GOOGLE_API_KEY.trim();
+  const key = PLACES_WEB_KEY;
   if (!key) return [];
 
   const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=2000&keyword=${encodeURIComponent(keyword)}&key=${encodeURIComponent(key)}`;
@@ -125,7 +158,7 @@ export async function getNearbyRestaurantsWithCoords(
   restaurants: PlaceRestaurant[];
   coords: LatLng | null;
 }> {
-  const key = GOOGLE_API_KEY.trim();
+  const key = PLACES_WEB_KEY;
   const text = locationText.trim();
   if (!key || !text) {
     const loc: LatLng = { lat: 43.6532, lng: -79.3832 };
@@ -146,18 +179,6 @@ export async function getNearbyRestaurantsWithCoords(
     restaurants,
     coords: { lat: coords.lat, lng: coords.lng },
   };
-}
-
-/** Keyword search near a place name (e.g. pizza). Same as WithCoords but only rows. */
-export async function getNearbyRestaurants(
-  locationText: string,
-  keyword = 'pizza',
-): Promise<PlaceRestaurant[]> {
-  const { restaurants } = await getNearbyRestaurantsWithCoords(
-    locationText,
-    keyword,
-  );
-  return restaurants;
 }
 
 /**
@@ -198,8 +219,79 @@ export function matchPlaceRestaurantByName(
 }
 
 /**
- * Nearby restaurant search for chat: sorts by lowest `price_level` first (Google 0–4),
- * then rating. Returns up to `limit` rows (default 3).
+ * Google Places Nearby Search (legacy JSON) for chat — real restaurants only.
+ * Uses `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY` when set.
+ */
+async function nearbySearchForChat(
+  lat: number,
+  lng: number,
+  keyword: string,
+  limit: number,
+): Promise<ChatRestaurantPick[]> {
+  const key = nearbySearchApiKey();
+  if (!key || !Number.isFinite(lat) || !Number.isFinite(lng)) return [];
+
+  const url =
+    `https://maps.googleapis.com/maps/api/place/nearbysearch/json` +
+    `?location=${encodeURIComponent(`${lat},${lng}`)}` +
+    `&radius=1500` +
+    `&type=restaurant` +
+    `&keyword=${encodeURIComponent(keyword.trim())}` +
+    `&key=${encodeURIComponent(key)}`;
+
+  try {
+    const res = await fetch(url);
+    const data = (await res.json()) as NearbySearchResult;
+    if (__DEV__ && data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
+      console.warn(
+        '[Places nearbysearch]',
+        data.status,
+        data.error_message ?? '',
+      );
+    }
+    if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
+      return [];
+    }
+
+    const rows = data.results ?? [];
+    const sorted = [...rows].sort(
+      (a, b) => (b.rating ?? 0) - (a.rating ?? 0),
+    );
+
+    return sorted.slice(0, limit).map((p) => ({
+      name: p.name,
+      rating: typeof p.rating === 'number' ? p.rating : 0,
+      priceLevel: typeof p.price_level === 'number' ? p.price_level : null,
+      address:
+        (p.vicinity || p.formatted_address || '').trim() ||
+        'Address unavailable',
+    }));
+  } catch (e) {
+    if (__DEV__) console.warn('[Places nearbysearch] fetch failed', e);
+    return [];
+  }
+}
+
+/**
+ * Food + area → top 3 restaurants (name, rating, address/vicinity).
+ * Coordinates: North York uses a fixed point; other areas use Geocoding.
+ */
+export async function getNearbyRestaurants(
+  food: string,
+  location: string,
+): Promise<ChatRestaurantPick[]> {
+  const f = food.trim();
+  const loc = location.trim();
+  if (!f || !loc) return [];
+
+  const coords = await resolveLocationCoordsForFoodChat(loc);
+  if (!coords) return [];
+
+  return nearbySearchForChat(coords.lat, coords.lng, f, 3);
+}
+
+/**
+ * Same Nearby Search given coordinates (e.g. profile “near you”).
  */
 export async function fetchTopCheapestNearbyForChat(
   lat: number,
@@ -207,35 +299,5 @@ export async function fetchTopCheapestNearbyForChat(
   keyword: string,
   limit = 3,
 ): Promise<ChatRestaurantPick[]> {
-  const key = GOOGLE_API_KEY.trim();
-  if (!key || !Number.isFinite(lat) || !Number.isFinite(lng)) return [];
-
-  const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=2500&type=restaurant&keyword=${encodeURIComponent(keyword.trim())}&key=${encodeURIComponent(key)}`;
-
-  try {
-    const res = await fetch(url);
-    const data = (await res.json()) as NearbySearchResult;
-    if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
-      return [];
-    }
-
-    const rows = data.results ?? [];
-    const sorted = [...rows].sort((a, b) => {
-      const pa = typeof a.price_level === 'number' ? a.price_level : 99;
-      const pb = typeof b.price_level === 'number' ? b.price_level : 99;
-      if (pa !== pb) return pa - pb;
-      return (b.rating ?? 0) - (a.rating ?? 0);
-    });
-
-    return sorted.slice(0, limit).map((p) => ({
-      name: p.name,
-      rating: typeof p.rating === 'number' ? p.rating : 0,
-      priceLevel: typeof p.price_level === 'number' ? p.price_level : null,
-      address:
-        (p.formatted_address || p.vicinity || '').trim() ||
-        'Address unavailable',
-    }));
-  } catch {
-    return [];
-  }
+  return nearbySearchForChat(lat, lng, keyword, limit);
 }
