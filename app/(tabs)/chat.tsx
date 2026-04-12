@@ -67,7 +67,38 @@ export type Message = {
   createdAt?: number;
   action?: AssistantMessageAction;
   orders?: MessageOrderRef[];
+  /** From `/chat` backend: Google Places (New) results */
+  places?: unknown[];
 };
+
+function extractReplyFromChatData(data: unknown): string {
+  if (!data || typeof data !== 'object') return 'No response';
+  const r = (data as { reply?: unknown }).reply;
+  return typeof r === 'string' && r.trim() ? r.trim() : 'No response';
+}
+
+function extractPlacesFromChatData(data: unknown): unknown[] {
+  if (!data || typeof data !== 'object') return [];
+  const p = (data as { places?: unknown }).places;
+  return Array.isArray(p) ? p : [];
+}
+
+function formatPlaceLine(place: unknown): string {
+  if (!place || typeof place !== 'object') return 'Place';
+  const o = place as Record<string, unknown>;
+  if (typeof o.name === 'string' && o.name.trim()) return o.name.trim();
+  if (o.displayName && typeof o.displayName === 'object') {
+    const t = (o.displayName as { text?: unknown }).text;
+    if (typeof t === 'string' && t.trim()) return t.trim();
+  }
+  if (typeof o.formattedAddress === 'string' && o.formattedAddress.trim()) {
+    return o.formattedAddress.trim();
+  }
+  if (typeof o.address === 'string' && o.address.trim()) {
+    return o.address.trim();
+  }
+  return 'Place';
+}
 
 function toMessageOrders(rows: AssistantOrderSummary[]): MessageOrderRef[] {
   return rows.map((r) => ({
@@ -326,24 +357,30 @@ export default function ChatScreen() {
   }, []);
 
   const handleAIDecision = useCallback(
-    (decision: AiDecision) => {
+    (
+      decision: AiDecision,
+      options?: { fromBackendChat?: boolean },
+    ) => {
       if (decision.reason === 'price_high') {
         addMessage('This is a bit expensive 👀 want to split it?');
         setShowSplit(true);
       }
 
       if (decision.intent === 'recommend_order') {
-        const r = decision.restaurant?.trim();
-        const f = decision.food?.trim();
-        const p =
-          typeof decision.estimated_price === 'number'
-            ? decision.estimated_price
-            : null;
-        const summary =
-          r && f
-            ? `I’d go with ${f} at ${r}${p != null ? ` (~$${p.toFixed(2)})` : ''}.`
-            : decision.reason?.trim() || 'Here’s a single pick — check Guided order above.';
-        addMessage(summary);
+        if (!options?.fromBackendChat) {
+          const r = decision.restaurant?.trim();
+          const f = decision.food?.trim();
+          const p =
+            typeof decision.estimated_price === 'number'
+              ? decision.estimated_price
+              : null;
+          const summary =
+            r && f
+              ? `I’d go with ${f} at ${r}${p != null ? ` (~$${p.toFixed(2)})` : ''}.`
+              : decision.reason?.trim() ||
+                'Here’s a single pick — check Guided order above.';
+          addMessage(summary);
+        }
         if (decision.suggest_split) {
           addMessage('This is a bit pricey 👀 want to split it?');
           setShowSplit(true);
@@ -482,7 +519,27 @@ export default function ChatScreen() {
             setError('AI backend request failed.');
             return;
           }
-          handleAIDecision(aiResult.decision);
+
+          const result = aiResult.data;
+          console.log('AI result:', result);
+
+          const replyText = extractReplyFromChatData(result);
+          const placesList = extractPlacesFromChatData(result);
+
+          const baseId = Date.now();
+          const botMessages: Message[] = [
+            {
+              id: `${baseId}-bot`,
+              text: replyText || 'No response',
+              sender: 'bot',
+              createdAt: Date.now(),
+              action: 'none',
+              places: placesList.length > 0 ? placesList : undefined,
+            },
+          ];
+          setMessages((prev) => [...prev, ...botMessages]);
+
+          handleAIDecision(aiResult.decision, { fromBackendChat: true });
           return;
         }
 
@@ -518,7 +575,18 @@ export default function ChatScreen() {
         });
 
         const baseId = Date.now();
-        const botMessages: Message[] = result.messages.map((m, i) => ({
+        let pipelineMsgs: {
+          text: string;
+          action: Message['action'];
+          orders?: Message['orders'];
+        }[] = [];
+        if (result != null && typeof result === 'object') {
+          const m = (result as { messages?: unknown }).messages;
+          if (Array.isArray(m)) {
+            pipelineMsgs = m as typeof pipelineMsgs;
+          }
+        }
+        const botMessages: Message[] = pipelineMsgs.map((m, i) => ({
           id: `${baseId}-b-${i}`,
           text: m.text,
           sender: 'bot',
@@ -635,6 +703,18 @@ export default function ChatScreen() {
         ) : (
           <Text style={styles.text}>{item.text}</Text>
         )}
+        {!isUser &&
+        item.places &&
+        Array.isArray(item.places) &&
+        item.places.length > 0 ? (
+          <View style={styles.placesBlock}>
+            {item.places.slice(0, 5).map((p, idx) => (
+              <Text key={`${item.id}-p-${idx}`} style={styles.placeLine}>
+                • {formatPlaceLine(p)}
+              </Text>
+            ))}
+          </View>
+        ) : null}
         {item.createdAt ? (
           <Text style={styles.time}>{formatTime(item.createdAt)}</Text>
         ) : null}
@@ -1051,6 +1131,19 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   time: { color: '#B6B6B6', marginTop: 4, fontSize: 11 },
+  placesBlock: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255,255,255,0.15)',
+    gap: 4,
+    alignSelf: 'stretch',
+  },
+  placeLine: {
+    color: 'rgba(248,250,252,0.88)',
+    fontSize: 13,
+    fontWeight: '600',
+  },
   typingRow: {
     flexDirection: 'row',
     alignItems: 'center',
