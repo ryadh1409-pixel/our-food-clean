@@ -8,6 +8,7 @@ import {
 } from '@firebase/rules-unit-testing';
 import {
   arrayUnion,
+  writeBatch,
   doc,
   getDoc,
   serverTimestamp,
@@ -245,6 +246,86 @@ describe('firestore rules: swipe usersAccepted + food matches', () => {
         users: ['u1', 'u2'],
         status: 'matched',
         createdAt: serverTimestamp(),
+      }),
+    );
+  });
+});
+
+function aiChatHalfOrderFields(uid: string, cardId: string) {
+  return {
+    cardId,
+    users: [uid],
+    status: 'waiting',
+    matchWaitDeadlineAt: Date.now() + 15 * 60 * 1000,
+    maxUsers: 2,
+    createdBy: uid,
+    hostId: uid,
+    host: {
+      userId: uid,
+      name: 'Alice',
+      avatar: null,
+      phone: null,
+      pushToken: null,
+      location: null,
+    },
+    createdAt: serverTimestamp(),
+    foodName: 'Pizza Place',
+    image: 'https://example.com/pizza.jpg',
+    pricePerPerson: 8,
+    totalPrice: 16,
+    location: 'North York',
+    restaurantName: 'Pizza Place',
+    participants: [uid],
+    joinedAtMap: { [uid]: serverTimestamp() },
+  };
+}
+
+function aiChatFoodCardFields(uid: string, orderId: string) {
+  return {
+    title: 'Pizza Place',
+    restaurantName: 'Pizza Place',
+    image: 'https://example.com/pizza.jpg',
+    price: 16,
+    splitPrice: 8,
+    sharingPrice: 8,
+    location: 'North York',
+    status: 'active',
+    expiresAt: Date.now() + 45 * 60 * 1000,
+    ownerId: uid,
+    user1: { uid, name: 'Alice', photo: null },
+    maxUsers: 2,
+    createdAt: serverTimestamp(),
+    deckSource: 'ai_chat',
+    orderId,
+    aiDescription: 'Shared order - North York',
+  };
+}
+
+describe('firestore rules: AI chat food card creation', () => {
+  it('allows an owner to batch-create a linked AI chat food card and HalfOrder', async () => {
+    const db = te().authenticatedContext('u1').firestore();
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'orders', 'ai-order-1'), aiChatHalfOrderFields('u1', 'ai-card-1'));
+    batch.set(doc(db, 'food_cards', 'ai-card-1'), aiChatFoodCardFields('u1', 'ai-order-1'));
+
+    await assertSucceeds(batch.commit());
+  });
+
+  it('denies AI chat card create when the linked order belongs to another user', async () => {
+    const db = te().authenticatedContext('u1').firestore();
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'orders', 'ai-order-2'), aiChatHalfOrderFields('u2', 'ai-card-2'));
+    batch.set(doc(db, 'food_cards', 'ai-card-2'), aiChatFoodCardFields('u1', 'ai-order-2'));
+
+    await assertFails(batch.commit());
+  });
+
+  it('denies non-AI food card creation by a regular user', async () => {
+    const db = te().authenticatedContext('u1').firestore();
+    await assertFails(
+      setDoc(doc(db, 'food_cards', 'catalog-card'), {
+        ...aiChatFoodCardFields('u1', 'ai-order-3'),
+        deckSource: 'catalog',
       }),
     );
   });
