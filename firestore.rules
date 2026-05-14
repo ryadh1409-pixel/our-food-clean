@@ -465,6 +465,16 @@ service cloud.firestore {
         in get(/databases/$(database)/documents/orders/$(orderId)).data.get('users', []);
     }
 
+    function orderLinkTargetsCardAfter(orderId, cardId) {
+      return existsAfter(/databases/$(database)/documents/orders/$(orderId))
+        && getAfter(/databases/$(database)/documents/orders/$(orderId)).data.cardId == cardId;
+    }
+
+    function requesterInOrderUsersAfter(orderId) {
+      return request.auth.uid
+        in getAfter(/databases/$(database)/documents/orders/$(orderId)).data.get('users', []);
+    }
+
     /** First link: set `food_cards.orderId` to a new HalfOrder doc (caller must be in order.users). */
     function isValidFoodCardOrderIdLink(cardId) {
       return isSignedIn()
@@ -664,6 +674,58 @@ service cloud.firestore {
     /** Open swipe-deck food card status. */
     function foodCardOpenStatus(s) {
       return s == 'active';
+    }
+
+    function isValidAiChatFoodCardCreate(cardId) {
+      return isSignedIn()
+        && !isCurrentUserRestricted()
+        && request.resource.data.keys().hasOnly([
+          'title',
+          'restaurantName',
+          'image',
+          'price',
+          'splitPrice',
+          'sharingPrice',
+          'location',
+          'status',
+          'expiresAt',
+          'ownerId',
+          'user1',
+          'maxUsers',
+          'createdAt',
+          'deckSource',
+          'orderId',
+          'aiDescription'
+        ])
+        && request.resource.data.deckSource == 'ai_chat'
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.user1 is map
+        && request.resource.data.user1.uid == request.auth.uid
+        && request.resource.data.status == 'active'
+        && request.resource.data.orderId is string
+        && request.resource.data.orderId.size() > 0
+        && request.resource.data.maxUsers == 2
+        && request.resource.data.title is string
+        && request.resource.data.restaurantName is string
+        && request.resource.data.image is string
+        && request.resource.data.price is number
+        && request.resource.data.splitPrice is number
+        && request.resource.data.sharingPrice is number
+        && (
+          request.resource.data.location is string
+          || request.resource.data.location is map
+        )
+        && request.resource.data.expiresAt is int
+        && request.resource.data.createdAt != null
+        && orderLinkTargetsCardAfter(request.resource.data.orderId, cardId)
+        && requesterInOrderUsersAfter(request.resource.data.orderId)
+        && getAfter(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.createdBy == request.auth.uid
+        && getAfter(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.hostId == request.auth.uid
+        && getAfter(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.maxUsers == 2
+        && (
+          getAfter(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.status
+            in ['waiting', 'active']
+        );
     }
 
     function isValidFoodCardJoinUpdate() {
@@ -1097,7 +1159,8 @@ service cloud.firestore {
 
     match /food_cards/{cardId} {
       allow read: if isSignedIn();
-      allow create, delete: if isAdmin();
+      allow create: if isAdmin() || isValidAiChatFoodCardCreate(cardId);
+      allow delete: if isAdmin();
       allow update: if isAdmin()
         || isValidFoodCardOrderIdLink(cardId)
         || isValidFoodCardJoinUpdate();

@@ -14,6 +14,7 @@ import {
   setDoc,
   Timestamp,
   updateDoc,
+  writeBatch,
 } from 'firebase/firestore';
 
 let testEnv: RulesTestEnvironment | undefined;
@@ -245,6 +246,95 @@ describe('firestore rules: swipe usersAccepted + food matches', () => {
         users: ['u1', 'u2'],
         status: 'matched',
         createdAt: serverTimestamp(),
+      }),
+    );
+  });
+});
+
+describe('firestore rules: AI chat food-card creation', () => {
+  async function seedUser(uid: string) {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'users', uid), {
+        name: 'AI Host',
+        totalOrdersCompleted: 0,
+        activeOrderCount: 0,
+      });
+    });
+  }
+
+  function aiHalfOrder(uid: string, cardId: string) {
+    const ts = serverTimestamp();
+    return {
+      cardId,
+      users: [uid],
+      status: 'waiting' as const,
+      matchWaitDeadlineAt: Date.now() + 45 * 60 * 1000,
+      maxUsers: 2,
+      createdBy: uid,
+      hostId: uid,
+      host: {
+        userId: uid,
+        name: 'AI Host',
+        avatar: null,
+        phone: null,
+        expoPushToken: null,
+      },
+      createdAt: ts,
+      foodName: 'Pizza Place',
+      image: 'https://example.com/pizza.jpg',
+      pricePerPerson: 8,
+      totalPrice: 16,
+      location: '123 Main St',
+      restaurantName: 'Pizza Place',
+      participants: [uid],
+      joinedAtMap: { [uid]: ts },
+    };
+  }
+
+  function aiFoodCard(uid: string, orderId: string) {
+    return {
+      title: 'Pizza Place',
+      restaurantName: 'Pizza Place',
+      image: 'https://example.com/pizza.jpg',
+      price: 16,
+      splitPrice: 8,
+      sharingPrice: 8,
+      location: '123 Main St',
+      status: 'active' as const,
+      expiresAt: Date.now() + 45 * 60 * 1000,
+      ownerId: uid,
+      user1: { uid, name: 'AI Host', photo: null },
+      maxUsers: 2,
+      createdAt: serverTimestamp(),
+      deckSource: 'ai_chat',
+      orderId,
+      aiDescription: 'Shared order · 123 Main St',
+    };
+  }
+
+  it('allows a signed-in user to atomically create an AI food card linked to their HalfOrder', async () => {
+    const uid = 'ai-user';
+    await seedUser(uid);
+    const db = te().authenticatedContext(uid).firestore();
+    const cardId = 'ai-card-1';
+    const orderId = 'ai-order-1';
+    const batch = writeBatch(db);
+
+    batch.set(doc(db, 'food_cards', cardId), aiFoodCard(uid, orderId));
+    batch.set(doc(db, 'orders', orderId), aiHalfOrder(uid, cardId));
+
+    await assertSucceeds(batch.commit());
+  });
+
+  it('denies non-admin food card create unless it is an owned AI card linked to a new order', async () => {
+    const uid = 'ai-user-denied';
+    await seedUser(uid);
+    const db = te().authenticatedContext(uid).firestore();
+
+    await assertFails(
+      setDoc(doc(db, 'food_cards', 'unlinked-card'), {
+        ...aiFoodCard(uid, 'missing-order'),
+        deckSource: 'catalog',
       }),
     );
   });
