@@ -258,6 +258,8 @@ describe('firestore rules: AI chat food-card creation', () => {
         name: 'AI Host',
         totalOrdersCompleted: 0,
         activeOrderCount: 0,
+        banned: false,
+        restricted: false,
       });
     });
   }
@@ -315,7 +317,9 @@ describe('firestore rules: AI chat food-card creation', () => {
   it('allows a signed-in user to atomically create an AI food card linked to their HalfOrder', async () => {
     const uid = 'ai-user';
     await seedUser(uid);
-    const db = te().authenticatedContext(uid).firestore();
+    const db = te()
+      .authenticatedContext(uid, { email: `${uid}@example.test` })
+      .firestore();
     const cardId = 'ai-card-1';
     const orderId = 'ai-order-1';
     const batch = writeBatch(db);
@@ -329,7 +333,9 @@ describe('firestore rules: AI chat food-card creation', () => {
   it('denies non-admin food card create unless it is an owned AI card linked to a new order', async () => {
     const uid = 'ai-user-denied';
     await seedUser(uid);
-    const db = te().authenticatedContext(uid).firestore();
+    const db = te()
+      .authenticatedContext(uid, { email: `${uid}@example.test` })
+      .firestore();
 
     await assertFails(
       setDoc(doc(db, 'food_cards', 'unlinked-card'), {
