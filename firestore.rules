@@ -666,6 +666,82 @@ service cloud.firestore {
       return s == 'active';
     }
 
+    function validAiChatFoodCardLocation(loc) {
+      return loc is string
+        || (
+          loc is map
+          && loc.keys().hasOnly(['latitude', 'longitude'])
+          && loc.latitude is number
+          && loc.longitude is number
+        );
+    }
+
+    function validAiChatFoodCardUser(user) {
+      return user is map
+        && user.keys().hasAll(['uid', 'name', 'photo'])
+        && user.uid == request.auth.uid
+        && user.name is string
+        && (
+          user.photo == null
+          || user.photo is string
+        );
+    }
+
+    function aiChatCardLinkedOrder(cardId) {
+      return getAfter(
+        /databases/$(database)/documents/orders/$(request.resource.data.orderId)
+      ).data;
+    }
+
+    function isValidAiChatFoodCardCreate(cardId) {
+      return isSignedIn()
+        && !isCurrentUserRestricted()
+        && request.resource.data.keys().hasOnly([
+          'title',
+          'restaurantName',
+          'image',
+          'price',
+          'splitPrice',
+          'sharingPrice',
+          'location',
+          'status',
+          'expiresAt',
+          'ownerId',
+          'user1',
+          'maxUsers',
+          'createdAt',
+          'deckSource',
+          'orderId',
+          'aiDescription',
+        ])
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.restaurantName is string
+        && request.resource.data.image is string
+        && request.resource.data.price is number
+        && request.resource.data.splitPrice is number
+        && request.resource.data.sharingPrice is number
+        && validAiChatFoodCardLocation(request.resource.data.location)
+        && request.resource.data.status == 'active'
+        && request.resource.data.expiresAt is int
+        && request.resource.data.expiresAt > 0
+        && request.resource.data.ownerId == request.auth.uid
+        && validAiChatFoodCardUser(request.resource.data.user1)
+        && request.resource.data.maxUsers == 2
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.deckSource == 'ai_chat'
+        && request.resource.data.orderId is string
+        && request.resource.data.orderId.size() > 0
+        && request.resource.data.aiDescription is string
+        && aiChatCardLinkedOrder(cardId).cardId == cardId
+        && aiChatCardLinkedOrder(cardId).createdBy == request.auth.uid
+        && aiChatCardLinkedOrder(cardId).hostId == request.auth.uid
+        && aiChatCardLinkedOrder(cardId).users is list
+        && aiChatCardLinkedOrder(cardId).users.size() == 1
+        && aiChatCardLinkedOrder(cardId).users[0] == request.auth.uid
+        && aiChatCardLinkedOrder(cardId).createdAt == request.time;
+    }
+
     function isValidFoodCardJoinUpdate() {
       return isSignedIn()
         && (
@@ -1097,7 +1173,8 @@ service cloud.firestore {
 
     match /food_cards/{cardId} {
       allow read: if isSignedIn();
-      allow create, delete: if isAdmin();
+      allow create: if isAdmin() || isValidAiChatFoodCardCreate(cardId);
+      allow delete: if isAdmin();
       allow update: if isAdmin()
         || isValidFoodCardOrderIdLink(cardId)
         || isValidFoodCardJoinUpdate();
