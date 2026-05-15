@@ -1173,7 +1173,7 @@ service cloud.firestore {
 
     match /food_cards/{cardId} {
       allow read: if isSignedIn();
-      allow create: if isAdmin() || isValidAiChatFoodCardCreate(cardId);
+      allow create: if isValidAiChatFoodCardCreate(cardId) || isAdmin();
       allow delete: if isAdmin();
       allow update: if isAdmin()
         || isValidFoodCardOrderIdLink(cardId)
