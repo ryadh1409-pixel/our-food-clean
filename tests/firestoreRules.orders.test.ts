@@ -45,9 +45,6 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await te().clearFirestore();
-  await seedUser('u1');
-  await seedUser('u2');
-  await seedUser('u3');
 });
 
 function baseOrderFields(createdByUid: string) {
@@ -62,18 +59,6 @@ function baseOrderFields(createdByUid: string) {
     createdBy: createdByUid,
     createdAt: serverTimestamp(),
   };
-}
-
-async function seedUser(uid: string) {
-  await te().withSecurityRulesDisabled(async (ctx) => {
-    await setDoc(doc(ctx.firestore(), 'users', uid), {
-      name: uid,
-      totalOrdersCompleted: 10,
-      activeOrderCount: 0,
-      banned: false,
-      restricted: false,
-    });
-  });
 }
 
 describe('firestore rules: orders create + participants join', () => {
@@ -267,6 +252,18 @@ describe('firestore rules: swipe usersAccepted + food matches', () => {
 });
 
 describe('firestore rules: AI chat food card creates', () => {
+  async function seedUser(uid: string) {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'users', uid), {
+        name: uid,
+        totalOrdersCompleted: 10,
+        activeOrderCount: 0,
+        banned: false,
+        restricted: false,
+      });
+    });
+  }
+
   function aiHalfOrderDoc(uid: string, cardId: string) {
     const ts = serverTimestamp();
     return {
