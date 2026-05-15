@@ -11,12 +11,9 @@ service cloud.firestore {
         && (
           request.auth.uid == 'KT3LfXRsVgaH4LfRTQaexvj3CRn1'
           || (
-            request.auth.token.email is string
-            && (
-              request.auth.token.email == 'admin@ourfood.com'
-              || request.auth.token.email == 'support@halforder.app'
-              || request.auth.token.email == 'ryadh1409@gmail.com'
-            )
+            request.auth.token.get('email', '') == 'admin@ourfood.com'
+            || request.auth.token.get('email', '') == 'support@halforder.app'
+            || request.auth.token.get('email', '') == 'ryadh1409@gmail.com'
           )
           || (
             exists(/databases/$(database)/documents/users/$(request.auth.uid))
@@ -32,8 +29,8 @@ service cloud.firestore {
     function isCurrentUserRestricted() {
       return isSignedIn()
         && (
-          currentUserData().banned == true
-          || currentUserData().restricted == true
+          currentUserData().get('banned', false) == true
+          || currentUserData().get('restricted', false) == true
         );
     }
 
