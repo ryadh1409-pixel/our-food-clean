@@ -707,29 +707,6 @@ service cloud.firestore {
         );
     }
 
-    function aiChatOrderAfterMatchesCard(orderId, cardId) {
-      let orderAfter = getAfter(
-        /databases/$(database)/documents/orders/$(orderId)
-      ).data;
-      return orderAfter.cardId == cardId
-        && orderAfter.createdBy == request.auth.uid
-        && orderAfter.hostId == request.auth.uid
-        && orderAfter.users is list
-        && orderAfter.users.size() == 1
-        && orderAfter.users[0] == request.auth.uid;
-    }
-
-    function aiChatCardAfterMatchesOrder(cardId, orderId) {
-      let cardAfter = getAfter(
-        /databases/$(database)/documents/food_cards/$(cardId)
-      ).data;
-      return cardAfter.orderId == orderId
-        && cardAfter.ownerId == request.auth.uid
-        && cardAfter.deckSource == 'ai_chat'
-        && cardAfter.status == 'active'
-        && cardAfter.user1.uid == request.auth.uid;
-    }
-
     function aiChatHalfOrderHasValidOptionalGeo() {
       return !request.resource.data.keys().hasAny(['latitude', 'longitude'])
         || (
@@ -787,8 +764,7 @@ service cloud.firestore {
         && request.resource.data.participants[0] == request.auth.uid
         && request.resource.data.joinedAtMap is map
         && request.resource.data.joinedAtMap[request.auth.uid] is timestamp
-        && aiChatHalfOrderHasValidOptionalGeo()
-        && aiChatCardAfterMatchesOrder(request.resource.data.cardId, orderId);
+        && aiChatHalfOrderHasValidOptionalGeo();
     }
 
     function isValidAiChatFoodCardCreate(cardId) {
@@ -832,8 +808,7 @@ service cloud.firestore {
         && request.resource.data.deckSource == 'ai_chat'
         && request.resource.data.orderId is string
         && request.resource.data.orderId.size() > 0
-        && request.resource.data.aiDescription is string
-        && aiChatOrderAfterMatchesCard(request.resource.data.orderId, cardId);
+        && request.resource.data.aiDescription is string;
     }
 
     match /reports/{reportId} {
