@@ -687,128 +687,40 @@ service cloud.firestore {
         );
     }
 
-    function validAiChatFoodCardUser1(u) {
-      return u is map
-        && u.uid == request.auth.uid
-        && u.name is string
-        && (
-          !u.keys().hasAny(['photo'])
-          || u.photo == null
-          || u.photo is string
-        );
-    }
-
-    function validAiChatFoodCardLocation(loc) {
-      return loc is string
-        || (
-          loc is map
-          && loc.latitude is number
-          && loc.longitude is number
-        );
-    }
-
-    function aiChatHalfOrderHasValidOptionalGeo() {
-      return !request.resource.data.keys().hasAny(['latitude', 'longitude'])
-        || (
-          request.resource.data.latitude is number
-          && request.resource.data.longitude is number
-        );
-    }
-
     function isValidAiChatHalfOrderCreate(orderId) {
       return isSignedIn()
         && !isCurrentUserRestricted()
-        && request.resource.data.keys().hasOnly([
-          'cardId',
-          'users',
-          'status',
-          'matchWaitDeadlineAt',
-          'maxUsers',
-          'createdBy',
-          'hostId',
-          'host',
-          'createdAt',
-          'foodName',
-          'image',
-          'pricePerPerson',
-          'totalPrice',
-          'location',
-          'restaurantName',
-          'participants',
-          'joinedAtMap',
-          'latitude',
-          'longitude',
-        ])
         && request.resource.data.cardId is string
         && request.resource.data.cardId.size() > 0
         && request.resource.data.users is list
         && request.resource.data.users.size() == 1
         && request.resource.data.users[0] == request.auth.uid
         && request.resource.data.status == 'waiting'
-        && request.resource.data.matchWaitDeadlineAt is int
         && request.resource.data.maxUsers == 2
         && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.hostId == request.auth.uid
-        && validOrderHostDoc(request.resource.data.host)
+        && request.resource.data.host is map
         && request.resource.data.host.userId == request.auth.uid
-        && request.resource.data.createdAt == request.time
-        && request.resource.data.foodName is string
-        && request.resource.data.foodName.size() > 0
-        && request.resource.data.image is string
-        && request.resource.data.pricePerPerson is number
-        && request.resource.data.totalPrice is number
-        && request.resource.data.location is string
-        && request.resource.data.restaurantName is string
+        && request.resource.data.createdAt != null
         && request.resource.data.participants is list
         && request.resource.data.participants.size() == 1
         && request.resource.data.participants[0] == request.auth.uid
         && request.resource.data.joinedAtMap is map
-        && request.resource.data.joinedAtMap[request.auth.uid] is timestamp
-        && aiChatHalfOrderHasValidOptionalGeo();
+        && request.resource.data.joinedAtMap[request.auth.uid] is timestamp;
     }
 
     function isValidAiChatFoodCardCreate(cardId) {
       return isSignedIn()
         && !isCurrentUserRestricted()
-        && request.resource.data.keys().hasOnly([
-          'title',
-          'restaurantName',
-          'image',
-          'price',
-          'splitPrice',
-          'sharingPrice',
-          'location',
-          'status',
-          'expiresAt',
-          'ownerId',
-          'user1',
-          'maxUsers',
-          'createdAt',
-          'deckSource',
-          'orderId',
-          'aiDescription',
-        ])
-        && request.resource.data.title is string
-        && request.resource.data.title.size() > 0
-        && request.resource.data.restaurantName is string
-        && request.resource.data.image is string
-        && request.resource.data.price is number
-        && request.resource.data.price >= 0
-        && request.resource.data.splitPrice is number
-        && request.resource.data.splitPrice >= 0
-        && request.resource.data.sharingPrice is number
-        && request.resource.data.sharingPrice >= 0
-        && validAiChatFoodCardLocation(request.resource.data.location)
-        && request.resource.data.status == 'active'
-        && request.resource.data.expiresAt is int
-        && request.resource.data.ownerId == request.auth.uid
-        && validAiChatFoodCardUser1(request.resource.data.user1)
-        && request.resource.data.maxUsers == 2
-        && request.resource.data.createdAt == request.time
         && request.resource.data.deckSource == 'ai_chat'
+        && request.resource.data.status == 'active'
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.user1 is map
+        && request.resource.data.user1.uid == request.auth.uid
+        && request.resource.data.maxUsers == 2
+        && request.resource.data.createdAt != null
         && request.resource.data.orderId is string
-        && request.resource.data.orderId.size() > 0
-        && request.resource.data.aiDescription is string;
+        && request.resource.data.orderId.size() > 0;
     }
 
     match /reports/{reportId} {
