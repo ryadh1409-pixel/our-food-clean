@@ -14,6 +14,7 @@ import {
   setDoc,
   Timestamp,
   updateDoc,
+  writeBatch,
 } from 'firebase/firestore';
 
 let testEnv: RulesTestEnvironment | undefined;
@@ -59,6 +60,89 @@ function baseOrderFields(createdByUid: string) {
     createdAt: serverTimestamp(),
   };
 }
+
+function aiChatFoodCardFields(cardId: string, orderId: string, ownerUid: string) {
+  return {
+    title: 'Pizza Place',
+    restaurantName: 'Pizza Place',
+    image: 'https://example.com/pizza.jpg',
+    price: 16,
+    splitPrice: 8,
+    sharingPrice: 8,
+    location: '123 Main St',
+    status: 'active',
+    expiresAt: Date.now() + 45 * 60 * 1000,
+    ownerId: ownerUid,
+    user1: { uid: ownerUid, name: 'Host', photo: null },
+    maxUsers: 2,
+    createdAt: serverTimestamp(),
+    deckSource: 'ai_chat',
+    orderId,
+    aiDescription: 'Shared order - 123 Main St',
+  };
+}
+
+function aiChatHalfOrderFields(cardId: string, ownerUid: string) {
+  return {
+    cardId,
+    users: [ownerUid],
+    status: 'waiting',
+    matchWaitDeadlineAt: Date.now() + 10 * 60 * 1000,
+    maxUsers: 2,
+    createdBy: ownerUid,
+    hostId: ownerUid,
+    host: {
+      userId: ownerUid,
+      name: 'Host',
+      avatar: null,
+      phone: null,
+      expoPushToken: null,
+    },
+    createdAt: serverTimestamp(),
+    foodName: 'Pizza Place',
+    image: 'https://example.com/pizza.jpg',
+    pricePerPerson: 8,
+    totalPrice: 16,
+    location: '123 Main St',
+    restaurantName: 'Pizza Place',
+    participants: [ownerUid],
+    joinedAtMap: { [ownerUid]: serverTimestamp() },
+  };
+}
+
+describe('firestore rules: AI chat food card creation', () => {
+  it('allows a signed-in user to create an AI chat food card with its HalfOrder in one batch', async () => {
+    const db = te().authenticatedContext('u1').firestore();
+    const batch = writeBatch(db);
+
+    batch.set(
+      doc(db, 'food_cards', 'fc-ai-1'),
+      aiChatFoodCardFields('fc-ai-1', 'o-ai-1', 'u1'),
+    );
+    batch.set(
+      doc(db, 'orders', 'o-ai-1'),
+      aiChatHalfOrderFields('fc-ai-1', 'u1'),
+    );
+
+    await assertSucceeds(batch.commit());
+  });
+
+  it('denies an AI chat food card that spoofs a different owner', async () => {
+    const db = te().authenticatedContext('u1').firestore();
+    const batch = writeBatch(db);
+
+    batch.set(
+      doc(db, 'food_cards', 'fc-ai-spoof'),
+      aiChatFoodCardFields('fc-ai-spoof', 'o-ai-spoof', 'u2'),
+    );
+    batch.set(
+      doc(db, 'orders', 'o-ai-spoof'),
+      aiChatHalfOrderFields('fc-ai-spoof', 'u1'),
+    );
+
+    await assertFails(batch.commit());
+  });
+});
 
 describe('firestore rules: orders create + participants join', () => {
   it('allows valid order create by owner', async () => {
