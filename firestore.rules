@@ -28,6 +28,7 @@ service cloud.firestore {
 
     function isCurrentUserRestricted() {
       return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
         && (
           currentUserData().banned == true
           || currentUserData().restricted == true
