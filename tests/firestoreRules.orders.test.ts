@@ -57,11 +57,6 @@ async function seedRulesUserProfile(uid: string) {
 
 beforeEach(async () => {
   await te().clearFirestore();
-  await Promise.all([
-    seedRulesUserProfile('u1'),
-    seedRulesUserProfile('u2'),
-    seedRulesUserProfile('u3'),
-  ]);
 });
 
 function baseOrderFields(createdByUid: string) {
