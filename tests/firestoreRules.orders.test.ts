@@ -43,8 +43,25 @@ afterAll(async () => {
   if (testEnv) await testEnv.cleanup();
 });
 
+async function seedRulesUserProfile(uid: string) {
+  await te().withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'users', uid), {
+      role: 'user',
+      banned: false,
+      restricted: false,
+      totalOrdersCompleted: 4,
+      activeOrderCount: 0,
+    });
+  });
+}
+
 beforeEach(async () => {
   await te().clearFirestore();
+  await Promise.all([
+    seedRulesUserProfile('u1'),
+    seedRulesUserProfile('u2'),
+    seedRulesUserProfile('u3'),
+  ]);
 });
 
 function baseOrderFields(createdByUid: string) {
@@ -319,15 +336,7 @@ describe('firestore rules: HalfOrder pair-join notified ack', () => {
 
 describe('firestore rules: AI chat food-card creation', () => {
   async function seedUserProfile(uid: string) {
-    await te().withSecurityRulesDisabled(async (ctx) => {
-      await setDoc(doc(ctx.firestore(), 'users', uid), {
-        role: 'user',
-        banned: false,
-        restricted: false,
-        totalOrdersCompleted: 4,
-        activeOrderCount: 0,
-      });
-    });
+    await seedRulesUserProfile(uid);
   }
 
   function aiChatFoodCard(ownerUid: string, orderId: string) {
