@@ -14,6 +14,7 @@ import {
   setDoc,
   Timestamp,
   updateDoc,
+  writeBatch,
 } from 'firebase/firestore';
 
 let testEnv: RulesTestEnvironment | undefined;
@@ -179,6 +180,97 @@ describe('firestore rules: orders create + participants join', () => {
     );
     const snap = await getDoc(doc(dbU1, 'orders', 'o1'));
     expect(snap.data()?.image).toBe('https://example.com/new.jpg');
+  });
+});
+
+describe('firestore rules: AI chat food-card order create', () => {
+  async function seedCreatorProfile(uid: string) {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'users', uid), {
+        name: 'Alice',
+        role: 'user',
+        banned: false,
+        restricted: false,
+        totalOrdersCompleted: 4,
+        activeOrderCount: 0,
+      });
+    });
+  }
+
+  function aiChatCardDoc(uid: string, orderId: string) {
+    return {
+      title: 'Test Pizza Place',
+      restaurantName: 'Test Pizza Place',
+      image: 'https://example.com/pizza.jpg',
+      price: 16,
+      splitPrice: 8,
+      sharingPrice: 8,
+      location: '123 Test St',
+      status: 'active',
+      expiresAt: Date.now() + 45 * 60 * 1000,
+      ownerId: uid,
+      user1: { uid, name: 'Alice', photo: null },
+      maxUsers: 2,
+      createdAt: serverTimestamp(),
+      deckSource: 'ai_chat',
+      orderId,
+      aiDescription: 'Shared order · 123 Test St',
+    };
+  }
+
+  function aiChatOrderDoc(uid: string, cardId: string) {
+    return {
+      cardId,
+      users: [uid],
+      status: 'waiting',
+      matchWaitDeadlineAt: Date.now() + 5 * 60 * 1000,
+      maxUsers: 2,
+      createdBy: uid,
+      hostId: uid,
+      host: {
+        userId: uid,
+        name: 'Alice',
+        avatar: null,
+        phone: null,
+        expoPushToken: null,
+      },
+      createdAt: serverTimestamp(),
+      foodName: 'Test Pizza Place',
+      image: 'https://example.com/pizza.jpg',
+      pricePerPerson: 8,
+      totalPrice: 16,
+      location: '123 Test St',
+      restaurantName: 'Test Pizza Place',
+      participants: [uid],
+      joinedAtMap: { [uid]: serverTimestamp() },
+    };
+  }
+
+  it('allows a signed-in creator to batch create an AI chat card linked to their HalfOrder', async () => {
+    await seedCreatorProfile('u1');
+    const db = te().authenticatedContext('u1').firestore();
+    const cardRef = doc(db, 'food_cards', 'ai-card-1');
+    const orderRef = doc(db, 'orders', 'ai-order-1');
+    const batch = writeBatch(db);
+    batch.set(cardRef, aiChatCardDoc('u1', orderRef.id));
+    batch.set(orderRef, aiChatOrderDoc('u1', cardRef.id));
+
+    await assertSucceeds(batch.commit());
+  });
+
+  it('denies AI chat card creation when the card owner is spoofed', async () => {
+    await seedCreatorProfile('u1');
+    const db = te().authenticatedContext('u1').firestore();
+    const cardRef = doc(db, 'food_cards', 'ai-card-spoof');
+    const orderRef = doc(db, 'orders', 'ai-order-spoof');
+    const batch = writeBatch(db);
+    batch.set(cardRef, {
+      ...aiChatCardDoc('u1', orderRef.id),
+      ownerId: 'u2',
+    });
+    batch.set(orderRef, aiChatOrderDoc('u1', cardRef.id));
+
+    await assertFails(batch.commit());
   });
 });
 
