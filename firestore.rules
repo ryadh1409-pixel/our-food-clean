@@ -440,8 +440,7 @@ service cloud.firestore {
     function isOrderPairJoinNotifiedUpdate() {
       return isSignedIn()
         && !isCurrentUserRestricted()
-        && resource.data.cardId is string
-        && resource.data.cardId.size() > 0
+        && resourceHasCardId()
         && resource.data.get('users', []).size() == 2
         && request.auth.uid in resource.data.get('users', [])
         && resource.data.get('notified', false) != true
@@ -1151,6 +1150,7 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create: if isValidHalfOrderCreate() || isValidOrderCreate() || isAdmin();
       allow update: if isAdmin()
+        || isOrderPairJoinNotifiedUpdate()
         || isHalfOrderCancelUpdate()
         || isParticipantsJoinUpdate()
         || isParticipantsJoinWithExtrasUpdate()
@@ -1163,8 +1163,7 @@ service cloud.firestore {
         || isHalfOrderParticipantIncrementalJoin()
         || isHalfOrderParticipantBootstrapJoin()
         || isHalfOrderMarkActiveUpdate()
-        || isHalfOrderCompleteUpdate()
-        || isOrderPairJoinNotifiedUpdate();
+        || isHalfOrderCompleteUpdate();
       allow delete: if isAdmin()
         || (
           request.auth != null
