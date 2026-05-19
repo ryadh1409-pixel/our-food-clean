@@ -698,10 +698,11 @@ service cloud.firestore {
       return getAfter(/databases/$(database)/documents/orders/$(orderId)).data.cardId == cardId
         && getAfter(/databases/$(database)/documents/orders/$(orderId)).data.createdBy == request.auth.uid
         && getAfter(/databases/$(database)/documents/orders/$(orderId)).data.hostId == request.auth.uid
+        && getAfter(/databases/$(database)/documents/orders/$(orderId)).data.status == 'waiting'
+        && getAfter(/databases/$(database)/documents/orders/$(orderId)).data.maxUsers == 2
         && getAfter(/databases/$(database)/documents/orders/$(orderId)).data.users is list
         && getAfter(/databases/$(database)/documents/orders/$(orderId)).data.users.size() == 1
-        && getAfter(/databases/$(database)/documents/orders/$(orderId)).data.users[0] == request.auth.uid
-        && getAfter(/databases/$(database)/documents/orders/$(orderId)).data.createdAt == request.time;
+        && getAfter(/databases/$(database)/documents/orders/$(orderId)).data.users[0] == request.auth.uid;
     }
 
     function isValidAiChatFoodCardCreate(cardId) {
