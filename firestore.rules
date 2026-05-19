@@ -195,11 +195,29 @@ service cloud.firestore {
         + (parts.size() > 19 && parts[19] is map && parts[19].userId == uid ? 1 : 0);
     }
 
+    function resourceHasCardId() {
+      return resource.data.keys().hasAny(['cardId'])
+        && resource.data.cardId is string
+        && resource.data.cardId.size() > 0;
+    }
+
     /** HalfOrder: food-card swipe creates `orders` with `cardId` + `users` + `host`, string `participants`, `joinedAtMap`. */
     function isValidHalfOrderCreate() {
       return isSignedIn()
         && canCreateOrderBySafetyLimits()
         && !isCurrentUserRestricted()
+        && request.resource.data.keys().hasAll([
+          'cardId',
+          'users',
+          'host',
+          'participants',
+          'joinedAtMap',
+          'status',
+          'maxUsers',
+          'createdBy',
+          'hostId',
+          'createdAt',
+        ])
         && request.resource.data.cardId is string
         && request.resource.data.cardId.size() > 0
         && request.resource.data.users is list
@@ -328,8 +346,7 @@ service cloud.firestore {
     function isHalfOrderCancelUpdate() {
       return isSignedIn()
         && !isCurrentUserRestricted()
-        && resource.data.cardId is string
-        && resource.data.cardId.size() > 0
+        && resourceHasCardId()
         && (
           resource.data.status == 'waiting'
           || resource.data.status == 'matched'
@@ -1133,6 +1150,7 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create: if isValidHalfOrderCreate() || isValidOrderCreate() || isAdmin();
       allow update: if isAdmin()
+        || isHalfOrderCancelUpdate()
         || isParticipantsJoinUpdate()
         || isParticipantsJoinWithExtrasUpdate()
         || isJoinedAtMapBackfillUpdate()
@@ -1143,7 +1161,6 @@ service cloud.firestore {
         || isMarkOrderExpiredUpdate()
         || isHalfOrderParticipantIncrementalJoin()
         || isHalfOrderParticipantBootstrapJoin()
-        || isHalfOrderCancelUpdate()
         || isHalfOrderMarkActiveUpdate()
         || isHalfOrderCompleteUpdate()
         || isOrderPairJoinNotifiedUpdate();
