@@ -615,6 +615,7 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).changedKeys().hasOnly(['joinedAtMap'])
         && request.resource.data.participants == resource.data.participants
         && request.auth.uid in resource.data.get('participants', [])
+        && !(request.auth.uid in resource.data.get('joinedAtMap', {}).keys())
         && request.resource.data.joinedAtMap is map
         && request.resource.data.joinedAtMap[request.auth.uid] is timestamp;
     }

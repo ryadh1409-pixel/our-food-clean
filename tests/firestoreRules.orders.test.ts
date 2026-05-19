@@ -73,6 +73,7 @@ function baseOrderFields(createdByUid: string) {
     maxPeople: 3,
     usersAccepted: [] as string[],
     createdBy: createdByUid,
+    status: 'open',
     createdAt: serverTimestamp(),
   };
 }
