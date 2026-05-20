@@ -208,10 +208,10 @@ service cloud.firestore {
     /** HalfOrder: food-card swipe creates `orders` with `cardId` + `users` + `host`, string `participants`, `joinedAtMap`. */
     function isValidHalfOrderCreate() {
       return isSignedIn()
-        && canCreateOrderBySafetyLimits()
-        && !isCurrentUserRestricted()
         && request.resource.data.cardId is string
         && request.resource.data.cardId.size() > 0
+        && canCreateOrderBySafetyLimits()
+        && !isCurrentUserRestricted()
         && request.resource.data.users is list
         && request.resource.data.users.size() == 1
         && usersAllStrings(request.resource.data.users)
@@ -623,10 +623,10 @@ service cloud.firestore {
 
     function isValidOrderCreate() {
       return isSignedIn()
-        && canCreateOrderBySafetyLimits()
-        && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.maxPeople is number
         && request.resource.data.maxPeople >= 2
+        && canCreateOrderBySafetyLimits()
+        && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.participants is list
         && request.resource.data.participants.size() == 1
         && participantsAllStrings(request.resource.data.participants)
@@ -705,6 +705,7 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).changedKeys().hasOnly(['joinedAtMap'])
         && request.resource.data.participants == resource.data.participants
         && request.auth.uid in resource.data.get('participants', [])
+        && !resource.data.get('joinedAtMap', {}).keys().hasAny([request.auth.uid])
         && request.resource.data.joinedAtMap is map
         && request.resource.data.joinedAtMap[request.auth.uid] is timestamp;
     }
@@ -1148,21 +1149,21 @@ service cloud.firestore {
     match /orders/{orderId} {
       allow read: if isSignedIn();
       allow create: if isValidHalfOrderCreate() || isValidOrderCreate() || isAdmin();
-      allow update: if isAdmin()
-        || isParticipantsJoinUpdate()
+      allow update: if isParticipantsJoinUpdate()
         || isParticipantsJoinWithExtrasUpdate()
         || isJoinedAtMapBackfillUpdate()
         || isParticipantsLeaveUpdate()
         || isOrderTypingUpdate()
         || isCreatorOnlyNonJoinUpdate()
         || isSwipeAcceptUpdate()
-        || isMarkOrderExpiredUpdate()
-        || isHalfOrderParticipantIncrementalJoin()
-        || isHalfOrderParticipantBootstrapJoin()
         || isHalfOrderCancelUpdate()
         || isHalfOrderMarkActiveUpdate()
         || isHalfOrderCompleteUpdate()
-        || isOrderPairJoinNotifiedUpdate();
+        || isOrderPairJoinNotifiedUpdate()
+        || isHalfOrderParticipantIncrementalJoin()
+        || isHalfOrderParticipantBootstrapJoin()
+        || isMarkOrderExpiredUpdate()
+        || isAdmin();
       allow delete: if isAdmin()
         || (
           request.auth != null
