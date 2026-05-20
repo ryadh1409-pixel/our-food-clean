@@ -446,18 +446,7 @@ service cloud.firestore {
             && request.resource.data.notificationSent == true
           )
         )
-        && request.resource.data.users == resource.data.users
-        && request.resource.data.cardId == resource.data.cardId
-        && request.resource.data.status == resource.data.status
-        && request.resource.data.createdBy == resource.data.createdBy
-        && request.resource.data.get('hostId', '')
-          == resource.data.get('hostId', '')
-        && request.resource.data.maxUsers == resource.data.maxUsers
-        && request.resource.data.participants == resource.data.participants
-        && (
-          !resource.data.keys().hasAny(['host'])
-          || request.resource.data.host == resource.data.host
-        );
+        && request.resource.data.notifiedAt != null;
     }
 
     function orderLinkTargetsCard(orderId, cardId) {
