@@ -430,13 +430,13 @@ service cloud.firestore {
     /** Exactly-once: pair-join push ack via `notified` (client sends Expo push). */
     function isOrderPairJoinNotifiedUpdate() {
       return isSignedIn()
-        && !isCurrentUserRestricted()
-        && resource.data.cardId is string
-        && resource.data.cardId.size() > 0
+        && resource.data.get('cardId', '') is string
+        && resource.data.get('cardId', '').size() > 0
         && resource.data.get('users', []).size() == 2
         && request.auth.uid in resource.data.get('users', [])
         && resource.data.get('notified', false) != true
         && request.resource.data.notified == true
+        && request.resource.data.notifiedAt != null
         && (
           request.resource.data.diff(resource.data).changedKeys()
             .hasOnly(['notified', 'notifiedAt'])
@@ -445,8 +445,7 @@ service cloud.firestore {
               .hasOnly(['notified', 'notifiedAt', 'notificationSent'])
             && request.resource.data.notificationSent == true
           )
-        )
-        && request.resource.data.notifiedAt != null;
+        );
     }
 
     function orderLinkTargetsCard(orderId, cardId) {
@@ -1143,12 +1142,7 @@ service cloud.firestore {
           && isValidOrderCreate()
         )
         || isAdmin();
-      allow update: if (
-          resource.data.get('cardId', '') is string
-          && resource.data.get('cardId', '').size() > 0
-          && request.resource.data.diff(resource.data).changedKeys().hasAny(['notified'])
-          && isOrderPairJoinNotifiedUpdate()
-        )
+      allow update: if isOrderPairJoinNotifiedUpdate()
         || (
           resource.data.get('cardId', '') is string
           && resource.data.get('cardId', '').size() > 0
