@@ -214,14 +214,12 @@ service cloud.firestore {
         && !isCurrentUserRestricted()
         && request.resource.data.users is list
         && request.resource.data.users.size() == 1
-        && usersAllStrings(request.resource.data.users)
         && request.auth.uid == request.resource.data.users[0]
         && request.resource.data.host is map
         && validOrderHostDoc(request.resource.data.host)
         && request.resource.data.host.userId == request.auth.uid
         && request.resource.data.participants is list
         && request.resource.data.participants.size() == 1
-        && participantsAllStrings(request.resource.data.participants)
         && request.resource.data.participants[0] == request.auth.uid
         && request.resource.data.joinedAtMap is map
         && request.resource.data.joinedAtMap[request.auth.uid] is timestamp
@@ -1148,15 +1146,21 @@ service cloud.firestore {
     match /orders/{orderId} {
       allow read: if isSignedIn();
       allow create: if (
-          request.resource.data.maxPeople is number
-          && isValidOrderCreate()
-        )
-        || (
           request.resource.data.cardId is string
           && isValidHalfOrderCreate()
         )
+        || (
+          request.resource.data.maxPeople is number
+          && isValidOrderCreate()
+        )
         || isAdmin();
       allow update: if (
+          resource.data.get('cardId', '') is string
+          && resource.data.get('cardId', '').size() > 0
+          && request.resource.data.diff(resource.data).changedKeys().hasAny(['notified'])
+          && isOrderPairJoinNotifiedUpdate()
+        )
+        || (
           resource.data.get('cardId', '') is string
           && resource.data.get('cardId', '').size() > 0
           && isHalfOrderCancelUpdate()
@@ -1173,7 +1177,6 @@ service cloud.firestore {
         || isSwipeAcceptUpdate()
         || isHalfOrderMarkActiveUpdate()
         || isHalfOrderCompleteUpdate()
-        || isOrderPairJoinNotifiedUpdate()
         || isHalfOrderParticipantIncrementalJoin()
         || isHalfOrderParticipantBootstrapJoin()
         || isMarkOrderExpiredUpdate()
