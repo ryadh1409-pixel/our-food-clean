@@ -14,6 +14,7 @@ import {
   setDoc,
   Timestamp,
   updateDoc,
+  writeBatch,
 } from 'firebase/firestore';
 
 let testEnv: RulesTestEnvironment | undefined;
@@ -406,5 +407,93 @@ describe('firestore rules: HalfOrder cancel + order_members', () => {
         location: null,
       }),
     );
+  });
+});
+
+describe('firestore rules: AI chat food-card creation', () => {
+  async function seedUnrestrictedUser(uid: string) {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'users', uid), {
+        banned: false,
+        restricted: false,
+        totalOrdersCompleted: 4,
+        activeOrderCount: 0,
+      });
+    });
+  }
+
+  function aiChatCardDoc(uid: string, orderId: string) {
+    return {
+      title: 'North York Pizza',
+      restaurantName: 'North York Pizza',
+      image: 'https://example.com/pizza.jpg',
+      price: 16,
+      splitPrice: 8,
+      sharingPrice: 8,
+      location: { latitude: 43.7615, longitude: -79.4111 },
+      status: 'active',
+      expiresAt: Date.now() + 45 * 60 * 1000,
+      ownerId: uid,
+      user1: { uid, name: 'Host', photo: null },
+      maxUsers: 2,
+      createdAt: serverTimestamp(),
+      deckSource: 'ai_chat',
+      orderId,
+      aiDescription: 'Shared order · North York',
+    };
+  }
+
+  function aiChatOrderDoc(uid: string, cardId: string) {
+    return {
+      cardId,
+      users: [uid],
+      status: 'waiting',
+      matchWaitDeadlineAt: Date.now() + 45 * 60 * 1000,
+      maxUsers: 2,
+      createdBy: uid,
+      hostId: uid,
+      host: {
+        userId: uid,
+        name: 'Host',
+        avatar: null,
+        phone: null,
+        expoPushToken: null,
+      },
+      createdAt: serverTimestamp(),
+      foodName: 'North York Pizza',
+      image: 'https://example.com/pizza.jpg',
+      pricePerPerson: 8,
+      totalPrice: 16,
+      location: 'North York',
+      restaurantName: 'North York Pizza',
+      participants: [uid],
+      joinedAtMap: { [uid]: serverTimestamp() },
+      latitude: 43.7615,
+      longitude: -79.4111,
+    };
+  }
+
+  it('allows a non-admin user to batch-create an owned AI chat card with its linked HalfOrder', async () => {
+    await seedUnrestrictedUser('u1');
+    const db = te().authenticatedContext('u1').firestore();
+    const cardRef = doc(db, 'food_cards', 'ai-card-1');
+    const orderRef = doc(db, 'orders', 'ai-order-1');
+    const batch = writeBatch(db);
+    batch.set(cardRef, aiChatCardDoc('u1', orderRef.id));
+    batch.set(orderRef, aiChatOrderDoc('u1', cardRef.id));
+
+    await assertSucceeds(batch.commit());
+  });
+
+  it('denies AI chat card creation when the card owner is not the caller', async () => {
+    await seedUnrestrictedUser('u1');
+    const db = te().authenticatedContext('u1').firestore();
+    const cardRef = doc(db, 'food_cards', 'ai-card-2');
+    const orderRef = doc(db, 'orders', 'ai-order-2');
+    const batch = writeBatch(db);
+    batch.set(cardRef, aiChatCardDoc('u2', orderRef.id));
+    batch.set(orderRef, aiChatOrderDoc('u1', cardRef.id));
+
+    await assertFails(batch.commit());
   });
 });
