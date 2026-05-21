@@ -45,6 +45,14 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await te().clearFirestore();
+  await te().withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await Promise.all(
+      ['u1', 'u2', 'u3'].map((uid) =>
+        setDoc(doc(db, 'users', uid), unrestrictedUserDoc()),
+      ),
+    );
+  });
 });
 
 function baseOrderFields(createdByUid: string) {

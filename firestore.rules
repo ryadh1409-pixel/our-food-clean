@@ -10,14 +10,9 @@ service cloud.firestore {
       return isSignedIn()
         && (
           request.auth.uid == 'KT3LfXRsVgaH4LfRTQaexvj3CRn1'
-          || (
-            request.auth.token.email is string
-            && (
-              request.auth.token.email == 'admin@ourfood.com'
-              || request.auth.token.email == 'support@halforder.app'
-              || request.auth.token.email == 'ryadh1409@gmail.com'
-            )
-          )
+          || request.auth.token.get('email', '') == 'admin@ourfood.com'
+          || request.auth.token.get('email', '') == 'support@halforder.app'
+          || request.auth.token.get('email', '') == 'ryadh1409@gmail.com'
           || (
             exists(/databases/$(database)/documents/users/$(request.auth.uid))
             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', 'user') == 'admin'
@@ -25,30 +20,37 @@ service cloud.firestore {
         );
     }
 
+    function currentUserExists() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
     function currentUserData() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
     function isCurrentUserRestricted() {
-      return isSignedIn()
+      return currentUserExists()
         && (
-          currentUserData().banned == true
-          || currentUserData().restricted == true
+          currentUserData().get('banned', false) == true
+          || currentUserData().get('restricted', false) == true
         );
     }
 
     function isNewUserForOrderLimits() {
-      return currentUserData().totalOrdersCompleted is number
-        && currentUserData().totalOrdersCompleted <= 3;
+      return currentUserExists()
+        && currentUserData().get('totalOrdersCompleted', 0) is number
+        && currentUserData().get('totalOrdersCompleted', 0) <= 3;
     }
 
     function canCreateOrderBySafetyLimits() {
-      return !isCurrentUserRestricted()
+      return currentUserExists()
+        && !isCurrentUserRestricted()
         && (
           !isNewUserForOrderLimits()
           || (
-            currentUserData().activeOrderCount is number
-            && currentUserData().activeOrderCount < 1
+            currentUserData().get('activeOrderCount', 0) is number
+            && currentUserData().get('activeOrderCount', 0) < 1
           )
         );
     }
