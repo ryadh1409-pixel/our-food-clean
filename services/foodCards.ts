@@ -707,6 +707,15 @@ export async function joinOrder(
       };
     }
 
+    const linkedOrderId =
+      typeof cardDataPre.orderId === 'string' ? cardDataPre.orderId.trim() : '';
+    if (linkedOrderId) {
+      return {
+        ok: false,
+        message: 'This order is no longer open for joining.',
+      };
+    }
+
     const outcome = await runTransaction(db, async (tx) => {
       const cardSnap = await tx.get(cardRef);
       if (!cardSnap.exists()) throw new Error('Card not found');

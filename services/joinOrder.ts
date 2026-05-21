@@ -116,6 +116,12 @@ export async function joinHalfOrderByOrderId(orderId: string): Promise<{
   if (usersFirst.length === 0) {
     throw new Error('Use the standard join flow for this order.');
   }
+  if (
+    preData.status !== ORDER_STATUS.WAITING &&
+    preData.status !== ORDER_STATUS.ACTIVE
+  ) {
+    throw new Error('This order is not open for joining.');
+  }
 
   for (const m of memberIdsFromOrderData(preSnap.data())) {
     if (m !== uid && (await hasBlockBetween(uid, m))) {
@@ -139,6 +145,9 @@ export async function joinHalfOrderByOrderId(orderId: string): Promise<{
     const d = snap.data() as Record<string, unknown>;
     const users = normalizeOrderUserIds(d.users);
     const cardIdRaw = typeof d.cardId === 'string' ? d.cardId.trim() : '';
+    if (d.status !== ORDER_STATUS.WAITING && d.status !== ORDER_STATUS.ACTIVE) {
+      throw new Error('This order is not open for joining.');
+    }
     const rawMax =
       typeof d.maxUsers === 'number' && d.maxUsers > 0 ? d.maxUsers : 2;
     const maxPeople = isAdminFoodCardSlotId(cardIdRaw)
