@@ -239,6 +239,10 @@ service cloud.firestore {
       return isSignedIn()
         && !isCurrentUserRestricted()
         && resource.data.cardId is string
+        && (
+          resource.data.status == 'waiting'
+          || resource.data.status == 'active'
+        )
         && resource.data.get('users', []).size() > 0
         && request.resource.data.users is list
         && usersAllStrings(request.resource.data.users)
@@ -288,6 +292,10 @@ service cloud.firestore {
       return isSignedIn()
         && !isCurrentUserRestricted()
         && resource.data.cardId is string
+        && (
+          resource.data.status == 'waiting'
+          || resource.data.status == 'active'
+        )
         && resource.data.get('participants', []).size() == 0
         && resource.data.get('users', []).size() == 1
         && request.resource.data.users is list
@@ -690,6 +698,74 @@ service cloud.firestore {
         );
     }
 
+    function validAiChatFoodCardUser1(user1) {
+      return user1 is map
+        && user1.uid == request.auth.uid
+        && user1.name is string
+        && (
+          !user1.keys().hasAny(['photo'])
+          || user1.photo == null
+          || user1.photo is string
+        );
+    }
+
+    function validAiChatFoodCardLocation(location) {
+      return location is string
+        || (
+          location is map
+          && location.latitude is number
+          && location.longitude is number
+        );
+    }
+
+    function aiChatFoodCardLinkedOrderIsValid(cardId, orderId) {
+      return existsAfter(/databases/$(database)/documents/orders/$(orderId))
+        && getAfter(/databases/$(database)/documents/orders/$(orderId)).data.cardId == cardId
+        && getAfter(/databases/$(database)/documents/orders/$(orderId)).data.createdBy == request.auth.uid
+        && request.auth.uid in getAfter(/databases/$(database)/documents/orders/$(orderId)).data.get('users', []);
+    }
+
+    function isValidAiChatFoodCardCreate(cardId) {
+      return isSignedIn()
+        && !isCurrentUserRestricted()
+        && request.resource.data.keys().hasOnly([
+          'title',
+          'restaurantName',
+          'image',
+          'price',
+          'splitPrice',
+          'sharingPrice',
+          'location',
+          'status',
+          'expiresAt',
+          'ownerId',
+          'user1',
+          'maxUsers',
+          'createdAt',
+          'deckSource',
+          'orderId',
+          'aiDescription'
+        ])
+        && request.resource.data.deckSource == 'ai_chat'
+        && request.resource.data.ownerId == request.auth.uid
+        && validAiChatFoodCardUser1(request.resource.data.user1)
+        && request.resource.data.title is string
+        && request.resource.data.restaurantName is string
+        && request.resource.data.image is string
+        && request.resource.data.price is number
+        && request.resource.data.splitPrice is number
+        && request.resource.data.sharingPrice is number
+        && validAiChatFoodCardLocation(request.resource.data.location)
+        && request.resource.data.status == 'active'
+        && request.resource.data.expiresAt is int
+        && request.resource.data.maxUsers == 2
+        && request.resource.data.createdAt != null
+        && request.resource.data.orderId is string
+        && request.resource.data.orderId.size() > 0
+        && request.resource.data.aiDescription is string
+        && aiChatFoodCardLinkedOrderIsValid(cardId, request.resource.data.orderId);
+    }
+
     match /reports/{reportId} {
       allow create: if isSignedIn()
         && !isCurrentUserRestricted()
@@ -897,7 +973,16 @@ service cloud.firestore {
         && !isCurrentUserRestricted()
         && request.resource.data.orderId == chatId
         && request.resource.data.orderId == resource.data.orderId
-        && request.resource.data.diff(resource.data).changedKeys().hasOnly(['users'])
+        && (
+          request.resource.data.diff(resource.data).changedKeys().hasOnly(['users'])
+          || (
+            request.resource.data.diff(resource.data).changedKeys()
+              .hasOnly(['users', 'participants'])
+            && request.resource.data.participants is list
+            && participantsAllStrings(request.resource.data.participants)
+            && request.resource.data.participants == request.resource.data.users
+          )
+        )
         && request.resource.data.users is list
         && usersAllStrings(request.resource.data.users)
         && resource.data.get('users', []).size() > 0
@@ -1097,7 +1182,8 @@ service cloud.firestore {
 
     match /food_cards/{cardId} {
       allow read: if isSignedIn();
-      allow create, delete: if isAdmin();
+      allow create: if isAdmin() || isValidAiChatFoodCardCreate(cardId);
+      allow delete: if isAdmin();
       allow update: if isAdmin()
         || isValidFoodCardOrderIdLink(cardId)
         || isValidFoodCardJoinUpdate();

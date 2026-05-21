@@ -14,6 +14,7 @@ import {
   setDoc,
   Timestamp,
   updateDoc,
+  writeBatch,
 } from 'firebase/firestore';
 
 let testEnv: RulesTestEnvironment | undefined;
@@ -57,6 +58,16 @@ function baseOrderFields(createdByUid: string) {
     usersAccepted: [] as string[],
     createdBy: createdByUid,
     createdAt: serverTimestamp(),
+  };
+}
+
+function unrestrictedUserDoc() {
+  return {
+    banned: false,
+    restricted: false,
+    role: 'user',
+    totalOrdersCompleted: 4,
+    activeOrderCount: 0,
   };
 }
 
@@ -250,6 +261,101 @@ describe('firestore rules: swipe usersAccepted + food matches', () => {
   });
 });
 
+describe('firestore rules: AI chat food card order creation', () => {
+  function aiChatFoodCard(orderId = 'ai-order-1') {
+    return {
+      title: 'Pizza Palace',
+      restaurantName: 'Pizza Palace',
+      image: 'https://example.com/pizza.jpg',
+      price: 16,
+      splitPrice: 8,
+      sharingPrice: 8,
+      location: { latitude: 43.7, longitude: -79.4 },
+      status: 'active',
+      expiresAt: Date.now() + 45 * 60 * 1000,
+      ownerId: 'u1',
+      user1: { uid: 'u1', name: 'User One', photo: null },
+      maxUsers: 2,
+      createdAt: serverTimestamp(),
+      deckSource: 'ai_chat',
+      orderId,
+      aiDescription: 'Shared order',
+    };
+  }
+
+  function aiChatHalfOrder(cardId = 'ai-card-1') {
+    const ts = serverTimestamp();
+    return {
+      cardId,
+      users: ['u1'],
+      status: 'waiting',
+      matchWaitDeadlineAt: Date.now() + 10 * 60 * 1000,
+      maxUsers: 2,
+      createdBy: 'u1',
+      hostId: 'u1',
+      host: { userId: 'u1', name: 'User One', avatar: null, phone: null, expoPushToken: null },
+      createdAt: serverTimestamp(),
+      foodName: 'Pizza Palace',
+      image: 'https://example.com/pizza.jpg',
+      pricePerPerson: 8,
+      totalPrice: 16,
+      location: '123 Main St',
+      restaurantName: 'Pizza Palace',
+      participants: ['u1'],
+      joinedAtMap: { u1: ts },
+    };
+  }
+
+  it('allows a non-admin to create an AI food card linked to their new HalfOrder', async () => {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'users', 'u1'), unrestrictedUserDoc());
+    });
+
+    const dbU1 = te().authenticatedContext('u1').firestore();
+    const batch = writeBatch(dbU1);
+    batch.set(doc(dbU1, 'food_cards', 'ai-card-1'), aiChatFoodCard('ai-order-1'));
+    batch.set(doc(dbU1, 'orders', 'ai-order-1'), aiChatHalfOrder('ai-card-1'));
+
+    await assertSucceeds(batch.commit());
+  });
+
+  it('denies an AI food card create without the linked HalfOrder', async () => {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'users', 'u1'), unrestrictedUserDoc());
+    });
+
+    const dbU1 = te().authenticatedContext('u1').firestore();
+    await assertFails(
+      setDoc(doc(dbU1, 'food_cards', 'ai-card-2'), aiChatFoodCard('missing-order')),
+    );
+  });
+});
+
+describe('firestore rules: HalfOrder chat membership sync', () => {
+  it('allows a joiner to append mirrored users and participants to the order chat', async () => {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await setDoc(doc(db, 'users', 'u2'), unrestrictedUserDoc());
+      await setDoc(doc(db, 'chats', 'chat-order-1'), {
+        orderId: 'chat-order-1',
+        users: ['u1'],
+        participants: ['u1'],
+        createdAt: serverTimestamp(),
+        lastMessage: '',
+        lastMessageAt: Date.now(),
+      });
+    });
+
+    const dbU2 = te().authenticatedContext('u2').firestore();
+    await assertSucceeds(
+      updateDoc(doc(dbU2, 'chats', 'chat-order-1'), {
+        users: arrayUnion('u2'),
+        participants: arrayUnion('u2'),
+      }),
+    );
+  });
+});
+
 describe('firestore rules: HalfOrder pair-join notified ack', () => {
   function halfOrderPairDoc() {
     const ts = serverTimestamp();
@@ -362,6 +468,27 @@ describe('firestore rules: HalfOrder cancel + order_members', () => {
         status: 'cancelled',
         cancelledBy: 'u2',
         cancelledAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('denies joining a cancelled HalfOrder even when capacity remains', async () => {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'orders', 'ho-cancelled-open'), {
+        ...halfOrderActivePair(),
+        users: ['u1'],
+        participants: ['u1'],
+        joinedAtMap: { u1: serverTimestamp() },
+        status: 'cancelled',
+      });
+    });
+
+    const dbU2 = te().authenticatedContext('u2').firestore();
+    await assertFails(
+      updateDoc(doc(dbU2, 'orders', 'ho-cancelled-open'), {
+        users: arrayUnion('u2'),
+        participants: arrayUnion('u2'),
+        'joinedAtMap.u2': serverTimestamp(),
       }),
     );
   });
