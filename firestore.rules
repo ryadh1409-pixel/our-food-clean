@@ -1140,6 +1140,11 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create: if isValidHalfOrderCreate() || isValidOrderCreate() || isAdmin();
       allow update: if isCreatorOnlyNonJoinUpdate()
+        || isParticipantsJoinUpdate()
+        || isParticipantsJoinWithExtrasUpdate()
+        || isJoinedAtMapBackfillUpdate()
+        || isParticipantsLeaveUpdate()
+        || isOrderTypingUpdate()
         || isOrderPairJoinNotifiedUpdate()
         || isHalfOrderCancelUpdate()
         || isHalfOrderMarkActiveUpdate()
@@ -1147,11 +1152,6 @@ service cloud.firestore {
         || isHalfOrderParticipantIncrementalJoin()
         || isHalfOrderParticipantBootstrapJoin()
         || isSwipeAcceptUpdate()
-        || isParticipantsJoinUpdate()
-        || isParticipantsJoinWithExtrasUpdate()
-        || isJoinedAtMapBackfillUpdate()
-        || isParticipantsLeaveUpdate()
-        || isOrderTypingUpdate()
         || isMarkOrderExpiredUpdate()
         || isAdmin();
       allow delete: if isAdmin()
