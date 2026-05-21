@@ -205,6 +205,7 @@ service cloud.firestore {
       return isSignedIn()
         && canCreateOrderBySafetyLimits()
         && !isCurrentUserRestricted()
+        && request.resource.data.keys().hasAll(['cardId'])
         && request.resource.data.cardId is string
         && request.resource.data.cardId.size() > 0
         && request.resource.data.users is list
@@ -240,6 +241,7 @@ service cloud.firestore {
     function isHalfOrderParticipantIncrementalJoin() {
       return isSignedIn()
         && !isCurrentUserRestricted()
+        && resource.data.keys().hasAll(['cardId'])
         && resource.data.cardId is string
         && (
           resource.data.status == 'waiting'
@@ -293,6 +295,7 @@ service cloud.firestore {
     function isHalfOrderParticipantBootstrapJoin() {
       return isSignedIn()
         && !isCurrentUserRestricted()
+        && resource.data.keys().hasAll(['cardId'])
         && resource.data.cardId is string
         && (
           resource.data.status == 'waiting'
@@ -341,6 +344,7 @@ service cloud.firestore {
     function isHalfOrderCancelUpdate() {
       return isSignedIn()
         && !isCurrentUserRestricted()
+        && resource.data.keys().hasAll(['cardId'])
         && resource.data.cardId is string
         && resource.data.cardId.size() > 0
         && (
@@ -379,6 +383,7 @@ service cloud.firestore {
     function isHalfOrderMarkActiveUpdate() {
       return isSignedIn()
         && !isCurrentUserRestricted()
+        && resource.data.keys().hasAll(['cardId'])
         && resource.data.cardId is string
         && resource.data.cardId.size() > 0
         && resource.data.status == 'matched'
@@ -402,6 +407,7 @@ service cloud.firestore {
     function isHalfOrderCompleteUpdate() {
       return isSignedIn()
         && !isCurrentUserRestricted()
+        && resource.data.keys().hasAll(['cardId'])
         && resource.data.cardId is string
         && resource.data.cardId.size() > 0
         && (
@@ -436,6 +442,7 @@ service cloud.firestore {
     function isOrderPairJoinNotifiedUpdate() {
       return isSignedIn()
         && !isCurrentUserRestricted()
+        && resource.data.keys().hasAll(['cardId'])
         && resource.data.cardId is string
         && resource.data.cardId.size() > 0
         && resource.data.get('users', []).size() == 2
