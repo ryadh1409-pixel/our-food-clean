@@ -813,6 +813,32 @@ service cloud.firestore {
         );
     }
 
+    function isHalfOrderUpdate() {
+      return resource.data.keys().hasAll(['cardId'])
+        && (
+          isHalfOrderParticipantIncrementalJoin()
+          || isHalfOrderParticipantBootstrapJoin()
+          || isHalfOrderCancelUpdate()
+          || isHalfOrderMarkActiveUpdate()
+          || isHalfOrderCompleteUpdate()
+          || isOrderPairJoinNotifiedUpdate()
+        );
+    }
+
+    function isLegacyOrderUpdate() {
+      return !resource.data.keys().hasAny(['cardId'])
+        && (
+          isParticipantsJoinUpdate()
+          || isParticipantsJoinWithExtrasUpdate()
+          || isJoinedAtMapBackfillUpdate()
+          || isParticipantsLeaveUpdate()
+          || isOrderTypingUpdate()
+          || isCreatorOnlyNonJoinUpdate()
+          || isSwipeAcceptUpdate()
+          || isMarkOrderExpiredUpdate()
+        );
+    }
+
     match /reports/{reportId} {
       allow create: if isSignedIn()
         && !isCurrentUserRestricted()
@@ -1167,21 +1193,9 @@ service cloud.firestore {
     match /orders/{orderId} {
       allow read: if isSignedIn();
       allow create: if isValidHalfOrderCreate() || isValidOrderCreate() || isAdmin();
-      allow update: if isAdmin()
-        || isParticipantsJoinUpdate()
-        || isParticipantsJoinWithExtrasUpdate()
-        || isJoinedAtMapBackfillUpdate()
-        || isParticipantsLeaveUpdate()
-        || isOrderTypingUpdate()
-        || isCreatorOnlyNonJoinUpdate()
-        || isSwipeAcceptUpdate()
-        || isMarkOrderExpiredUpdate()
-        || isHalfOrderParticipantIncrementalJoin()
-        || isHalfOrderParticipantBootstrapJoin()
-        || isHalfOrderCancelUpdate()
-        || isHalfOrderMarkActiveUpdate()
-        || isHalfOrderCompleteUpdate()
-        || isOrderPairJoinNotifiedUpdate();
+      allow update: if isHalfOrderUpdate()
+        || isLegacyOrderUpdate()
+        || isAdmin();
       allow delete: if isAdmin()
         || (
           request.auth != null
