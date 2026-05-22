@@ -14,6 +14,7 @@ import {
   setDoc,
   Timestamp,
   updateDoc,
+  writeBatch,
 } from 'firebase/firestore';
 
 let testEnv: RulesTestEnvironment | undefined;
@@ -313,6 +314,88 @@ describe('firestore rules: HalfOrder pair-join notified ack', () => {
         notifiedAt: serverTimestamp(),
       }),
     );
+  });
+});
+
+describe('firestore rules: AI chat food-card creation', () => {
+  function aiChatFoodCard(uid: string, orderId: string) {
+    return {
+      title: 'North York Pizza',
+      restaurantName: 'North York Pizza',
+      image: 'https://images.unsplash.com/photo-1513104890138-7c749659a591',
+      price: 16,
+      splitPrice: 8,
+      sharingPrice: 8,
+      location: '5000 Yonge St, Toronto',
+      status: 'active',
+      expiresAt: Date.now() + 45 * 60 * 1000,
+      ownerId: uid,
+      user1: { uid, name: 'Host', photo: null },
+      maxUsers: 2,
+      createdAt: serverTimestamp(),
+      deckSource: 'ai_chat',
+      orderId,
+      aiDescription: 'Shared order - 5000 Yonge St, Toronto',
+    };
+  }
+
+  function aiChatHalfOrder(uid: string, cardId: string) {
+    return {
+      cardId,
+      users: [uid],
+      status: 'waiting',
+      matchWaitDeadlineAt: Date.now() + 20 * 60 * 1000,
+      maxUsers: 2,
+      createdBy: uid,
+      hostId: uid,
+      host: {
+        userId: uid,
+        name: 'Host',
+        avatar: null,
+        phone: null,
+        expoPushToken: null,
+      },
+      createdAt: serverTimestamp(),
+      foodName: 'North York Pizza',
+      image: 'https://images.unsplash.com/photo-1513104890138-7c749659a591',
+      pricePerPerson: 8,
+      totalPrice: 16,
+      location: '5000 Yonge St, Toronto',
+      restaurantName: 'North York Pizza',
+      participants: [uid],
+      joinedAtMap: { [uid]: serverTimestamp() },
+    };
+  }
+
+  it('allows a user to create an AI chat food card with its linked HalfOrder in one batch', async () => {
+    const db = te().authenticatedContext('u1').firestore();
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'food_cards', 'ai-card-1'), aiChatFoodCard('u1', 'ai-order-1'));
+    batch.set(doc(db, 'orders', 'ai-order-1'), aiChatHalfOrder('u1', 'ai-card-1'));
+
+    await assertSucceeds(batch.commit());
+  });
+
+  it('denies AI chat food-card create without the linked order in the same write', async () => {
+    const db = te().authenticatedContext('u1').firestore();
+    await assertFails(
+      setDoc(doc(db, 'food_cards', 'ai-card-orphan'), aiChatFoodCard('u1', 'missing-order')),
+    );
+  });
+
+  it('denies AI chat food-card create when the caller is not the owner', async () => {
+    const db = te().authenticatedContext('u1').firestore();
+    const batch = writeBatch(db);
+    batch.set(
+      doc(db, 'food_cards', 'ai-card-owner-mismatch'),
+      aiChatFoodCard('u2', 'ai-order-owner-mismatch'),
+    );
+    batch.set(
+      doc(db, 'orders', 'ai-order-owner-mismatch'),
+      aiChatHalfOrder('u1', 'ai-card-owner-mismatch'),
+    );
+
+    await assertFails(batch.commit());
   });
 });
 

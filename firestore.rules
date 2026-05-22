@@ -480,6 +480,110 @@ service cloud.firestore {
         && requesterInOrderUsers(request.resource.data.orderId);
     }
 
+    function isValidAiChatFoodCardUser(u) {
+      return u is map
+        && u.keys().hasAll(['uid', 'name', 'photo'])
+        && u.keys().hasOnly(['uid', 'name', 'photo'])
+        && u.uid == request.auth.uid
+        && u.name is string
+        && u.name.size() > 0
+        && (u.photo == null || u.photo is string);
+    }
+
+    function isValidAiChatFoodCardLocation(loc) {
+      return (
+          loc is string
+          && loc.size() > 0
+          && loc.size() <= 240
+        )
+        || (
+          loc is map
+          && loc.keys().hasAll(['latitude', 'longitude'])
+          && loc.keys().hasOnly(['latitude', 'longitude'])
+          && loc.latitude is number
+          && loc.longitude is number
+          && loc.latitude >= -90
+          && loc.latitude <= 90
+          && loc.longitude >= -180
+          && loc.longitude <= 180
+        );
+    }
+
+    function isValidAiChatFoodCardCreate(cardId) {
+      return isSignedIn()
+        && !isCurrentUserRestricted()
+        && request.resource.data.keys().hasAll([
+          'title',
+          'restaurantName',
+          'image',
+          'price',
+          'splitPrice',
+          'sharingPrice',
+          'location',
+          'status',
+          'expiresAt',
+          'ownerId',
+          'user1',
+          'maxUsers',
+          'createdAt',
+          'deckSource',
+          'orderId',
+          'aiDescription',
+        ])
+        && request.resource.data.keys().hasOnly([
+          'title',
+          'restaurantName',
+          'image',
+          'price',
+          'splitPrice',
+          'sharingPrice',
+          'location',
+          'status',
+          'expiresAt',
+          'ownerId',
+          'user1',
+          'maxUsers',
+          'createdAt',
+          'deckSource',
+          'orderId',
+          'aiDescription',
+        ])
+        && request.resource.data.deckSource == 'ai_chat'
+        && request.resource.data.status == 'active'
+        && request.resource.data.ownerId == request.auth.uid
+        && isValidAiChatFoodCardUser(request.resource.data.user1)
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.title.size() <= 140
+        && request.resource.data.restaurantName is string
+        && request.resource.data.restaurantName.size() > 0
+        && request.resource.data.restaurantName.size() <= 140
+        && request.resource.data.image is string
+        && request.resource.data.image.size() > 0
+        && request.resource.data.price is number
+        && request.resource.data.price >= 0
+        && request.resource.data.price <= 10000
+        && request.resource.data.splitPrice is number
+        && request.resource.data.splitPrice >= 0
+        && request.resource.data.splitPrice <= 10000
+        && request.resource.data.sharingPrice is number
+        && request.resource.data.sharingPrice >= 0
+        && request.resource.data.sharingPrice <= 10000
+        && isValidAiChatFoodCardLocation(request.resource.data.location)
+        && request.resource.data.expiresAt is int
+        && request.resource.data.expiresAt > 0
+        && request.resource.data.maxUsers == 2
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.aiDescription is string
+        && request.resource.data.aiDescription.size() <= 400
+        && request.resource.data.orderId is string
+        && request.resource.data.orderId.size() > 0
+        && !exists(/databases/$(database)/documents/orders/$(request.resource.data.orderId))
+        && existsAfter(/databases/$(database)/documents/orders/$(request.resource.data.orderId))
+        && getAfter(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.cardId == cardId
+        && request.auth.uid in getAfter(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.get('users', []);
+    }
+
     /** Tinder-style like: only `usersAccepted` changes, +1 size, cap by maxPeople. */
     function isSwipeAcceptUpdate() {
       return isSignedIn()
@@ -1097,7 +1201,8 @@ service cloud.firestore {
 
     match /food_cards/{cardId} {
       allow read: if isSignedIn();
-      allow create, delete: if isAdmin();
+      allow create: if isAdmin() || isValidAiChatFoodCardCreate(cardId);
+      allow delete: if isAdmin();
       allow update: if isAdmin()
         || isValidFoodCardOrderIdLink(cardId)
         || isValidFoodCardJoinUpdate();
