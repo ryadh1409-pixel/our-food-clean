@@ -202,6 +202,7 @@ service cloud.firestore {
     /** HalfOrder: food-card swipe creates `orders` with `cardId` + `users` + `host`, string `participants`, `joinedAtMap`. */
     function isValidHalfOrderCreate() {
       return isSignedIn()
+        && request.resource.data.keys().hasAll(['cardId'])
         && canCreateOrderBySafetyLimits()
         && !isCurrentUserRestricted()
         && request.resource.data.cardId is string
@@ -239,6 +240,7 @@ service cloud.firestore {
     function isHalfOrderParticipantIncrementalJoin() {
       return isSignedIn()
         && !isCurrentUserRestricted()
+        && resource.data.keys().hasAll(['cardId'])
         && resource.data.cardId is string
         && resource.data.get('users', []).size() > 0
         && request.resource.data.users is list
@@ -288,6 +290,7 @@ service cloud.firestore {
     function isHalfOrderParticipantBootstrapJoin() {
       return isSignedIn()
         && !isCurrentUserRestricted()
+        && resource.data.keys().hasAll(['cardId'])
         && resource.data.cardId is string
         && resource.data.get('participants', []).size() == 0
         && resource.data.get('users', []).size() == 1
@@ -332,6 +335,7 @@ service cloud.firestore {
     function isHalfOrderCancelUpdate() {
       return isSignedIn()
         && !isCurrentUserRestricted()
+        && resource.data.keys().hasAll(['cardId'])
         && resource.data.cardId is string
         && resource.data.cardId.size() > 0
         && (
@@ -370,6 +374,7 @@ service cloud.firestore {
     function isHalfOrderMarkActiveUpdate() {
       return isSignedIn()
         && !isCurrentUserRestricted()
+        && resource.data.keys().hasAll(['cardId'])
         && resource.data.cardId is string
         && resource.data.cardId.size() > 0
         && resource.data.status == 'matched'
@@ -393,6 +398,7 @@ service cloud.firestore {
     function isHalfOrderCompleteUpdate() {
       return isSignedIn()
         && !isCurrentUserRestricted()
+        && resource.data.keys().hasAll(['cardId'])
         && resource.data.cardId is string
         && resource.data.cardId.size() > 0
         && (
@@ -427,6 +433,7 @@ service cloud.firestore {
     function isOrderPairJoinNotifiedUpdate() {
       return isSignedIn()
         && !isCurrentUserRestricted()
+        && resource.data.keys().hasAll(['cardId'])
         && resource.data.cardId is string
         && resource.data.cardId.size() > 0
         && resource.data.get('users', []).size() == 2
@@ -589,6 +596,7 @@ service cloud.firestore {
     function isSwipeAcceptUpdate() {
       return isSignedIn()
         && !isCurrentUserRestricted()
+        && !resource.data.keys().hasAny(['cardId'])
         && request.resource.data.diff(resource.data).changedKeys().hasOnly(['usersAccepted'])
         && request.resource.data.usersAccepted is list
         && request.auth.uid in request.resource.data.usersAccepted
@@ -654,6 +662,7 @@ service cloud.firestore {
     function isParticipantsJoinUpdate() {
       return isSignedIn()
         && !isCurrentUserRestricted()
+        && !resource.data.keys().hasAny(['cardId'])
         && request.resource.data.diff(resource.data).changedKeys()
           .hasOnly(['participants', 'joinedAtMap', 'startedAt', 'expiresAt'])
         && request.resource.data.participants is list
@@ -679,6 +688,7 @@ service cloud.firestore {
     function isParticipantsJoinWithExtrasUpdate() {
       return isSignedIn()
         && !isCurrentUserRestricted()
+        && !resource.data.keys().hasAny(['cardId'])
         && request.resource.data.diff(resource.data).changedKeys()
           .hasOnly(['participants', 'joinedAtMap', 'status', 'user2Id', 'user2Name', 'startedAt', 'expiresAt'])
         && request.resource.data.participants is list
@@ -704,9 +714,11 @@ service cloud.firestore {
     function isJoinedAtMapBackfillUpdate() {
       return isSignedIn()
         && !isCurrentUserRestricted()
+        && !resource.data.keys().hasAny(['cardId'])
         && request.resource.data.diff(resource.data).changedKeys().hasOnly(['joinedAtMap'])
         && request.resource.data.participants == resource.data.participants
         && request.auth.uid in resource.data.get('participants', [])
+        && !resource.data.get('joinedAtMap', {}).keys().hasAny([request.auth.uid])
         && request.resource.data.joinedAtMap is map
         && request.resource.data.joinedAtMap[request.auth.uid] is timestamp;
     }
@@ -714,6 +726,7 @@ service cloud.firestore {
     function isParticipantsLeaveUpdate() {
       return isSignedIn()
         && !isCurrentUserRestricted()
+        && !resource.data.keys().hasAny(['cardId'])
         && orderCreatorUidFromDoc(resource.data) != request.auth.uid
         && (
           request.resource.data.diff(resource.data).changedKeys().hasOnly(['participants', 'joinedAtMap'])
@@ -730,6 +743,7 @@ service cloud.firestore {
 
     function isOrderTypingUpdate() {
       return isSignedIn()
+        && !resource.data.keys().hasAny(['cardId'])
         && request.auth.uid in resource.data.get('participants', [])
         && request.resource.data.diff(resource.data).changedKeys().hasOnly(['typing']);
     }
@@ -737,6 +751,7 @@ service cloud.firestore {
     function isCreatorOnlyNonJoinUpdate() {
       return isSignedIn()
         && !isCurrentUserRestricted()
+        && !resource.data.keys().hasAny(['cardId'])
         && resource.data.createdBy == request.auth.uid
         && !request.resource.data.diff(resource.data).changedKeys().hasAny([
           'participants',
@@ -745,15 +760,16 @@ service cloud.firestore {
           'typing'
         ])
         && (
-          resource.data.status != 'completed'
-          || request.resource.data.status == resource.data.status
+          resource.data.get('status', '') != 'completed'
+          || request.resource.data.get('status', '') == resource.data.get('status', '')
         )
         && (
           !request.resource.data.diff(resource.data).changedKeys().hasAny(['status'])
           || request.resource.data.status != 'cancelled'
           || (
-            currentUserData().cancellationCount24h is number
-            && currentUserData().cancellationCount24h < 3
+            currentUserExists()
+            && currentUserData().get('cancellationCount24h', 0) is number
+            && currentUserData().get('cancellationCount24h', 0) < 3
           )
         );
     }
@@ -761,6 +777,7 @@ service cloud.firestore {
     function isMarkOrderExpiredUpdate() {
       return isSignedIn()
         && !isCurrentUserRestricted()
+        && !resource.data.keys().hasAny(['cardId'])
         && request.resource.data.diff(resource.data).changedKeys().hasOnly(['status'])
         && resource.data.status in ['open', 'matched', 'full']
         && request.resource.data.status == 'expired'
