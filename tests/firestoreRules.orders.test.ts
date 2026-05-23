@@ -318,6 +318,17 @@ describe('firestore rules: HalfOrder pair-join notified ack', () => {
 });
 
 describe('firestore rules: AI chat food-card creation', () => {
+  async function seedUser(uid: string) {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'users', uid), {
+        banned: false,
+        restricted: false,
+        totalOrdersCompleted: 4,
+        activeOrderCount: 0,
+      });
+    });
+  }
+
   function aiChatFoodCard(ownerId: string, orderId = 'ai-order-1') {
     return {
       title: 'Sushi Place',
@@ -365,6 +376,7 @@ describe('firestore rules: AI chat food-card creation', () => {
   }
 
   it('allows a regular user to create an AI chat food card with its linked HalfOrder', async () => {
+    await seedUser('u1');
     const db = te().authenticatedContext('u1').firestore();
     const batch = writeBatch(db);
     batch.set(doc(db, 'food_cards', 'ai-card-1'), aiChatFoodCard('u1'));
@@ -374,6 +386,7 @@ describe('firestore rules: AI chat food-card creation', () => {
   });
 
   it('denies an AI chat food card when the paired order is missing', async () => {
+    await seedUser('u1');
     const db = te().authenticatedContext('u1').firestore();
 
     await assertFails(
@@ -382,6 +395,7 @@ describe('firestore rules: AI chat food-card creation', () => {
   });
 
   it('denies an AI chat food card owned by another user', async () => {
+    await seedUser('u1');
     const db = te().authenticatedContext('u1').firestore();
     const batch = writeBatch(db);
     batch.set(doc(db, 'food_cards', 'ai-card-1'), aiChatFoodCard('u2'));

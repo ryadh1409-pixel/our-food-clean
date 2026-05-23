@@ -23,22 +23,20 @@ service cloud.firestore {
     }
 
     function currentUserData() {
-      return exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data
-        : {};
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
     function isCurrentUserRestricted() {
       return isSignedIn()
         && (
-          currentUserData().get('banned', false) == true
-          || currentUserData().get('restricted', false) == true
+          currentUserData().banned == true
+          || currentUserData().restricted == true
         );
     }
 
     function isNewUserForOrderLimits() {
-      return currentUserData().get('totalOrdersCompleted', 999999) is number
-        && currentUserData().get('totalOrdersCompleted', 999999) <= 3;
+      return currentUserData().totalOrdersCompleted is number
+        && currentUserData().totalOrdersCompleted <= 3;
     }
 
     function canCreateOrderBySafetyLimits() {
@@ -46,8 +44,8 @@ service cloud.firestore {
         && (
           !isNewUserForOrderLimits()
           || (
-            currentUserData().get('activeOrderCount', 0) is number
-            && currentUserData().get('activeOrderCount', 0) < 1
+            currentUserData().activeOrderCount is number
+            && currentUserData().activeOrderCount < 1
           )
         );
     }
@@ -208,8 +206,6 @@ service cloud.firestore {
 
     function isValidAiChatHalfOrderCreate(orderId) {
       return isSignedIn()
-        && canCreateOrderBySafetyLimits()
-        && !isCurrentUserRestricted()
         && request.resource.data.cardId is string
         && request.resource.data.cardId.size() > 0
         && request.resource.data.users is list
@@ -228,6 +224,8 @@ service cloud.firestore {
         && validOrderHostDoc(request.resource.data.host)
         && request.resource.data.host.userId == request.auth.uid
         && request.resource.data.createdAt != null
+        && canCreateOrderBySafetyLimits()
+        && !isCurrentUserRestricted()
         && aiChatOrderLinkedFoodCardMatches(orderId);
     }
 
@@ -734,7 +732,6 @@ service cloud.firestore {
 
     function isValidAiChatFoodCardCreate(cardId) {
       return isSignedIn()
-        && !isCurrentUserRestricted()
         && request.resource.data.keys().hasAll([
           'title',
           'restaurantName',
@@ -773,6 +770,7 @@ service cloud.firestore {
         ])
         && request.resource.data.deckSource == 'ai_chat'
         && request.resource.data.ownerId == request.auth.uid
+        && !isCurrentUserRestricted()
         && request.resource.data.user1 is map
         && request.resource.data.user1.keys().hasAll(['uid', 'name', 'photo'])
         && request.resource.data.user1.keys().hasOnly(['uid', 'name', 'photo'])
