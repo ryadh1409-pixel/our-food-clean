@@ -23,20 +23,22 @@ service cloud.firestore {
     }
 
     function currentUserData() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data
+        : {};
     }
 
     function isCurrentUserRestricted() {
       return isSignedIn()
         && (
-          currentUserData().banned == true
-          || currentUserData().restricted == true
+          currentUserData().get('banned', false) == true
+          || currentUserData().get('restricted', false) == true
         );
     }
 
     function isNewUserForOrderLimits() {
-      return currentUserData().totalOrdersCompleted is number
-        && currentUserData().totalOrdersCompleted <= 3;
+      return currentUserData().get('totalOrdersCompleted', 999999) is number
+        && currentUserData().get('totalOrdersCompleted', 999999) <= 3;
     }
 
     function canCreateOrderBySafetyLimits() {
@@ -44,8 +46,8 @@ service cloud.firestore {
         && (
           !isNewUserForOrderLimits()
           || (
-            currentUserData().activeOrderCount is number
-            && currentUserData().activeOrderCount < 1
+            currentUserData().get('activeOrderCount', 0) is number
+            && currentUserData().get('activeOrderCount', 0) < 1
           )
         );
     }
@@ -1151,7 +1153,10 @@ service cloud.firestore {
     }
     match /orders/{orderId} {
       allow read: if isSignedIn();
-      allow create: if isValidAiChatHalfOrderCreate(orderId) || isValidHalfOrderCreate() || isValidOrderCreate() || isAdmin();
+      allow create: if isValidAiChatHalfOrderCreate(orderId)
+        || isValidHalfOrderCreate()
+        || isValidOrderCreate()
+        || isAdmin();
       allow update: if isAdmin()
         || isParticipantsJoinUpdate()
         || isParticipantsJoinWithExtrasUpdate()
