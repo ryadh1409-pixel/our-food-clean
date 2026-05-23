@@ -1151,8 +1151,13 @@ service cloud.firestore {
     }
     match /orders/{orderId} {
       allow read: if isSignedIn();
-      allow create: if isValidAiChatHalfOrderCreate(orderId)
-        || isValidHalfOrderCreate()
+      allow create: if (
+          request.resource.data.keys().hasAll(['cardId'])
+          && (
+            isValidAiChatHalfOrderCreate(orderId)
+            || isValidHalfOrderCreate()
+          )
+        )
         || isValidOrderCreate()
         || isAdmin();
       allow update: if isAdmin()
