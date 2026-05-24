@@ -11,12 +11,9 @@ service cloud.firestore {
         && (
           request.auth.uid == 'KT3LfXRsVgaH4LfRTQaexvj3CRn1'
           || (
-            request.auth.token.email is string
-            && (
-              request.auth.token.email == 'admin@ourfood.com'
-              || request.auth.token.email == 'support@halforder.app'
-              || request.auth.token.email == 'ryadh1409@gmail.com'
-            )
+            request.auth.token.get('email', '') == 'admin@ourfood.com'
+            || request.auth.token.get('email', '') == 'support@halforder.app'
+            || request.auth.token.get('email', '') == 'ryadh1409@gmail.com'
           )
           || (
             exists(/databases/$(database)/documents/users/$(request.auth.uid))
@@ -1230,16 +1227,18 @@ service cloud.firestore {
      */
     match /groups/{groupId} {
       allow read: if request.auth != null;
-      allow create: if isAdmin() || isValidGroupCreate();
-      allow update: if isAdmin()
-        || isValidGroupJoinUpdate()
+      allow create: if isValidGroupCreate() || isAdmin();
+      allow update: if isValidGroupJoinUpdate()
         || isValidGroupLeaveUpdate()
-        || isValidGroupOrderedUpdate();
-      allow delete: if isAdmin()
-        || request.auth != null
-        && resource.data.members is list
-        && resource.data.members.size() == 1
-        && request.auth.uid in resource.data.members;
+        || isValidGroupOrderedUpdate()
+        || isAdmin();
+      allow delete: if (
+          request.auth != null
+          && resource.data.members is list
+          && resource.data.members.size() == 1
+          && request.auth.uid in resource.data.members
+        )
+        || isAdmin();
     }
 
     match /{document=**} {
