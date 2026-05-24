@@ -8,6 +8,7 @@ import {
 } from '@firebase/rules-unit-testing';
 import {
   arrayUnion,
+  deleteDoc,
   doc,
   getDoc,
   serverTimestamp,
@@ -406,5 +407,143 @@ describe('firestore rules: HalfOrder cancel + order_members', () => {
         location: null,
       }),
     );
+  });
+});
+
+describe('firestore rules: user profile privilege fields', () => {
+  it('denies self-create with admin role', async () => {
+    const db = te().authenticatedContext('u1').firestore();
+    await assertFails(
+      setDoc(doc(db, 'users', 'u1'), {
+        uid: 'u1',
+        email: 'user@example.com',
+        role: 'admin',
+        banned: false,
+        restricted: false,
+      }),
+    );
+  });
+
+  it('allows self-create with a normal user role', async () => {
+    const db = te().authenticatedContext('u1').firestore();
+    await assertSucceeds(
+      setDoc(doc(db, 'users', 'u1'), {
+        uid: 'u1',
+        email: 'user@example.com',
+        role: 'user',
+        banned: false,
+        restricted: false,
+      }),
+    );
+  });
+
+  it('denies self-updating role or moderation flags', async () => {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'users', 'u1'), {
+        uid: 'u1',
+        email: 'user@example.com',
+        role: 'user',
+        banned: true,
+        restricted: true,
+      });
+    });
+
+    const db = te().authenticatedContext('u1').firestore();
+    await assertFails(updateDoc(doc(db, 'users', 'u1'), { role: 'admin' }));
+    await assertFails(updateDoc(doc(db, 'users', 'u1'), { banned: false }));
+    await assertFails(updateDoc(doc(db, 'users', 'u1'), { restricted: false }));
+    await assertSucceeds(updateDoc(doc(db, 'users', 'u1'), { displayName: 'User One' }));
+  });
+
+  it('allows whitelisted admin emails to update moderation flags', async () => {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'users', 'u1'), {
+        uid: 'u1',
+        role: 'user',
+        banned: false,
+      });
+    });
+
+    const adminDb = te()
+      .authenticatedContext('adminUid', { email: 'admin@ourfood.com' })
+      .firestore();
+    await assertSucceeds(updateDoc(doc(adminDb, 'users', 'u1'), { banned: true }));
+  });
+});
+
+describe('firestore rules: split groups', () => {
+  function groupDoc(members: string[], status: 'waiting' | 'full' | 'ordered' = 'waiting') {
+    return {
+      members,
+      foodType: 'pizza',
+      maxSize: 4,
+      status,
+      createdAt: serverTimestamp(),
+      anchorLocation: { lat: 43.65, lng: -79.38 },
+      centerLocation: { lat: 43.65, lng: -79.38 },
+    };
+  }
+
+  it('allows valid group create and join', async () => {
+    const dbU1 = te().authenticatedContext('u1').firestore();
+    await assertSucceeds(setDoc(doc(dbU1, 'groups', 'g1'), groupDoc(['u1'])));
+
+    const dbU2 = te().authenticatedContext('u2').firestore();
+    await assertSucceeds(
+      updateDoc(doc(dbU2, 'groups', 'g1'), {
+        members: ['u1', 'u2'],
+        status: 'waiting',
+      }),
+    );
+  });
+
+  it('denies group members rewriting membership or arbitrary fields', async () => {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'groups', 'g1'), groupDoc(['u1', 'u2']));
+    });
+
+    const dbU1 = te().authenticatedContext('u1').firestore();
+    await assertFails(
+      updateDoc(doc(dbU1, 'groups', 'g1'), {
+        members: ['u1'],
+        status: 'ordered',
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(dbU1, 'groups', 'g1'), {
+        foodType: 'sushi',
+      }),
+    );
+  });
+
+  it('allows members to leave without removing other members', async () => {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'groups', 'g1'), groupDoc(['u1', 'u2', 'u3']));
+    });
+
+    const dbU2 = te().authenticatedContext('u2').firestore();
+    await assertSucceeds(
+      updateDoc(doc(dbU2, 'groups', 'g1'), {
+        members: ['u1', 'u3'],
+        status: 'waiting',
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(dbU2, 'groups', 'g1'), {
+        members: ['u3'],
+        status: 'waiting',
+      }),
+    );
+  });
+
+  it('only allows deleting a group when the caller is the last member', async () => {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'groups', 'g1'), groupDoc(['u1', 'u2']));
+      await setDoc(doc(ctx.firestore(), 'groups', 'g2'), groupDoc(['u1']));
+    });
+
+    const dbU1 = te().authenticatedContext('u1').firestore();
+    await assertFails(deleteDoc(doc(dbU1, 'groups', 'g1')));
+    await assertSucceeds(deleteDoc(doc(dbU1, 'groups', 'g2')));
   });
 });
