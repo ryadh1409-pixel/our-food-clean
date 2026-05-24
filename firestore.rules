@@ -1141,9 +1141,17 @@ service cloud.firestore {
         && (resource.data.members.size() < 4 || resource.data.members[3] == request.auth.uid || resource.data.members[3] in request.resource.data.members);
     }
 
+    function groupMembersAllStrings(members) {
+      return members is list
+        && members.size() <= 4
+        && (members.size() < 1 || members[0] is string)
+        && (members.size() < 2 || members[1] is string)
+        && (members.size() < 3 || members[2] is string)
+        && (members.size() < 4 || members[3] is string);
+    }
+
     function isValidGroupCreate() {
       return isSignedIn()
-        && !isCurrentUserRestricted()
         && request.resource.data.keys().hasOnly([
           'members',
           'foodType',
@@ -1153,8 +1161,7 @@ service cloud.firestore {
           'centerLocation',
           'anchorLocation'
         ])
-        && request.resource.data.members is list
-        && usersAllStrings(request.resource.data.members)
+        && groupMembersAllStrings(request.resource.data.members)
         && request.resource.data.members.size() == 1
         && request.resource.data.members[0] == request.auth.uid
         && request.resource.data.foodType is string
@@ -1170,11 +1177,8 @@ service cloud.firestore {
 
     function isValidGroupJoinUpdate() {
       return isSignedIn()
-        && !isCurrentUserRestricted()
-        && resource.data.members is list
-        && request.resource.data.members is list
-        && usersAllStrings(resource.data.members)
-        && usersAllStrings(request.resource.data.members)
+        && groupMembersAllStrings(resource.data.members)
+        && groupMembersAllStrings(request.resource.data.members)
         && request.resource.data.diff(resource.data).changedKeys().hasOnly(['members', 'status'])
         && resource.data.status == 'waiting'
         && resource.data.members.size() < 4
@@ -1196,10 +1200,8 @@ service cloud.firestore {
 
     function isValidGroupLeaveUpdate() {
       return isSignedIn()
-        && resource.data.members is list
-        && request.resource.data.members is list
-        && usersAllStrings(resource.data.members)
-        && usersAllStrings(request.resource.data.members)
+        && groupMembersAllStrings(resource.data.members)
+        && groupMembersAllStrings(request.resource.data.members)
         && request.resource.data.diff(resource.data).changedKeys().hasOnly(['members', 'status'])
         && request.auth.uid in resource.data.members
         && !(request.auth.uid in request.resource.data.members)
@@ -1214,7 +1216,7 @@ service cloud.firestore {
         && resource.data.members is list
         && request.auth.uid in resource.data.members
         && request.resource.data.diff(resource.data).changedKeys().hasOnly(['status'])
-        && resource.data.status in ['waiting', 'full']
+        && (resource.data.status == 'waiting' || resource.data.status == 'full')
         && request.resource.data.status == 'ordered';
     }
 
