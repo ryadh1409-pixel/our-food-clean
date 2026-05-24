@@ -624,14 +624,14 @@ exports.onNewChatMessage = functions.firestore
     const db = admin.firestore();
 
     const chatSnap = await db.doc(`chats/${chatId}`).get();
-    if (!chatSnap.exists()) return null;
+    if (!chatSnap.exists) return null;
     const participants = chatSnap.data()?.participants;
     if (!Array.isArray(participants) || participants.length < 2) return null;
     const receiverId = participants.find((id) => id !== senderId);
     if (!receiverId) return null;
 
     const userSnap = await db.doc(`users/${receiverId}`).get();
-    if (!userSnap.exists()) return null;
+    if (!userSnap.exists) return null;
     const userData = userSnap.data();
     const token =
       userData?.fcmToken ?? userData?.expoPushToken ?? userData?.pushToken;
