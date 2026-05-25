@@ -3,7 +3,7 @@ import { doc, setDoc } from 'firebase/firestore';
 
 import { db } from '@/services/firebase';
 
-/** Emails that always receive `role: admin` on sync (lowercased when checked). */
+/** Emails that receive admin access through client/rules allowlists. */
 export const ADMIN_EMAILS = [
   'support@halforder.app',
   'ryadh1409@gmail.com',
@@ -18,18 +18,12 @@ export function isAdminEmail(email?: string | null): boolean {
   return (ADMIN_EMAILS as readonly string[]).includes(normalizeAdminEmail(email));
 }
 
-/**
- * Writes `email` and, for whitelist emails, `role: admin` to Firestore.
- * Does not set `role: user` for other accounts so promoted admins stay valid until demoted.
- */
+/** Keeps the profile email fresh; admin access is not derived from user documents. */
 export async function syncUserRoleToFirestore(user: User): Promise<void> {
   if (!user.uid || user.isAnonymous) return;
   const payload: Record<string, unknown> = {};
   if (user.email) {
     payload.email = user.email;
-  }
-  if (isAdminEmail(user.email)) {
-    payload.role = 'admin';
   }
   if (Object.keys(payload).length === 0) return;
   await setDoc(doc(db, 'users', user.uid), payload, { merge: true });

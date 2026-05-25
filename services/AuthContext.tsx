@@ -141,30 +141,7 @@ async function ensureUserDocument(
     }
     if (data?.uid === undefined) updates.uid = uid;
     if (data?.activeOrderId === undefined) updates.activeOrderId = null;
-    if (data?.credits === undefined) updates.credits = 0;
-    if (data?.role === undefined) updates.role = 'user';
     if (data?.notificationsEnabled === undefined) updates.notificationsEnabled = true;
-    if (data?.ordersCount === undefined) updates.ordersCount = 0;
-    if (data?.averageRating === undefined) updates.averageRating = 0;
-    if (data?.totalRatings === undefined) updates.totalRatings = 0;
-    if (data?.totalOrdersCompleted === undefined) updates.totalOrdersCompleted = 0;
-    if (data?.cancellationRate === undefined) updates.cancellationRate = 0;
-    if (data?.reportCount === undefined) updates.reportCount = 0;
-    if (data?.trustScore === undefined) updates.trustScore = 0;
-    if (data?.taxGiftEligible === undefined) updates.taxGiftEligible = false;
-    if (data?.appOpenCount === undefined) updates.appOpenCount = 0;
-    if (data?.ordersCreated === undefined) updates.ordersCreated = 0;
-    if (data?.ordersJoined === undefined) updates.ordersJoined = 0;
-    if (data?.activeOrderCount === undefined) updates.activeOrderCount = 0;
-    if (data?.cancelledOrders === undefined) updates.cancelledOrders = 0;
-    if (data?.cancellationCount24h === undefined) updates.cancellationCount24h = 0;
-    if (data?.cancellationWindowStartMs === undefined)
-      updates.cancellationWindowStartMs = 0;
-    if (data?.restricted === undefined) updates.restricted = false;
-    if (data?.suspicious === undefined) updates.suspicious = false;
-    if (!Array.isArray(data?.suspiciousSignals)) updates.suspiciousSignals = [];
-    if (data?.messagesSent === undefined) updates.messagesSent = 0;
-    if (!Array.isArray(data?.badges)) updates.badges = [];
     if (Object.keys(updates).length > 0) {
       await setDoc(userRef, updates, { merge: true });
     }
