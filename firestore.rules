@@ -773,9 +773,7 @@ service cloud.firestore {
         && request.resource.data.orderId is string
         && request.resource.data.orderId.size() > 0
         && existsAfter(/databases/$(database)/documents/orders/$(request.resource.data.orderId))
-        && getAfter(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.cardId == cardId
-        && request.auth.uid in getAfter(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.get('users', [])
-        && getAfter(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.createdBy == request.auth.uid;
+        && getAfter(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.cardId == cardId;
     }
 
     match /reports/{reportId} {
@@ -1260,21 +1258,21 @@ service cloud.firestore {
     }
     match /orders/{orderId} {
       allow read: if isSignedIn();
-      allow create: if isValidOrderCreate() || isValidHalfOrderCreate() || isAdmin();
-      allow update: if isParticipantsJoinUpdate()
+      allow create: if isValidHalfOrderCreate() || isValidOrderCreate() || isAdmin();
+      allow update: if isCreatorOnlyNonJoinUpdate()
+        || isSwipeAcceptUpdate()
+        || isOrderPairJoinNotifiedUpdate()
+        || isHalfOrderCancelUpdate()
+        || isHalfOrderMarkActiveUpdate()
+        || isHalfOrderCompleteUpdate()
+        || isParticipantsJoinUpdate()
         || isParticipantsJoinWithExtrasUpdate()
         || isJoinedAtMapBackfillUpdate()
         || isParticipantsLeaveUpdate()
         || isOrderTypingUpdate()
-        || isCreatorOnlyNonJoinUpdate()
-        || isSwipeAcceptUpdate()
         || isMarkOrderExpiredUpdate()
         || isHalfOrderParticipantIncrementalJoin()
         || isHalfOrderParticipantBootstrapJoin()
-        || isHalfOrderCancelUpdate()
-        || isHalfOrderMarkActiveUpdate()
-        || isHalfOrderCompleteUpdate()
-        || isOrderPairJoinNotifiedUpdate()
         || isAdmin();
       allow delete: if isAdmin()
         || (
