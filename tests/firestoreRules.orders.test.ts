@@ -494,7 +494,7 @@ describe('firestore rules: critical user, food card, and chat protections', () =
         uid: 'u1',
         name: 'User One',
         role: 'user',
-        restricted: false,
+        restricted: true,
       });
     });
 

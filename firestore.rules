@@ -11,11 +11,11 @@ service cloud.firestore {
         && (
           request.auth.uid == 'KT3LfXRsVgaH4LfRTQaexvj3CRn1'
           || (
-            request.auth.token.email is string
+            request.auth.token.get('email', '') is string
             && (
-              request.auth.token.email == 'admin@ourfood.com'
-              || request.auth.token.email == 'support@halforder.app'
-              || request.auth.token.email == 'ryadh1409@gmail.com'
+              request.auth.token.get('email', '') == 'admin@ourfood.com'
+              || request.auth.token.get('email', '') == 'support@halforder.app'
+              || request.auth.token.get('email', '') == 'ryadh1409@gmail.com'
             )
           )
         );
@@ -604,6 +604,7 @@ service cloud.firestore {
         && request.resource.data.participants == resource.data.participants
         && request.auth.uid in resource.data.get('participants', [])
         && request.resource.data.joinedAtMap is map
+        && !resource.data.get('joinedAtMap', {}).keys().hasAny([request.auth.uid])
         && request.resource.data.joinedAtMap[request.auth.uid] is timestamp;
     }
 
@@ -909,7 +910,7 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
-    function defaultableProtectedUserFields() {
+    function protectedUserSelfUpdateFields() {
       return [
         'role',
         'credits',
@@ -934,6 +935,11 @@ service cloud.firestore {
         'suspiciousSignals',
         'messagesSent',
         'badges',
+        'restrictedReason',
+        'restrictedAt',
+        'flagged',
+        'flaggedAt',
+        'moderationUpdatedAt',
       ];
     }
 
@@ -990,114 +996,6 @@ service cloud.firestore {
         && !request.resource.data.keys().hasAny(serverManagedUserFields());
     }
 
-    function isMissingFieldDefault(fieldName, defaultValue) {
-      return !resource.data.keys().hasAny([fieldName])
-        && request.resource.data[fieldName] == defaultValue;
-    }
-
-    function hasOnlyAllowedSelfProtectedUserUpdates() {
-      return !request.resource.data.diff(resource.data).affectedKeys()
-          .hasAny(serverManagedUserFields())
-        && (
-          !request.resource.data.diff(resource.data).affectedKeys()
-            .hasAny(defaultableProtectedUserFields())
-          || (
-            (
-              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role'])
-              || isMissingFieldDefault('role', 'user')
-            )
-            && (
-              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['credits'])
-              || isMissingFieldDefault('credits', 0)
-            )
-            && (
-              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['ordersCount'])
-              || isMissingFieldDefault('ordersCount', 0)
-            )
-            && (
-              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['averageRating'])
-              || isMissingFieldDefault('averageRating', 0)
-            )
-            && (
-              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['totalRatings'])
-              || isMissingFieldDefault('totalRatings', 0)
-            )
-            && (
-              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['totalOrdersCompleted'])
-              || isMissingFieldDefault('totalOrdersCompleted', 0)
-            )
-            && (
-              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['cancellationRate'])
-              || isMissingFieldDefault('cancellationRate', 0)
-            )
-            && (
-              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['reportCount'])
-              || isMissingFieldDefault('reportCount', 0)
-            )
-            && (
-              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['trustScore'])
-              || isMissingFieldDefault('trustScore', 0)
-            )
-            && (
-              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['taxGiftEligible'])
-              || isMissingFieldDefault('taxGiftEligible', false)
-            )
-            && (
-              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['appOpenCount'])
-              || isMissingFieldDefault('appOpenCount', 0)
-            )
-            && (
-              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['ordersCreated'])
-              || isMissingFieldDefault('ordersCreated', 0)
-            )
-            && (
-              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['ordersJoined'])
-              || isMissingFieldDefault('ordersJoined', 0)
-            )
-            && (
-              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['activeOrderCount'])
-              || isMissingFieldDefault('activeOrderCount', 0)
-            )
-            && (
-              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['cancelledOrders'])
-              || isMissingFieldDefault('cancelledOrders', 0)
-            )
-            && (
-              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['cancellationCount24h'])
-              || isMissingFieldDefault('cancellationCount24h', 0)
-            )
-            && (
-              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['cancellationWindowStartMs'])
-              || isMissingFieldDefault('cancellationWindowStartMs', 0)
-            )
-            && (
-              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['banned'])
-              || isMissingFieldDefault('banned', false)
-            )
-            && (
-              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['restricted'])
-              || isMissingFieldDefault('restricted', false)
-            )
-            && (
-              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['suspicious'])
-              || isMissingFieldDefault('suspicious', false)
-            )
-            && (
-              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['suspiciousSignals'])
-              || isMissingFieldDefault('suspiciousSignals', [])
-            )
-            && (
-              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['messagesSent'])
-              || isMissingFieldDefault('messagesSent', 0)
-            )
-            && (
-              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['badges'])
-              || isMissingFieldDefault('badges', [])
-            )
-          )
-        );
-    }
-
     function isValidSelfUserCreate(userId) {
       return isSignedIn()
         && request.auth.uid == userId
@@ -1109,7 +1007,8 @@ service cloud.firestore {
       return isSignedIn()
         && request.auth.uid == userId
         && hasValidSelfUserIdentity(userId)
-        && hasOnlyAllowedSelfProtectedUserUpdates();
+        && !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(protectedUserSelfUpdateFields());
     }
 
     /** Client: subscribe only to `users/{request.auth.uid}` for private fields (e.g. blockedUsers). */
@@ -1362,8 +1261,7 @@ service cloud.firestore {
     match /orders/{orderId} {
       allow read: if isSignedIn();
       allow create: if isValidOrderCreate() || isValidHalfOrderCreate() || isAdmin();
-      allow update: if isAdmin()
-        || isParticipantsJoinUpdate()
+      allow update: if isParticipantsJoinUpdate()
         || isParticipantsJoinWithExtrasUpdate()
         || isJoinedAtMapBackfillUpdate()
         || isParticipantsLeaveUpdate()
@@ -1376,7 +1274,8 @@ service cloud.firestore {
         || isHalfOrderCancelUpdate()
         || isHalfOrderMarkActiveUpdate()
         || isHalfOrderCompleteUpdate()
-        || isOrderPairJoinNotifiedUpdate();
+        || isOrderPairJoinNotifiedUpdate()
+        || isAdmin();
       allow delete: if isAdmin()
         || (
           request.auth != null
@@ -1415,11 +1314,11 @@ service cloud.firestore {
 
     match /food_cards/{cardId} {
       allow read: if isSignedIn();
-      allow create: if isAdmin() || isValidAiChatFoodCardCreate(cardId);
+      allow create: if isValidAiChatFoodCardCreate(cardId) || isAdmin();
       allow delete: if isAdmin();
-      allow update: if isAdmin()
-        || isValidFoodCardOrderIdLink(cardId)
-        || isValidFoodCardJoinUpdate();
+      allow update: if isValidFoodCardOrderIdLink(cardId)
+        || isValidFoodCardJoinUpdate()
+        || isAdmin();
     }
 
     /** Public catalog (max 10 docs enforced in app). Read: any signed-in user. Write: admin only. */
