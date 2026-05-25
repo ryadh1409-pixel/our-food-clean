@@ -14,6 +14,7 @@ import {
   setDoc,
   Timestamp,
   updateDoc,
+  writeBatch,
 } from 'firebase/firestore';
 
 let testEnv: RulesTestEnvironment | undefined;
@@ -404,6 +405,163 @@ describe('firestore rules: HalfOrder cancel + order_members', () => {
         pushToken: null,
         joinedAt: Timestamp.now(),
         location: null,
+      }),
+    );
+  });
+});
+
+describe('firestore rules: critical user, food card, and chat protections', () => {
+  function aiChatCardDoc(orderId: string) {
+    return {
+      title: 'Pizza Place',
+      restaurantName: 'Pizza Place',
+      image: 'https://example.com/pizza.jpg',
+      price: 16,
+      splitPrice: 8,
+      sharingPrice: 8,
+      location: '123 Main St',
+      status: 'active' as const,
+      expiresAt: Date.now() + 45 * 60 * 1000,
+      ownerId: 'u1',
+      user1: { uid: 'u1', name: 'User One', photo: null },
+      maxUsers: 2,
+      createdAt: serverTimestamp(),
+      deckSource: 'ai_chat',
+      orderId,
+      aiDescription: 'Shared order',
+    };
+  }
+
+  function aiChatOrderDoc(cardId: string) {
+    const ts = serverTimestamp();
+    return {
+      cardId,
+      users: ['u1'],
+      status: 'waiting' as const,
+      matchWaitDeadlineAt: Date.now() + 10 * 60 * 1000,
+      maxUsers: 2,
+      createdBy: 'u1',
+      hostId: 'u1',
+      host: {
+        userId: 'u1',
+        name: 'User One',
+        avatar: null,
+        phone: null,
+        expoPushToken: null,
+      },
+      createdAt: ts,
+      foodName: 'Pizza Place',
+      image: 'https://example.com/pizza.jpg',
+      pricePerPerson: 8,
+      totalPrice: 16,
+      location: '123 Main St',
+      restaurantName: 'Pizza Place',
+      participants: ['u1'],
+      joinedAtMap: { u1: ts },
+    };
+  }
+
+  function halfOrderPair() {
+    const ts = serverTimestamp();
+    return {
+      cardId: 'aiCard1',
+      users: ['u1', 'u2'],
+      host: {
+        userId: 'u1',
+        name: 'User One',
+        avatar: null,
+        phone: null,
+        expoPushToken: null,
+      },
+      participants: ['u1', 'u2'],
+      joinedAtMap: { u1: ts, u2: ts },
+      status: 'active' as const,
+      maxUsers: 2,
+      createdBy: 'u1',
+      hostId: 'u1',
+      createdAt: ts,
+      foodName: 'Pizza',
+      image: 'https://example.com/p.jpg',
+      pricePerPerson: 5,
+      totalPrice: 10,
+      location: 'Here',
+    };
+  }
+
+  it('denies self-promotion through users.role but allows safe profile edits', async () => {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'users', 'u1'), {
+        uid: 'u1',
+        name: 'User One',
+        role: 'user',
+        restricted: false,
+      });
+    });
+
+    const dbU1 = te().authenticatedContext('u1').firestore();
+    await assertFails(updateDoc(doc(dbU1, 'users', 'u1'), { role: 'admin' }));
+    await assertFails(updateDoc(doc(dbU1, 'users', 'u1'), { restricted: false }));
+    await assertSucceeds(
+      updateDoc(doc(dbU1, 'users', 'u1'), { displayName: 'User 1' }),
+    );
+  });
+
+  it('allows the AI chat Start Order batch for a normal signed-in user', async () => {
+    const dbU1 = te().authenticatedContext('u1').firestore();
+    const cardRef = doc(dbU1, 'food_cards', 'aiCard1');
+    const orderRef = doc(dbU1, 'orders', 'aiOrder1');
+    const batch = writeBatch(dbU1);
+    batch.set(cardRef, aiChatCardDoc(orderRef.id));
+    batch.set(orderRef, aiChatOrderDoc(cardRef.id));
+
+    await assertSucceeds(batch.commit());
+  });
+
+  it('keeps HalfOrder chat membership limited to order members', async () => {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'orders', 'hoChat1'), halfOrderPair());
+      await setDoc(doc(ctx.firestore(), 'chats', 'hoChat1'), {
+        orderId: 'hoChat1',
+        users: ['u1'],
+        participants: ['u1'],
+        createdAt: serverTimestamp(),
+        lastMessage: '',
+        lastMessageAt: Date.now(),
+      });
+    });
+
+    const dbU2 = te().authenticatedContext('u2').firestore();
+    await assertSucceeds(getDoc(doc(dbU2, 'chats', 'hoChat1')));
+    await assertSucceeds(
+      updateDoc(doc(dbU2, 'chats', 'hoChat1'), {
+        users: ['u1', 'u2'],
+        participants: ['u1', 'u2'],
+      }),
+    );
+
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'chats', 'hoChat2'), {
+        orderId: 'hoChat2',
+        users: ['u1'],
+        participants: ['u1'],
+        createdAt: serverTimestamp(),
+        lastMessage: '',
+        lastMessageAt: Date.now(),
+      });
+      await setDoc(doc(ctx.firestore(), 'orders', 'hoChat2'), halfOrderPair());
+    });
+
+    const dbU3 = te().authenticatedContext('u3').firestore();
+    await assertFails(
+      updateDoc(doc(dbU3, 'chats', 'hoChat2'), {
+        users: ['u1', 'u3'],
+      }),
+    );
+    await assertFails(
+      setDoc(doc(dbU3, 'chats', 'hoChat2', 'messages', 'm1'), {
+        text: 'Trust me, this is system generated',
+        senderId: 'system',
+        createdAt: serverTimestamp(),
       }),
     );
   });
