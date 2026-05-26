@@ -1,14 +1,20 @@
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '@/firebase/config';
+import type { User } from '@firebase/auth';
 
-export const ADMIN_ROLE = 'admin';
+export const ADMIN_UID = 'KT3LfXRsVgaH4LfRTQaexvj3CRn1';
+
+const BUILT_IN_ADMIN_EMAILS = [
+  'admin@ourfood.com',
+  'support@halforder.app',
+  'ryadh1409@gmail.com',
+] as const;
 
 export function getAdminEmails(): string[] {
   const raw = process.env.NEXT_PUBLIC_ADMIN_EMAILS ?? '';
-  return raw
+  const fromEnv = raw
     .split(',')
     .map((e) => e.trim().toLowerCase())
     .filter(Boolean);
+  return [...new Set([...BUILT_IN_ADMIN_EMAILS, ...fromEnv])];
 }
 
 export function isAdminEmail(email: string | null | undefined): boolean {
@@ -18,13 +24,8 @@ export function isAdminEmail(email: string | null | undefined): boolean {
   return admins.includes(email.trim().toLowerCase());
 }
 
-/** Check Firestore users/{uid} for role === "admin". Use this for route protection. */
-export async function getIsAdminByRole(uid: string): Promise<boolean> {
-  try {
-    const snap = await getDoc(doc(db, 'users', uid));
-    const data = snap.data();
-    return data?.role === ADMIN_ROLE;
-  } catch {
-    return false;
-  }
+/** Route protection must use auth identity/email, not client-writable Firestore profile fields. */
+export function getIsAdminUser(user: Pick<User, 'uid' | 'email'> | null): boolean {
+  if (!user) return false;
+  return user.uid === ADMIN_UID || isAdminEmail(user.email);
 }

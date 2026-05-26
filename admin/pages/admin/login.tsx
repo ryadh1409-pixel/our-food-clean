@@ -1,4 +1,4 @@
-import { getIsAdminByRole } from '@/firebase/adminAuth';
+import { getIsAdminUser } from '@/firebase/adminAuth';
 import { auth } from '@/firebase/config';
 import { signInWithEmailAndPassword, signOut } from '@firebase/auth';
 import { useRouter } from 'next/router';
@@ -21,7 +21,7 @@ export default function AdminLoginPage() {
         email.trim(),
         password,
       );
-      const isAdmin = await getIsAdminByRole(cred.user.uid);
+      const isAdmin = getIsAdminUser(cred.user);
       if (!isAdmin) {
         await signOut(auth);
         router.replace('/?unauthorized=1');

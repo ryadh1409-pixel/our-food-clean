@@ -1,4 +1,4 @@
-import { getIsAdminByRole } from '@/firebase/adminAuth';
+import { getIsAdminUser } from '@/firebase/adminAuth';
 import { useAuth } from '@/firebase/useAuth';
 import { useRouter } from 'next/router';
 import { useEffect } from 'react';
@@ -15,15 +15,8 @@ export default function Home() {
       router.replace('/admin/login');
       return;
     }
-    let cancelled = false;
-    getIsAdminByRole(user.uid).then((isAdmin) => {
-      if (cancelled) return;
-      if (isAdmin) router.replace('/admin/dashboard');
-      else router.replace('/admin/login');
-    });
-    return () => {
-      cancelled = true;
-    };
+    if (getIsAdminUser(user)) router.replace('/admin/dashboard');
+    else router.replace('/admin/login');
   }, [user, loading, router, unauthorized]);
 
   if (unauthorized) {
