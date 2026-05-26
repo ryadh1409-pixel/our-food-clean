@@ -1162,22 +1162,27 @@ service cloud.firestore {
     }
     match /orders/{orderId} {
       allow read: if isSignedIn();
-      allow create: if isAdmin() || isValidHalfOrderCreate() || isValidOrderCreate();
+      allow create: if isAdmin()
+        || (
+          request.resource.data.keys().hasAll(['cardId', 'users'])
+          && isValidHalfOrderCreate()
+        )
+        || isValidOrderCreate();
       allow update: if isAdmin()
+        || isCreatorOnlyNonJoinUpdate()
+        || isSwipeAcceptUpdate()
+        || isOrderPairJoinNotifiedUpdate()
+        || isHalfOrderCancelUpdate()
+        || isHalfOrderMarkActiveUpdate()
+        || isHalfOrderCompleteUpdate()
         || isParticipantsJoinUpdate()
         || isParticipantsJoinWithExtrasUpdate()
         || isJoinedAtMapBackfillUpdate()
         || isParticipantsLeaveUpdate()
         || isOrderTypingUpdate()
-        || isCreatorOnlyNonJoinUpdate()
-        || isSwipeAcceptUpdate()
         || isMarkOrderExpiredUpdate()
         || isHalfOrderParticipantIncrementalJoin()
-        || isHalfOrderParticipantBootstrapJoin()
-        || isHalfOrderCancelUpdate()
-        || isHalfOrderMarkActiveUpdate()
-        || isHalfOrderCompleteUpdate()
-        || isOrderPairJoinNotifiedUpdate();
+        || isHalfOrderParticipantBootstrapJoin();
       allow delete: if isAdmin()
         || (
           request.auth != null
