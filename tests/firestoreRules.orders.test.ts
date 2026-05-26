@@ -14,6 +14,7 @@ import {
   setDoc,
   Timestamp,
   updateDoc,
+  writeBatch,
 } from 'firebase/firestore';
 
 let testEnv: RulesTestEnvironment | undefined;
@@ -59,6 +60,137 @@ function baseOrderFields(createdByUid: string) {
     createdAt: serverTimestamp(),
   };
 }
+
+function aiChatFoodCardFields(ownerId: string, orderId: string) {
+  return {
+    title: 'Pizza Place',
+    restaurantName: 'Pizza Place',
+    image: 'https://example.com/pizza.jpg',
+    price: 16,
+    splitPrice: 8,
+    sharingPrice: 8,
+    location: { latitude: 43.65, longitude: -79.38 },
+    status: 'active',
+    expiresAt: 4102444800000,
+    ownerId,
+    user1: { uid: ownerId, name: 'Host', photo: null },
+    maxUsers: 2,
+    createdAt: serverTimestamp(),
+    deckSource: 'ai_chat',
+    orderId,
+    aiDescription: 'Shared order · Toronto',
+  };
+}
+
+function aiChatHalfOrderFields(ownerId: string, cardId: string) {
+  return {
+    cardId,
+    users: [ownerId],
+    status: 'waiting',
+    matchWaitDeadlineAt: 4102444800000,
+    maxUsers: 2,
+    createdBy: ownerId,
+    hostId: ownerId,
+    host: {
+      userId: ownerId,
+      name: 'Host',
+      avatar: null,
+      phone: null,
+      expoPushToken: null,
+    },
+    createdAt: serverTimestamp(),
+    foodName: 'Pizza Place',
+    image: 'https://example.com/pizza.jpg',
+    pricePerPerson: 8,
+    totalPrice: 16,
+    location: 'Toronto',
+    restaurantName: 'Pizza Place',
+    participants: [ownerId],
+    joinedAtMap: { [ownerId]: serverTimestamp() },
+    latitude: 43.65,
+    longitude: -79.38,
+  };
+}
+
+describe('firestore rules: admin authority and user privilege fields', () => {
+  it('allows normal profile creation with non-admin defaults', async () => {
+    const db = te().authenticatedContext('u1').firestore();
+    await assertSucceeds(
+      setDoc(doc(db, 'users', 'u1'), {
+        uid: 'u1',
+        email: 'u1@example.com',
+        role: 'user',
+        banned: false,
+        restricted: false,
+        activeOrderCount: 0,
+        totalOrdersCompleted: 0,
+      }),
+    );
+  });
+
+  it('denies self-promotion through users/{uid}.role', async () => {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'users', 'u1'), {
+        uid: 'u1',
+        role: 'user',
+      });
+    });
+
+    const db = te().authenticatedContext('u1').firestore();
+    await assertFails(updateDoc(doc(db, 'users', 'u1'), { role: 'admin' }));
+  });
+
+  it('does not treat an existing client-writable role as admin authority', async () => {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'users', 'u1'), {
+        uid: 'u1',
+        role: 'admin',
+      });
+    });
+
+    const db = te().authenticatedContext('u1').firestore();
+    await assertFails(
+      setDoc(doc(db, 'foodTemplates', 't1'), {
+        title: 'Admin only',
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('allows whitelisted admins to write admin-only collections', async () => {
+    const db = te()
+      .authenticatedContext('adminUid', { email: 'support@halforder.app' })
+      .firestore();
+    await assertSucceeds(
+      setDoc(doc(db, 'foodTemplates', 't1'), {
+        title: 'Admin only',
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+});
+
+describe('firestore rules: AI chat food-card order create', () => {
+  it('allows a regular user to batch-create the linked AI food card and HalfOrder', async () => {
+    const db = te().authenticatedContext('u1').firestore();
+    const cardRef = doc(db, 'food_cards', 'ai-card-1');
+    const orderRef = doc(db, 'orders', 'ai-order-1');
+    const batch = writeBatch(db);
+    batch.set(cardRef, aiChatFoodCardFields('u1', orderRef.id));
+    batch.set(orderRef, aiChatHalfOrderFields('u1', cardRef.id));
+
+    await assertSucceeds(batch.commit());
+  });
+
+  it('denies unlinked user-created food cards outside the AI chat flow', async () => {
+    const db = te().authenticatedContext('u1').firestore();
+    await assertFails(
+      setDoc(doc(db, 'food_cards', 'ai-card-1'), {
+        ...aiChatFoodCardFields('u1', 'missing-order'),
+      }),
+    );
+  });
+});
 
 describe('firestore rules: orders create + participants join', () => {
   it('allows valid order create by owner', async () => {
