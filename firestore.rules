@@ -20,11 +20,17 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
+    function currentUserDocExists() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
     function isCurrentUserRestricted() {
       return isSignedIn()
+        && currentUserDocExists()
         && (
-          currentUserData().banned == true
-          || currentUserData().restricted == true
+          currentUserData().get('banned', false) == true
+          || currentUserData().get('restricted', false) == true
         );
     }
 
@@ -81,8 +87,9 @@ service cloud.firestore {
     }
 
     function isNewUserForOrderLimits() {
-      return currentUserData().totalOrdersCompleted is number
-        && currentUserData().totalOrdersCompleted <= 3;
+      return currentUserDocExists()
+        && currentUserData().get('totalOrdersCompleted', 0) is number
+        && currentUserData().get('totalOrdersCompleted', 0) <= 3;
     }
 
     function canCreateOrderBySafetyLimits() {
@@ -689,8 +696,8 @@ service cloud.firestore {
           !request.resource.data.diff(resource.data).changedKeys().hasAny(['status'])
           || request.resource.data.status != 'cancelled'
           || (
-            currentUserData().cancellationCount24h is number
-            && currentUserData().cancellationCount24h < 3
+            currentUserData().get('cancellationCount24h', 0) is number
+            && currentUserData().get('cancellationCount24h', 0) < 3
           )
         );
     }
