@@ -1116,7 +1116,10 @@ service cloud.firestore {
       return members is list
         && members.size() > 0
         && members.size() <= 4
-        && listAllStrings(members);
+        && (members.size() < 1 || members[0] is string)
+        && (members.size() < 2 || members[1] is string)
+        && (members.size() < 3 || members[2] is string)
+        && (members.size() < 4 || members[3] is string);
     }
 
     function groupMembersPreserved(fromMembers, toMembers) {
