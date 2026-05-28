@@ -8,6 +8,7 @@ import {
 } from '@firebase/rules-unit-testing';
 import {
   arrayUnion,
+  deleteDoc,
   doc,
   getDoc,
   serverTimestamp,
@@ -406,5 +407,122 @@ describe('firestore rules: HalfOrder cancel + order_members', () => {
         location: null,
       }),
     );
+  });
+});
+
+describe('firestore rules: split groups', () => {
+  function groupDoc(members = ['u1'], status = 'waiting') {
+    return {
+      members,
+      foodType: 'pizza',
+      maxSize: 4,
+      status,
+      createdAt: serverTimestamp(),
+      anchorLocation: { lat: 43.65, lng: -79.38 },
+      centerLocation: { lat: 43.65, lng: -79.38 },
+    };
+  }
+
+  it('allows creating a group with the app schema', async () => {
+    const dbU1 = te().authenticatedContext('u1').firestore();
+    await assertSucceeds(setDoc(doc(dbU1, 'groups', 'g0'), groupDoc(['u1'])));
+  });
+
+  it('denies creating a group with extra client-controlled fields', async () => {
+    const dbU1 = te().authenticatedContext('u1').firestore();
+    await assertFails(
+      setDoc(doc(dbU1, 'groups', 'g-extra'), {
+        ...groupDoc(['u1']),
+        ownerId: 'u1',
+      }),
+    );
+  });
+
+  it('allows a valid join update with members and status only', async () => {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'groups', 'g1'), groupDoc(['u1', 'u2']));
+    });
+
+    const dbU3 = te().authenticatedContext('u3').firestore();
+    await assertSucceeds(
+      updateDoc(doc(dbU3, 'groups', 'g1'), {
+        members: ['u1', 'u2', 'u3'],
+        status: 'waiting',
+      }),
+    );
+  });
+
+  it('denies a join update that changes group metadata', async () => {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'groups', 'g2'), groupDoc(['u1', 'u2']));
+    });
+
+    const dbU3 = te().authenticatedContext('u3').firestore();
+    await assertFails(
+      updateDoc(doc(dbU3, 'groups', 'g2'), {
+        members: ['u1', 'u2', 'u3'],
+        status: 'waiting',
+        foodType: 'sushi',
+      }),
+    );
+  });
+
+  it('denies a member rewriting the membership list', async () => {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'groups', 'g3'), groupDoc(['u1', 'u2', 'u3']));
+    });
+
+    const dbU1 = te().authenticatedContext('u1').firestore();
+    await assertFails(
+      updateDoc(doc(dbU1, 'groups', 'g3'), {
+        members: ['u1'],
+        status: 'waiting',
+      }),
+    );
+  });
+
+  it('allows a member to leave without changing remaining members', async () => {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'groups', 'g-leave'), groupDoc(['u1', 'u2', 'u3']));
+    });
+
+    const dbU2 = te().authenticatedContext('u2').firestore();
+    await assertSucceeds(
+      updateDoc(doc(dbU2, 'groups', 'g-leave'), {
+        members: ['u1', 'u3'],
+        status: 'waiting',
+      }),
+    );
+  });
+
+  it('allows a member to mark their group ordered with status only', async () => {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'groups', 'g4'), groupDoc(['u1', 'u2']));
+    });
+
+    const dbU2 = te().authenticatedContext('u2').firestore();
+    await assertSucceeds(
+      updateDoc(doc(dbU2, 'groups', 'g4'), {
+        status: 'ordered',
+      }),
+    );
+  });
+
+  it('denies deleting a group while other members remain', async () => {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'groups', 'g5'), groupDoc(['u1', 'u2']));
+    });
+
+    const dbU1 = te().authenticatedContext('u1').firestore();
+    await assertFails(deleteDoc(doc(dbU1, 'groups', 'g5')));
+  });
+
+  it('allows the final member to delete their own group', async () => {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'groups', 'g6'), groupDoc(['u1']));
+    });
+
+    const dbU1 = te().authenticatedContext('u1').firestore();
+    await assertSucceeds(deleteDoc(doc(dbU1, 'groups', 'g6')));
   });
 });
