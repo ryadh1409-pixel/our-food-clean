@@ -423,6 +423,21 @@ describe('firestore rules: split groups', () => {
     };
   }
 
+  it('allows creating a group with the app schema', async () => {
+    const dbU1 = te().authenticatedContext('u1').firestore();
+    await assertSucceeds(setDoc(doc(dbU1, 'groups', 'g0'), groupDoc(['u1'])));
+  });
+
+  it('denies creating a group with extra client-controlled fields', async () => {
+    const dbU1 = te().authenticatedContext('u1').firestore();
+    await assertFails(
+      setDoc(doc(dbU1, 'groups', 'g-extra'), {
+        ...groupDoc(['u1']),
+        ownerId: 'u1',
+      }),
+    );
+  });
+
   it('allows a valid join update with members and status only', async () => {
     await te().withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), 'groups', 'g1'), groupDoc(['u1', 'u2']));
@@ -461,6 +476,20 @@ describe('firestore rules: split groups', () => {
     await assertFails(
       updateDoc(doc(dbU1, 'groups', 'g3'), {
         members: ['u1'],
+        status: 'waiting',
+      }),
+    );
+  });
+
+  it('allows a member to leave without changing remaining members', async () => {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'groups', 'g-leave'), groupDoc(['u1', 'u2', 'u3']));
+    });
+
+    const dbU2 = te().authenticatedContext('u2').firestore();
+    await assertSucceeds(
+      updateDoc(doc(dbU2, 'groups', 'g-leave'), {
+        members: ['u1', 'u3'],
         status: 'waiting',
       }),
     );
