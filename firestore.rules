@@ -1165,6 +1165,7 @@ service cloud.firestore {
       return isSignedIn()
         && resource.data.status == 'waiting'
         && request.resource.data.diff(resource.data).changedKeys().hasOnly(['members', 'status'])
+        && request.resource.data.diff(resource.data).changedKeys().hasAny(['members'])
         && isValidGroupMembers(resource.data.members)
         && isValidGroupMembers(request.resource.data.members)
         && resource.data.members.size() < 4
@@ -1188,6 +1189,7 @@ service cloud.firestore {
       return isSignedIn()
         && (resource.data.status == 'waiting' || resource.data.status == 'full')
         && request.resource.data.diff(resource.data).changedKeys().hasOnly(['members', 'status'])
+        && request.resource.data.diff(resource.data).changedKeys().hasAny(['members'])
         && isValidGroupMembers(resource.data.members)
         && isValidGroupMembers(request.resource.data.members)
         && resource.data.members.size() > 1
@@ -1210,9 +1212,9 @@ service cloud.firestore {
     match /groups/{groupId} {
       allow read: if request.auth != null;
       allow create: if isValidGroupCreate();
-      allow update: if isGroupJoinUpdate()
-        || isGroupLeaveUpdate()
-        || isGroupMarkOrderedUpdate();
+      allow update: if isGroupMarkOrderedUpdate()
+        || isGroupJoinUpdate()
+        || isGroupLeaveUpdate();
       allow delete: if isSignedIn()
         && isValidGroupMembers(resource.data.members)
         && resource.data.members.size() == 1
