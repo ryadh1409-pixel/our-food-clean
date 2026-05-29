@@ -14,6 +14,7 @@ import {
   setDoc,
   Timestamp,
   updateDoc,
+  writeBatch,
 } from 'firebase/firestore';
 
 let testEnv: RulesTestEnvironment | undefined;
@@ -256,7 +257,13 @@ describe('firestore rules: HalfOrder pair-join notified ack', () => {
     return {
       cardId: 'fc1',
       users: ['u1', 'u2'],
-      host: { userId: 'u1', name: 'User One', avatar: null, phone: null, expoPushToken: null },
+      host: {
+        userId: 'u1',
+        name: 'User One',
+        avatar: null,
+        phone: null,
+        expoPushToken: null,
+      },
       participants: ['u1', 'u2'],
       joinedAtMap: { u1: ts, u2: ts },
       status: 'active' as const,
@@ -322,7 +329,13 @@ describe('firestore rules: HalfOrder cancel + order_members', () => {
     return {
       cardId: 'fc2',
       users: ['u1', 'u2'],
-      host: { userId: 'u1', name: 'User One', avatar: null, phone: null, expoPushToken: null },
+      host: {
+        userId: 'u1',
+        name: 'User One',
+        avatar: null,
+        phone: null,
+        expoPushToken: null,
+      },
       participants: ['u1', 'u2'],
       joinedAtMap: { u1: ts, u2: ts },
       status: 'active' as const,
@@ -340,7 +353,10 @@ describe('firestore rules: HalfOrder cancel + order_members', () => {
 
   it('allows a member to cancel a HalfOrder with cancelledBy + cancelledAt', async () => {
     await te().withSecurityRulesDisabled(async (ctx) => {
-      await setDoc(doc(ctx.firestore(), 'orders', 'ho2'), halfOrderActivePair());
+      await setDoc(
+        doc(ctx.firestore(), 'orders', 'ho2'),
+        halfOrderActivePair(),
+      );
     });
     const dbU2 = te().authenticatedContext('u2').firestore();
     await assertSucceeds(
@@ -354,7 +370,10 @@ describe('firestore rules: HalfOrder cancel + order_members', () => {
 
   it('denies cancel when cancelledBy does not match caller', async () => {
     await te().withSecurityRulesDisabled(async (ctx) => {
-      await setDoc(doc(ctx.firestore(), 'orders', 'ho3'), halfOrderActivePair());
+      await setDoc(
+        doc(ctx.firestore(), 'orders', 'ho3'),
+        halfOrderActivePair(),
+      );
     });
     const dbU3 = te().authenticatedContext('u3').firestore();
     await assertFails(
@@ -405,6 +424,137 @@ describe('firestore rules: HalfOrder cancel + order_members', () => {
         joinedAt: Timestamp.now(),
         location: null,
       }),
+    );
+  });
+});
+
+describe('firestore rules: user privilege fields', () => {
+  it('denies users from self-granting admin role on profile create or update', async () => {
+    const dbU1 = te().authenticatedContext('u1').firestore();
+
+    await assertFails(
+      setDoc(doc(dbU1, 'users', 'u1'), {
+        name: 'Alice',
+        role: 'admin',
+      }),
+    );
+
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'users', 'u1'), {
+        name: 'Alice',
+        totalOrdersCompleted: 10,
+        activeOrderCount: 0,
+      });
+    });
+
+    await assertFails(
+      updateDoc(doc(dbU1, 'users', 'u1'), {
+        role: 'admin',
+      }),
+    );
+  });
+
+  it('does not treat a client-writable user role as admin', async () => {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'users', 'u1'), {
+        name: 'Alice',
+        role: 'admin',
+        totalOrdersCompleted: 10,
+        activeOrderCount: 0,
+      });
+    });
+
+    const dbU1 = te().authenticatedContext('u1').firestore();
+    await assertFails(
+      setDoc(doc(dbU1, 'broadcasts', 'b1'), {
+        title: 'Not allowed',
+      }),
+    );
+  });
+});
+
+describe('firestore rules: AI chat food-card order creation', () => {
+  async function seedOrderEligibleUser(uid: string) {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'users', uid), {
+        name: 'Alice',
+        totalOrdersCompleted: 10,
+        activeOrderCount: 0,
+      });
+    });
+  }
+
+  function aiFoodCardDoc(uid: string, orderId: string) {
+    return {
+      title: 'North York Pizza',
+      restaurantName: 'North York Pizza',
+      image: 'https://example.com/pizza.jpg',
+      price: 16,
+      splitPrice: 8,
+      sharingPrice: 8,
+      location: { latitude: 43.7615, longitude: -79.4111 },
+      status: 'active',
+      expiresAt: Date.now() + 45 * 60 * 1000,
+      ownerId: uid,
+      user1: { uid, name: 'Alice', photo: null },
+      maxUsers: 2,
+      createdAt: serverTimestamp(),
+      deckSource: 'ai_chat',
+      orderId,
+      aiDescription: 'Shared order',
+    };
+  }
+
+  function aiHalfOrderDoc(uid: string, cardId: string) {
+    return {
+      cardId,
+      users: [uid],
+      status: 'waiting',
+      matchWaitDeadlineAt: Date.now() + 15 * 60 * 1000,
+      maxUsers: 2,
+      createdBy: uid,
+      hostId: uid,
+      host: {
+        userId: uid,
+        name: 'Alice',
+        avatar: null,
+        phone: null,
+        expoPushToken: null,
+      },
+      createdAt: serverTimestamp(),
+      foodName: 'North York Pizza',
+      image: 'https://example.com/pizza.jpg',
+      pricePerPerson: 8,
+      totalPrice: 16,
+      location: 'North York',
+      restaurantName: 'North York Pizza',
+      participants: [uid],
+      joinedAtMap: { [uid]: serverTimestamp() },
+    };
+  }
+
+  it('allows a user to create an AI chat food card only with its linked HalfOrder batch', async () => {
+    await seedOrderEligibleUser('u1');
+    const dbU1 = te().authenticatedContext('u1').firestore();
+    const cardRef = doc(dbU1, 'food_cards', 'fc-ai');
+    const orderRef = doc(dbU1, 'orders', 'order-ai');
+    const batch = writeBatch(dbU1);
+
+    batch.set(cardRef, aiFoodCardDoc('u1', orderRef.id));
+    batch.set(orderRef, aiHalfOrderDoc('u1', cardRef.id));
+
+    await assertSucceeds(batch.commit());
+  });
+
+  it('denies orphan AI chat food cards without the linked HalfOrder create', async () => {
+    await seedOrderEligibleUser('u1');
+    const dbU1 = te().authenticatedContext('u1').firestore();
+
+    await assertFails(
+      setDoc(
+        doc(dbU1, 'food_cards', 'fc-orphan'),
+        aiFoodCardDoc('u1', 'missing-order'),
+      ),
     );
   });
 });

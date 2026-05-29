@@ -28,10 +28,7 @@ import {
   transactionJoinHalfOrderForCard,
 } from '@/services/foodCardSlotOrders';
 import { applyHalfOrderPairReferralRewards } from '@/services/referralRewards';
-import {
-  getPublicUserFields,
-  type PublicUserFields,
-} from '@/services/users';
+import { getPublicUserFields, type PublicUserFields } from '@/services/users';
 import {
   isFirestoreArrayServerTimestampError,
   isFirestoreCompositeIndexError,
@@ -94,6 +91,7 @@ const FOOD_CARDS = 'food_cards';
 
 /** Matches `FOOD_CARD_DECK_SOURCE_AI_CHAT` in `aiChatFoodOrder.ts` (no cross-import). */
 const FOOD_CARD_DECK_SOURCE_AI_CHAT = 'ai_chat';
+const SINGLE_USE_FOOD_CARD_FULL_MESSAGE = 'Order is already full.';
 
 /** Listing lifetime from creation (45 minutes). */
 export const FOOD_CARD_TTL_MS = 45 * 60 * 1000;
@@ -171,9 +169,7 @@ function coerceExpiresAtMs(raw: unknown): number {
   return 0;
 }
 
-function mapSlotOrLegacyFoodCard(
-  d: QueryDocumentSnapshot,
-): FoodCard | null {
+function mapSlotOrLegacyFoodCard(d: QueryDocumentSnapshot): FoodCard | null {
   const data = d.data() as Record<string, unknown>;
   const aiDesc =
     typeof data.aiDescription === 'string' && data.aiDescription.trim()
@@ -329,15 +325,16 @@ export function subscribeAiChatFoodCards(
         .filter((c): c is FoodCard => c != null)
         .filter(
           (c) =>
-            c.status === 'active' &&
-            (c.expiresAt > 1e15 || c.expiresAt > now),
+            c.status === 'active' && (c.expiresAt > 1e15 || c.expiresAt > now),
         );
       onData(cards);
     },
     (e) => {
       console.warn('[food_cards] AI deck listener error', e);
       onData([]);
-      onError?.(e instanceof Error ? e : new Error('Failed to load AI food cards'));
+      onError?.(
+        e instanceof Error ? e : new Error('Failed to load AI food cards'),
+      );
     },
   );
 }
@@ -363,7 +360,9 @@ export function subscribeActiveFoodCards(
     (e) => {
       console.warn('[food_cards] listener error', e);
       onData([]);
-      onError?.(e instanceof Error ? e : new Error('Failed to load food cards'));
+      onError?.(
+        e instanceof Error ? e : new Error('Failed to load food cards'),
+      );
     },
   );
 }
@@ -390,7 +389,8 @@ export async function joinFoodCard(cardId: string): Promise<{
     const snap = await tx.get(cardRef);
     if (!snap.exists()) throw new Error('Card not found');
     const data = snap.data() as Omit<FoodCard, 'id'>;
-    if (!isActiveFoodCardStatus(data.status)) throw new Error('Card no longer available');
+    if (!isActiveFoodCardStatus(data.status))
+      throw new Error('Card no longer available');
 
     if (!data.user1?.uid) {
       tx.update(cardRef, {
@@ -479,8 +479,7 @@ export type JoinOrderOutcome =
     }
   | { ok: false; message?: string; silent?: boolean };
 
-const JOIN_GENERIC_FAIL =
-  'Something went wrong, please try again';
+const JOIN_GENERIC_FAIL = 'Something went wrong, please try again';
 
 function buildHalfOrderFromCard(
   data: Record<string, unknown>,
@@ -493,13 +492,14 @@ function buildHalfOrderFromCard(
   const price = Number(data.price) || 0;
   const splitPrice = Number(data.splitPrice) || 0;
   const sharingN = Number(data.sharingPrice);
-  const pricePerPerson = Number.isFinite(sharingN) && sharingN > 0
-    ? sharingN
-    : splitPrice > 0
-      ? splitPrice
-      : maxUsers > 0
-        ? price / maxUsers
-        : 0;
+  const pricePerPerson =
+    Number.isFinite(sharingN) && sharingN > 0
+      ? sharingN
+      : splitPrice > 0
+        ? splitPrice
+        : maxUsers > 0
+          ? price / maxUsers
+          : 0;
   const restaurant =
     typeof data.restaurantName === 'string' ? data.restaurantName.trim() : '';
 
@@ -511,10 +511,7 @@ function buildHalfOrderFromCard(
     longitude = geoParsed.longitude;
   }
 
-  const locationLabel =
-    venue ||
-    restaurant ||
-    'Nearby';
+  const locationLabel = venue || restaurant || 'Nearby';
 
   const now = Date.now();
   return {
@@ -541,6 +538,15 @@ function isCardOwnedByUser(card: FoodCard, uid: string): boolean {
   if (typeof card.ownerId === 'string' && card.ownerId === uid) return true;
   if (card.user1?.uid === uid) return true;
   return false;
+}
+
+function isSingleUseFoodCardData(data: Record<string, unknown>): boolean {
+  const linkedOrderId =
+    typeof data.orderId === 'string' ? data.orderId.trim() : '';
+  return (
+    data.deckSource === FOOD_CARD_DECK_SOURCE_AI_CHAT ||
+    linkedOrderId.length > 0
+  );
 }
 
 /**
@@ -593,205 +599,223 @@ export async function joinOrder(
 
   const creatorProfiles = await loadHalfOrderCreatorProfiles(authedUid);
   if (!creatorProfiles) {
-    return { ok: false, message: 'Could not load your profile to create this order.' };
+    return {
+      ok: false,
+      message: 'Could not load your profile to create this order.',
+    };
   }
 
   const joinRetryDelayMs = 1000;
 
   for (let attempt = 0; attempt < 2; attempt++) {
-  try {
-    const cardSnapPre = await getDoc(cardRef);
-    if (!cardSnapPre.exists()) {
-      return { ok: false, message: 'Card not found' };
-    }
-    const cardDataPre = cardSnapPre.data() as Record<string, unknown>;
+    try {
+      const cardSnapPre = await getDoc(cardRef);
+      if (!cardSnapPre.exists()) {
+        return { ok: false, message: 'Card not found' };
+      }
+      const cardDataPre = cardSnapPre.data() as Record<string, unknown>;
 
-    if (typeof cardDataPre.active === 'boolean') {
-      if (!cardDataPre.active) {
-        return { ok: false, message: 'This card is not available' };
-      }
-    } else {
-      const status =
-        typeof cardDataPre.status === 'string' ? cardDataPre.status : '';
-      if (!isActiveFoodCardStatus(status)) {
-        return { ok: false, message: 'This order is not open for joining' };
-      }
-      if (coerceExpiresAtMs(cardDataPre.expiresAt) <= Date.now()) {
-        return { ok: false, message: 'This card has expired' };
-      }
-      const ownerId =
-        typeof cardDataPre.ownerId === 'string' ? cardDataPre.ownerId : '';
-      if (ownerId && ownerId === authedUid) {
-        return { ok: false, message: 'You cannot join your own card' };
-      }
-      const u1 = cardDataPre.user1 as { uid?: string } | null | undefined;
-      if (u1 && typeof u1.uid === 'string' && u1.uid === authedUid) {
-        return { ok: false, message: 'You cannot join your own card' };
-      }
-    }
-
-    const maxUsers = Math.min(
-      typeof cardDataPre.maxUsers === 'number' && cardDataPre.maxUsers > 0
-        ? cardDataPre.maxUsers
-        : FOOD_CARD_ORDER_MAX_USERS,
-      FOOD_CARD_ORDER_MAX_USERS,
-    );
-
-    const candidateOrderIds = await fetchJoinableOrderIdsForCard(trimmed);
-
-    for (const orderIdTry of candidateOrderIds) {
-      const oSnap = await getDoc(doc(db, 'orders', orderIdTry));
-      if (!oSnap.exists()) continue;
-      const od0 = oSnap.data() as Record<string, unknown>;
-      for (const m of normalizeOrderUserIds(od0.users)) {
-        if (await hasBlockBetween(authedUid, m)) {
-          return { ok: false, message: 'You cannot join this order due to a block.' };
+      if (typeof cardDataPre.active === 'boolean') {
+        if (!cardDataPre.active) {
+          return { ok: false, message: 'This card is not available' };
+        }
+      } else {
+        const status =
+          typeof cardDataPre.status === 'string' ? cardDataPre.status : '';
+        if (!isActiveFoodCardStatus(status)) {
+          return { ok: false, message: 'This order is not open for joining' };
+        }
+        if (coerceExpiresAtMs(cardDataPre.expiresAt) <= Date.now()) {
+          return { ok: false, message: 'This card has expired' };
+        }
+        const ownerId =
+          typeof cardDataPre.ownerId === 'string' ? cardDataPre.ownerId : '';
+        if (ownerId && ownerId === authedUid) {
+          return { ok: false, message: 'You cannot join your own card' };
+        }
+        const u1 = cardDataPre.user1 as { uid?: string } | null | undefined;
+        if (u1 && typeof u1.uid === 'string' && u1.uid === authedUid) {
+          return { ok: false, message: 'You cannot join your own card' };
         }
       }
-      const uu0 = normalizeOrderUserIds(od0.users);
-      const pp0 = Array.isArray(od0.participants) ? od0.participants.length : 0;
-      let hostPrefetch: PublicUserFields | null = null;
-      if (uu0.length === 1 && pp0 === 0) {
-        hostPrefetch = await loadHostProfileForOrderJoin(orderIdTry);
-      }
-      let txOutcome: Awaited<
-        ReturnType<typeof transactionJoinHalfOrderForCard>
-      >;
-      try {
-        txOutcome = await transactionJoinHalfOrderForCard({
-          orderId: orderIdTry,
-          cardId: trimmed,
-          joinerUid: authedUid,
-          hostProfilePrefetch: hostPrefetch,
-        });
-      } catch (innerTxErr) {
-        if (isFirestoreCompositeIndexError(innerTxErr)) {
-          logFirestoreIndexError('joinOrder:tx', innerTxErr);
+
+      const maxUsers = Math.min(
+        typeof cardDataPre.maxUsers === 'number' && cardDataPre.maxUsers > 0
+          ? cardDataPre.maxUsers
+          : FOOD_CARD_ORDER_MAX_USERS,
+        FOOD_CARD_ORDER_MAX_USERS,
+      );
+
+      const candidateOrderIds = await fetchJoinableOrderIdsForCard(trimmed);
+
+      for (const orderIdTry of candidateOrderIds) {
+        const oSnap = await getDoc(doc(db, 'orders', orderIdTry));
+        if (!oSnap.exists()) continue;
+        const od0 = oSnap.data() as Record<string, unknown>;
+        for (const m of normalizeOrderUserIds(od0.users)) {
+          if (await hasBlockBetween(authedUid, m)) {
+            return {
+              ok: false,
+              message: 'You cannot join this order due to a block.',
+            };
+          }
+        }
+        const uu0 = normalizeOrderUserIds(od0.users);
+        const pp0 = Array.isArray(od0.participants)
+          ? od0.participants.length
+          : 0;
+        let hostPrefetch: PublicUserFields | null = null;
+        if (uu0.length === 1 && pp0 === 0) {
+          hostPrefetch = await loadHostProfileForOrderJoin(orderIdTry);
+        }
+        let txOutcome: Awaited<
+          ReturnType<typeof transactionJoinHalfOrderForCard>
+        >;
+        try {
+          txOutcome = await transactionJoinHalfOrderForCard({
+            orderId: orderIdTry,
+            cardId: trimmed,
+            joinerUid: authedUid,
+            hostProfilePrefetch: hostPrefetch,
+          });
+        } catch (innerTxErr) {
+          if (isFirestoreCompositeIndexError(innerTxErr)) {
+            logFirestoreIndexError('joinOrder:tx', innerTxErr);
+            continue;
+          }
+          if (isFirestoreArrayServerTimestampError(innerTxErr)) {
+            return { ok: false, message: JOIN_GENERIC_FAIL };
+          }
           continue;
         }
-        if (isFirestoreArrayServerTimestampError(innerTxErr)) {
-          return { ok: false, message: JOIN_GENERIC_FAIL };
-        }
-        continue;
-      }
-      if (txOutcome.kind === 'skip') continue;
+        if (txOutcome.kind === 'skip') continue;
 
-      const outcome = txOutcome;
+        const outcome = txOutcome;
+        const finalSnap = await getDoc(doc(db, 'orders', outcome.orderId));
+        const finalUsers = normalizeOrderUserIds(finalSnap.data()?.users);
+
+        await ensureHalfOrderChat(outcome.orderId, finalUsers);
+        await syncOrderMemberProfilesForOrder(outcome.orderId, finalUsers);
+
+        let justBecamePair = false;
+        if (
+          !outcome.alreadyIn &&
+          outcome.priorUserCount === 1 &&
+          finalUsers.length >= 2
+        ) {
+          justBecamePair = true;
+          await postHalfOrderChatSystemMessage(
+            outcome.orderId,
+            'Someone joined your order!',
+          );
+          await postHalfOrderChatSystemMessage(
+            outcome.orderId,
+            PAYMENT_DISCLAIMER_CHAT_MATCHED,
+          );
+          void trySendPairJoinExpoPush(outcome.orderId, authedUid);
+          void applyHalfOrderPairReferralRewards(outcome.orderId, authedUid);
+        }
+
+        return {
+          ok: true,
+          alreadyJoined: outcome.alreadyIn,
+          isFull: finalUsers.length >= outcome.maxUsers,
+          orderId: outcome.orderId,
+          justBecamePair,
+        };
+      }
+
+      if (isSingleUseFoodCardData(cardDataPre)) {
+        return { ok: false, message: SINGLE_USE_FOOD_CARD_FULL_MESSAGE };
+      }
+
+      const outcome = await runTransaction(db, async (tx) => {
+        const cardSnap = await tx.get(cardRef);
+        if (!cardSnap.exists()) throw new Error('Card not found');
+        const data = cardSnap.data() as Record<string, unknown>;
+        if (typeof data.active === 'boolean') {
+          if (!data.active) throw new Error('This card is not available');
+        } else {
+          const st = typeof data.status === 'string' ? data.status : '';
+          if (!isActiveFoodCardStatus(st)) {
+            throw new Error('This order is not open for joining');
+          }
+          const ownerId = typeof data.ownerId === 'string' ? data.ownerId : '';
+          if (ownerId && ownerId === authedUid) {
+            throw new Error('You cannot join your own card');
+          }
+          const u1 = data.user1 as { uid?: string } | null | undefined;
+          if (u1 && typeof u1.uid === 'string' && u1.uid === authedUid) {
+            throw new Error('You cannot join your own card');
+          }
+        }
+        if (isSingleUseFoodCardData(data)) {
+          throw new Error(SINGLE_USE_FOOD_CARD_FULL_MESSAGE);
+        }
+        const mu = Math.min(
+          typeof data.maxUsers === 'number' && data.maxUsers > 0
+            ? data.maxUsers
+            : FOOD_CARD_ORDER_MAX_USERS,
+          FOOD_CARD_ORDER_MAX_USERS,
+        );
+        const newRef = doc(collection(db, 'orders'));
+        tx.set(newRef, {
+          ...buildHalfOrderFromCard(data, trimmed, authedUid, mu),
+          host: creatorProfiles.host,
+          participants: [authedUid],
+          joinedAtMap: { [authedUid]: serverTimestamp() },
+        });
+        return { kind: 'created' as const, orderId: newRef.id, maxUsers: mu };
+      });
+
       const finalSnap = await getDoc(doc(db, 'orders', outcome.orderId));
       const finalUsers = normalizeOrderUserIds(finalSnap.data()?.users);
 
       await ensureHalfOrderChat(outcome.orderId, finalUsers);
       await syncOrderMemberProfilesForOrder(outcome.orderId, finalUsers);
 
-      let justBecamePair = false;
-      if (!outcome.alreadyIn && outcome.priorUserCount === 1 && finalUsers.length >= 2) {
-        justBecamePair = true;
-        await postHalfOrderChatSystemMessage(
-          outcome.orderId,
-          'Someone joined your order!',
-        );
-        await postHalfOrderChatSystemMessage(
-          outcome.orderId,
-          PAYMENT_DISCLAIMER_CHAT_MATCHED,
-        );
-        void trySendPairJoinExpoPush(outcome.orderId, authedUid);
-        void applyHalfOrderPairReferralRewards(outcome.orderId, authedUid);
+      if (outcome.kind === 'created') {
+        const oData = finalSnap.data() as Record<string, unknown> | undefined;
+        void autoInvite({
+          id: outcome.orderId,
+          foodName:
+            typeof oData?.foodName === 'string' ? oData.foodName : undefined,
+          creatorUid: authedUid,
+          latitude: typeof oData?.latitude === 'number' ? oData.latitude : null,
+          longitude:
+            typeof oData?.longitude === 'number' ? oData.longitude : null,
+        });
       }
 
       return {
         ok: true,
-        alreadyJoined: outcome.alreadyIn,
+        alreadyJoined: false,
         isFull: finalUsers.length >= outcome.maxUsers,
         orderId: outcome.orderId,
-        justBecamePair,
+        justBecamePair: false,
       };
-    }
-
-    const outcome = await runTransaction(db, async (tx) => {
-      const cardSnap = await tx.get(cardRef);
-      if (!cardSnap.exists()) throw new Error('Card not found');
-      const data = cardSnap.data() as Record<string, unknown>;
-      if (typeof data.active === 'boolean') {
-        if (!data.active) throw new Error('This card is not available');
-      } else {
-        const st = typeof data.status === 'string' ? data.status : '';
-        if (!isActiveFoodCardStatus(st)) {
-          throw new Error('This order is not open for joining');
-        }
-        const ownerId = typeof data.ownerId === 'string' ? data.ownerId : '';
-        if (ownerId && ownerId === authedUid) {
-          throw new Error('You cannot join your own card');
-        }
-        const u1 = data.user1 as { uid?: string } | null | undefined;
-        if (u1 && typeof u1.uid === 'string' && u1.uid === authedUid) {
-          throw new Error('You cannot join your own card');
-        }
+    } catch (error: unknown) {
+      if (isJoinOrderUserFacingError(error)) {
+        return {
+          ok: false,
+          message: error instanceof Error ? error.message : JOIN_GENERIC_FAIL,
+        };
       }
-      const mu = Math.min(
-        typeof data.maxUsers === 'number' && data.maxUsers > 0
-          ? data.maxUsers
-          : FOOD_CARD_ORDER_MAX_USERS,
-        FOOD_CARD_ORDER_MAX_USERS,
-      );
-      const newRef = doc(collection(db, 'orders'));
-      tx.set(newRef, {
-        ...buildHalfOrderFromCard(data, trimmed, authedUid, mu),
-        host: creatorProfiles.host,
-        participants: [authedUid],
-        joinedAtMap: { [authedUid]: serverTimestamp() },
-      });
-      return { kind: 'created' as const, orderId: newRef.id, maxUsers: mu };
-    });
-
-    const finalSnap = await getDoc(doc(db, 'orders', outcome.orderId));
-    const finalUsers = normalizeOrderUserIds(finalSnap.data()?.users);
-
-    await ensureHalfOrderChat(outcome.orderId, finalUsers);
-    await syncOrderMemberProfilesForOrder(outcome.orderId, finalUsers);
-
-    if (outcome.kind === 'created') {
-      const oData = finalSnap.data() as Record<string, unknown> | undefined;
-      void autoInvite({
-        id: outcome.orderId,
-        foodName:
-          typeof oData?.foodName === 'string' ? oData.foodName : undefined,
-        creatorUid: authedUid,
-        latitude:
-          typeof oData?.latitude === 'number' ? oData.latitude : null,
-        longitude:
-          typeof oData?.longitude === 'number' ? oData.longitude : null,
-      });
-    }
-
-    return {
-      ok: true,
-      alreadyJoined: false,
-      isFull: finalUsers.length >= outcome.maxUsers,
-      orderId: outcome.orderId,
-      justBecamePair: false,
-    };
-  } catch (error: unknown) {
-    if (isJoinOrderUserFacingError(error)) {
-      return {
-        ok: false,
-        message: error instanceof Error ? error.message : JOIN_GENERIC_FAIL,
-      };
-    }
-    if (isFirestoreCompositeIndexError(error) && attempt === 0) {
-      logFirestoreIndexError('joinOrder', error);
-      await new Promise<void>((r) => setTimeout(r, joinRetryDelayMs));
-      continue;
-    }
-    if (isFirestoreCompositeIndexError(error)) {
-      logFirestoreIndexError('joinOrder', error);
-      return { ok: false, silent: true };
-    }
-    if (isFirestoreArrayServerTimestampError(error)) {
+      if (isFirestoreCompositeIndexError(error) && attempt === 0) {
+        logFirestoreIndexError('joinOrder', error);
+        await new Promise<void>((r) => setTimeout(r, joinRetryDelayMs));
+        continue;
+      }
+      if (isFirestoreCompositeIndexError(error)) {
+        logFirestoreIndexError('joinOrder', error);
+        return { ok: false, silent: true };
+      }
+      if (isFirestoreArrayServerTimestampError(error)) {
+        return { ok: false, message: JOIN_GENERIC_FAIL };
+      }
+      console.error('[joinOrder] JOIN ERROR:', error);
       return { ok: false, message: JOIN_GENERIC_FAIL };
     }
-    console.error('[joinOrder] JOIN ERROR:', error);
-    return { ok: false, message: JOIN_GENERIC_FAIL };
-  }
   }
 
   return { ok: false, silent: true };
