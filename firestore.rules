@@ -45,17 +45,24 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
+    function hasCurrentUserData() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
     function isCurrentUserRestricted() {
       return isSignedIn()
+        && hasCurrentUserData()
         && (
-          currentUserData().banned == true
-          || currentUserData().restricted == true
+          currentUserData().get('banned', false) == true
+          || currentUserData().get('restricted', false) == true
         );
     }
 
     function isNewUserForOrderLimits() {
-      return currentUserData().totalOrdersCompleted is number
-        && currentUserData().totalOrdersCompleted <= 3;
+      return hasCurrentUserData()
+        && currentUserData().get('totalOrdersCompleted', 0) is number
+        && currentUserData().get('totalOrdersCompleted', 0) <= 3;
     }
 
     function canCreateOrderBySafetyLimits() {
@@ -63,8 +70,8 @@ service cloud.firestore {
         && (
           !isNewUserForOrderLimits()
           || (
-            currentUserData().activeOrderCount is number
-            && currentUserData().activeOrderCount < 1
+            currentUserData().get('activeOrderCount', 0) is number
+            && currentUserData().get('activeOrderCount', 0) < 1
           )
         );
     }
@@ -217,6 +224,7 @@ service cloud.firestore {
     /** HalfOrder: food-card swipe creates `orders` with `cardId` + `users` + `host`, string `participants`, `joinedAtMap`. */
     function isValidHalfOrderCreate() {
       return isSignedIn()
+        && request.resource.data.keys().hasAll(['cardId'])
         && canCreateOrderBySafetyLimits()
         && !isCurrentUserRestricted()
         && request.resource.data.cardId is string
@@ -1150,22 +1158,40 @@ service cloud.firestore {
     }
     match /orders/{orderId} {
       allow read: if isSignedIn();
-      allow create: if isValidOrderCreate() || isValidHalfOrderCreate() || isAdmin();
+      allow create: if isAdmin()
+        || (
+          request.resource.data.keys().hasAny(['cardId'])
+          && isValidHalfOrderCreate()
+        )
+        || (
+          !request.resource.data.keys().hasAny(['cardId'])
+          && isValidOrderCreate()
+        );
       allow update: if isAdmin()
-        || isParticipantsJoinUpdate()
-        || isParticipantsJoinWithExtrasUpdate()
-        || isJoinedAtMapBackfillUpdate()
-        || isParticipantsLeaveUpdate()
-        || isOrderTypingUpdate()
         || isCreatorOnlyNonJoinUpdate()
-        || isSwipeAcceptUpdate()
-        || isMarkOrderExpiredUpdate()
-        || isHalfOrderParticipantIncrementalJoin()
-        || isHalfOrderParticipantBootstrapJoin()
-        || isHalfOrderCancelUpdate()
-        || isHalfOrderMarkActiveUpdate()
-        || isHalfOrderCompleteUpdate()
-        || isOrderPairJoinNotifiedUpdate();
+        || (
+          !resource.data.keys().hasAny(['cardId'])
+          && (
+            isParticipantsJoinUpdate()
+            || isParticipantsJoinWithExtrasUpdate()
+            || isJoinedAtMapBackfillUpdate()
+            || isParticipantsLeaveUpdate()
+            || isOrderTypingUpdate()
+            || isSwipeAcceptUpdate()
+            || isMarkOrderExpiredUpdate()
+          )
+        )
+        || (
+          resource.data.keys().hasAny(['cardId'])
+          && (
+            isHalfOrderParticipantIncrementalJoin()
+            || isHalfOrderParticipantBootstrapJoin()
+            || isHalfOrderCancelUpdate()
+            || isHalfOrderMarkActiveUpdate()
+            || isHalfOrderCompleteUpdate()
+            || isOrderPairJoinNotifiedUpdate()
+          )
+        );
       allow delete: if isAdmin()
         || (
           request.auth != null
