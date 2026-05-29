@@ -94,6 +94,7 @@ const FOOD_CARDS = 'food_cards';
 
 /** Matches `FOOD_CARD_DECK_SOURCE_AI_CHAT` in `aiChatFoodOrder.ts` (no cross-import). */
 const FOOD_CARD_DECK_SOURCE_AI_CHAT = 'ai_chat';
+const SINGLE_USE_FOOD_CARD_FULL_MESSAGE = 'Order is already full.';
 
 /** Listing lifetime from creation (45 minutes). */
 export const FOOD_CARD_TTL_MS = 45 * 60 * 1000;
@@ -543,6 +544,12 @@ function isCardOwnedByUser(card: FoodCard, uid: string): boolean {
   return false;
 }
 
+function isSingleUseFoodCardData(data: Record<string, unknown>): boolean {
+  const linkedOrderId =
+    typeof data.orderId === 'string' ? data.orderId.trim() : '';
+  return data.deckSource === FOOD_CARD_DECK_SOURCE_AI_CHAT || linkedOrderId.length > 0;
+}
+
 /**
  * Disable join for non-`active` cards, capacity (via live `orderUsers` when provided), admin preview, or own card.
  */
@@ -707,6 +714,10 @@ export async function joinOrder(
       };
     }
 
+    if (isSingleUseFoodCardData(cardDataPre)) {
+      return { ok: false, message: SINGLE_USE_FOOD_CARD_FULL_MESSAGE };
+    }
+
     const outcome = await runTransaction(db, async (tx) => {
       const cardSnap = await tx.get(cardRef);
       if (!cardSnap.exists()) throw new Error('Card not found');
@@ -726,6 +737,9 @@ export async function joinOrder(
         if (u1 && typeof u1.uid === 'string' && u1.uid === authedUid) {
           throw new Error('You cannot join your own card');
         }
+      }
+      if (isSingleUseFoodCardData(data)) {
+        throw new Error(SINGLE_USE_FOOD_CARD_FULL_MESSAGE);
       }
       const mu = Math.min(
         typeof data.maxUsers === 'number' && data.maxUsers > 0
