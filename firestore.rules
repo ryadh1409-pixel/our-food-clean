@@ -38,17 +38,23 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
+    function hasCurrentUserData() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
     function isCurrentUserRestricted() {
       return isSignedIn()
+        && hasCurrentUserData()
         && (
-          currentUserData().banned == true
-          || currentUserData().restricted == true
+          currentUserData().get('banned', false) == true
+          || currentUserData().get('restricted', false) == true
         );
     }
 
     function isNewUserForOrderLimits() {
-      return currentUserData().totalOrdersCompleted is number
-        && currentUserData().totalOrdersCompleted <= 3;
+      return hasCurrentUserData()
+        && currentUserData().get('totalOrdersCompleted', 999) is number
+        && currentUserData().get('totalOrdersCompleted', 999) <= 3;
     }
 
     function canCreateOrderBySafetyLimits() {
@@ -56,8 +62,8 @@ service cloud.firestore {
         && (
           !isNewUserForOrderLimits()
           || (
-            currentUserData().activeOrderCount is number
-            && currentUserData().activeOrderCount < 1
+            currentUserData().get('activeOrderCount', 0) is number
+            && currentUserData().get('activeOrderCount', 0) < 1
           )
         );
     }
@@ -1124,12 +1130,12 @@ service cloud.firestore {
     }
     match /orders/{orderId} {
       allow read: if isSignedIn();
-      allow create: if isAdmin()
-        || (
+      allow create: if (
           request.resource.data.keys().hasAll(['cardId'])
           && isValidHalfOrderCreate()
         )
-        || isValidOrderCreate();
+        || isValidOrderCreate()
+        || isAdmin();
       allow update: if isAdmin()
         || isParticipantsJoinUpdate()
         || isParticipantsJoinWithExtrasUpdate()
@@ -1183,7 +1189,7 @@ service cloud.firestore {
 
     match /food_cards/{cardId} {
       allow read: if isSignedIn();
-      allow create: if isAdmin() || isValidAiChatFoodCardCreate(cardId);
+      allow create: if isValidAiChatFoodCardCreate(cardId) || isAdmin();
       allow delete: if isAdmin();
       allow update: if isAdmin()
         || isValidFoodCardOrderIdLink(cardId)
