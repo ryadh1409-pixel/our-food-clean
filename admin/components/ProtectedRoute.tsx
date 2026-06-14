@@ -19,7 +19,7 @@ export default function ProtectedRoute({
       return;
     }
     let cancelled = false;
-    getIsAdminByRole(user.uid).then((admin) => {
+    getIsAdminByRole(user.uid, user.email).then((admin) => {
       if (!cancelled) {
         setIsAdmin(admin);
         setRoleChecked(true);

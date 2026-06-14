@@ -1,14 +1,17 @@
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '@/firebase/config';
-
-export const ADMIN_ROLE = 'admin';
+const ADMIN_UID = 'KT3LfXRsVgaH4LfRTQaexvj3CRn1';
+const DEFAULT_ADMIN_EMAILS = [
+  'admin@ourfood.com',
+  'support@halforder.app',
+  'ryadh1409@gmail.com',
+] as const;
 
 export function getAdminEmails(): string[] {
   const raw = process.env.NEXT_PUBLIC_ADMIN_EMAILS ?? '';
-  return raw
+  const configured = raw
     .split(',')
     .map((e) => e.trim().toLowerCase())
     .filter(Boolean);
+  return Array.from(new Set([...DEFAULT_ADMIN_EMAILS, ...configured]));
 }
 
 export function isAdminEmail(email: string | null | undefined): boolean {
@@ -18,13 +21,11 @@ export function isAdminEmail(email: string | null | undefined): boolean {
   return admins.includes(email.trim().toLowerCase());
 }
 
-/** Check Firestore users/{uid} for role === "admin". Use this for route protection. */
-export async function getIsAdminByRole(uid: string): Promise<boolean> {
-  try {
-    const snap = await getDoc(doc(db, 'users', uid));
-    const data = snap.data();
-    return data?.role === ADMIN_ROLE;
-  } catch {
-    return false;
-  }
+/** Prefer immutable auth identity; Firestore role is a legacy display field only. */
+export async function getIsAdminByRole(
+  uid: string,
+  email?: string | null,
+): Promise<boolean> {
+  if (uid === ADMIN_UID || isAdminEmail(email)) return true;
+  return false;
 }

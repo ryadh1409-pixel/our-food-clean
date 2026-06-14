@@ -27,9 +27,6 @@ function extractModelText(data: unknown): string | null {
   if (!data || typeof data !== 'object') return null;
   const d = data as Record<string, unknown>;
 
-  /** Server proxy may return `{ reply: string }` instead of raw OpenAI JSON */
-  if (typeof d.reply === 'string' && d.reply.trim()) return d.reply;
-
   /** Structured extractor from food assistant proxy */
   if (
     'food' in d ||
@@ -50,6 +47,9 @@ function extractModelText(data: unknown): string | null {
       message: searchQuery || `${food} near me`.trim(),
     });
   }
+
+  /** Server proxy may return `{ reply: string }` instead of raw OpenAI JSON */
+  if (typeof d.reply === 'string' && d.reply.trim()) return d.reply;
 
   const out = d.output;
   if (Array.isArray(out) && out[0] && typeof out[0] === 'object') {

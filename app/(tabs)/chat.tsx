@@ -97,6 +97,28 @@ function extractPlacesFromChatData(data: unknown): unknown[] {
   return Array.isArray(p) ? p : [];
 }
 
+function placeToAiPlacePick(place: unknown): MessageAiPlacePick | null {
+  if (!place || typeof place !== 'object') return null;
+  const o = place as Record<string, unknown>;
+  const displayName = o.displayName;
+  const placeName =
+    typeof o.name === 'string' && o.name.trim()
+      ? o.name.trim()
+      : displayName &&
+          typeof displayName === 'object' &&
+          typeof (displayName as { text?: unknown }).text === 'string'
+        ? String((displayName as { text: string }).text).trim()
+        : '';
+  if (!placeName) return null;
+  const address =
+    typeof o.address === 'string' && o.address.trim()
+      ? o.address.trim()
+      : typeof o.formattedAddress === 'string' && o.formattedAddress.trim()
+        ? o.formattedAddress.trim()
+        : 'Address unavailable';
+  return { placeName, address };
+}
+
 function formatPlaceLine(place: unknown): string {
   if (!place || typeof place !== 'object') return 'Place';
   const o = place as Record<string, unknown>;
@@ -694,41 +716,38 @@ export default function ChatScreen() {
         if (aiChatUrl) {
           const aiResult = await sendMessageToAI(outgoingText, aiChatUrl);
           if (!aiResult.ok) {
-            setMessages((prev) => [
-              ...prev,
+            setError('AI backend request failed; using local assistant.');
+          } else {
+            const result = aiResult.data;
+            console.log('AI result:', result);
+
+            const replyText = extractReplyFromChatData(result);
+            const placesList = extractPlacesFromChatData(result);
+            const aiPlacePicks = placesList
+              .map(placeToAiPlacePick)
+              .filter((pick): pick is MessageAiPlacePick => pick != null);
+
+            const baseId = Date.now();
+            const botMessages: Message[] = [
               {
-                id: `${Date.now()}-ai-err`,
-                text: `Assistant is temporarily unavailable (${aiResult.error}). Try again in a moment.`,
+                id: `${baseId}-bot`,
+                text: replyText || 'No response',
                 sender: 'bot',
                 createdAt: Date.now(),
                 action: 'none',
+                places:
+                  aiPlacePicks.length === 0 && placesList.length > 0
+                    ? placesList
+                    : undefined,
+                aiPlacePicks:
+                  aiPlacePicks.length > 0 ? aiPlacePicks : undefined,
               },
-            ]);
-            setError('AI backend request failed.');
+            ];
+            setMessages((prev) => [...prev, ...botMessages]);
+
+            handleAIDecision(aiResult.decision, { fromBackendChat: true });
             return;
           }
-
-          const result = aiResult.data;
-          console.log('AI result:', result);
-
-          const replyText = extractReplyFromChatData(result);
-          const placesList = extractPlacesFromChatData(result);
-
-          const baseId = Date.now();
-          const botMessages: Message[] = [
-            {
-              id: `${baseId}-bot`,
-              text: replyText || 'No response',
-              sender: 'bot',
-              createdAt: Date.now(),
-              action: 'none',
-              places: placesList.length > 0 ? placesList : undefined,
-            },
-          ];
-          setMessages((prev) => [...prev, ...botMessages]);
-
-          handleAIDecision(aiResult.decision, { fromBackendChat: true });
-          return;
         }
 
         const intent = detectLocalAssistantIntent(outgoingText);
