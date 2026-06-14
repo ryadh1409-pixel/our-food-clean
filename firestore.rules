@@ -688,7 +688,11 @@ service cloud.firestore {
         && request.resource.data.participants == resource.data.participants
         && request.auth.uid in resource.data.get('participants', [])
         && request.resource.data.joinedAtMap is map
-        && request.resource.data.joinedAtMap[request.auth.uid] is timestamp;
+        && request.resource.data.joinedAtMap[request.auth.uid] is timestamp
+        && (
+          !resource.data.keys().hasAny(['joinedAtMap'])
+          || !resource.data.joinedAtMap.keys().hasAny([request.auth.uid])
+        );
     }
 
     function isParticipantsLeaveUpdate() {
@@ -725,15 +729,15 @@ service cloud.firestore {
           'typing'
         ])
         && (
-          resource.data.status != 'completed'
-          || request.resource.data.status == resource.data.status
+          resource.data.get('status', '') != 'completed'
+          || request.resource.data.get('status', '') == resource.data.get('status', '')
         )
         && (
           !request.resource.data.diff(resource.data).changedKeys().hasAny(['status'])
           || request.resource.data.status != 'cancelled'
           || (
-            currentUserData().cancellationCount24h is number
-            && currentUserData().cancellationCount24h < 3
+            currentUserData().get('cancellationCount24h', 0) is number
+            && currentUserData().get('cancellationCount24h', 0) < 3
           )
         );
     }
@@ -1136,21 +1140,21 @@ service cloud.firestore {
         )
         || isValidOrderCreate()
         || isAdmin();
-      allow update: if isAdmin()
+      allow update: if isHalfOrderCancelUpdate()
+        || isHalfOrderMarkActiveUpdate()
+        || isHalfOrderCompleteUpdate()
+        || isOrderPairJoinNotifiedUpdate()
+        || isHalfOrderParticipantIncrementalJoin()
+        || isHalfOrderParticipantBootstrapJoin()
+        || isCreatorOnlyNonJoinUpdate()
         || isParticipantsJoinUpdate()
         || isParticipantsJoinWithExtrasUpdate()
         || isJoinedAtMapBackfillUpdate()
         || isParticipantsLeaveUpdate()
         || isOrderTypingUpdate()
-        || isCreatorOnlyNonJoinUpdate()
         || isSwipeAcceptUpdate()
         || isMarkOrderExpiredUpdate()
-        || isHalfOrderParticipantIncrementalJoin()
-        || isHalfOrderParticipantBootstrapJoin()
-        || isHalfOrderCancelUpdate()
-        || isHalfOrderMarkActiveUpdate()
-        || isHalfOrderCompleteUpdate()
-        || isOrderPairJoinNotifiedUpdate();
+        || isAdmin();
       allow delete: if isAdmin()
         || (
           request.auth != null
