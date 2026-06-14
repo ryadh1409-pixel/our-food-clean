@@ -77,6 +77,7 @@ app.post('/chat', async (req, res) => {
   let httpStatus = 200;
   let aiText = '';
   let placesOut = [];
+  let responsePayload = null;
 
   try {
     const { message } = req.body;
@@ -165,6 +166,21 @@ User message: ${message}
         }
 
         placesOut = (placesRaw || []).slice(0, 5);
+        const base =
+          parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+            ? parsed
+            : { searchQuery: message };
+        const replySubject =
+          typeof base.searchQuery === 'string' && base.searchQuery.trim()
+            ? base.searchQuery.trim()
+            : String(message).trim();
+        responsePayload = {
+          ...base,
+          reply: placesOut.length > 0
+            ? `Here are nearby options for ${replySubject}.`
+            : `I could not find nearby places for ${replySubject}.`,
+          places: placesOut,
+        };
       }
     }
   } catch (err) {
@@ -176,10 +192,12 @@ User message: ${message}
     placesOut = [];
   }
 
-  return res.status(httpStatus).json({
-    reply: aiText,
-    places: (placesOut || []).slice(0, 5),
-  });
+  return res.status(httpStatus).json(
+    responsePayload || {
+      reply: aiText,
+      places: (placesOut || []).slice(0, 5),
+    },
+  );
 });
 
 app.listen(3000, () => {

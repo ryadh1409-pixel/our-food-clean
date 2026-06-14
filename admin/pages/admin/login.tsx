@@ -21,7 +21,7 @@ export default function AdminLoginPage() {
         email.trim(),
         password,
       );
-      const isAdmin = await getIsAdminByRole(cred.user.uid);
+      const isAdmin = await getIsAdminByRole(cred.user.uid, cred.user.email);
       if (!isAdmin) {
         await signOut(auth);
         router.replace('/?unauthorized=1');

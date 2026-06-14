@@ -16,7 +16,7 @@ export default function Home() {
       return;
     }
     let cancelled = false;
-    getIsAdminByRole(user.uid).then((isAdmin) => {
+    getIsAdminByRole(user.uid, user.email).then((isAdmin) => {
       if (cancelled) return;
       if (isAdmin) router.replace('/admin/dashboard');
       else router.replace('/admin/login');
