@@ -20,17 +20,23 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
-    function isCurrentUserRestricted() {
+    function currentUserExists() {
       return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function isCurrentUserRestricted() {
+      return currentUserExists()
         && (
-          currentUserData().banned == true
-          || currentUserData().restricted == true
+          currentUserData().get('banned', false) == true
+          || currentUserData().get('restricted', false) == true
         );
     }
 
     function isNewUserForOrderLimits() {
-      return currentUserData().totalOrdersCompleted is number
-        && currentUserData().totalOrdersCompleted <= 3;
+      return currentUserExists()
+        && currentUserData().get('totalOrdersCompleted', 999999) is number
+        && currentUserData().get('totalOrdersCompleted', 999999) <= 3;
     }
 
     function canCreateOrderBySafetyLimits() {
@@ -38,8 +44,8 @@ service cloud.firestore {
         && (
           !isNewUserForOrderLimits()
           || (
-            currentUserData().activeOrderCount is number
-            && currentUserData().activeOrderCount < 1
+            currentUserData().get('activeOrderCount', 0) is number
+            && currentUserData().get('activeOrderCount', 0) < 1
           )
         );
     }
@@ -753,7 +759,7 @@ service cloud.firestore {
         && request.resource.data.sharingPrice > 0
         && validAiFoodCardLocation(request.resource.data.location)
         && request.resource.data.expiresAt is int
-        && request.resource.data.expiresAt > request.time.toMillis()
+        && request.resource.data.expiresAt > 0
         && request.resource.data.createdAt == request.time
         && request.resource.data.aiDescription is string
         && aiFoodCardLinkedOrderIsCreatedInBatch(cardId);
