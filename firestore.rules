@@ -539,6 +539,26 @@ service cloud.firestore {
         && request.resource.data.createdAt != null;
     }
 
+    function isValidSingleParticipantOrderCreate() {
+      return isSignedIn()
+        && canCreateOrderBySafetyLimits()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.maxPeople is number
+        && request.resource.data.maxPeople >= 2
+        && request.resource.data.participants is list
+        && request.resource.data.participants.size() == 1
+        && request.resource.data.participants[0] == request.auth.uid
+        && request.resource.data.joinedAtMap is map
+        && request.resource.data.joinedAtMap[request.auth.uid] is timestamp
+        && request.resource.data.usersAccepted is list
+        && request.resource.data.usersAccepted.size() == 0
+        && request.resource.data.foodName is string
+        && request.resource.data.image is string
+        && request.resource.data.pricePerPerson is number
+        && request.resource.data.totalPrice is number
+        && request.resource.data.createdAt != null;
+    }
+
     function orderCreatorUidFromDoc(data) {
       return data.get(
         'createdBy',
@@ -603,6 +623,7 @@ service cloud.firestore {
         && request.resource.data.participants == resource.data.participants
         && request.auth.uid in resource.data.get('participants', [])
         && request.resource.data.joinedAtMap is map
+        && !resource.data.get('joinedAtMap', {}).keys().hasAny([request.auth.uid])
         && request.resource.data.joinedAtMap[request.auth.uid] is timestamp;
     }
 
@@ -640,8 +661,8 @@ service cloud.firestore {
           'typing'
         ])
         && (
-          resource.data.status != 'completed'
-          || request.resource.data.status == resource.data.status
+          resource.data.get('status', '') != 'completed'
+          || request.resource.data.get('status', '') == resource.data.get('status', '')
         )
         && (
           !request.resource.data.diff(resource.data).changedKeys().hasAny(['status'])
@@ -1136,8 +1157,17 @@ service cloud.firestore {
     }
     match /orders/{orderId} {
       allow read: if isSignedIn();
-      allow create: if isValidHalfOrderCreate() || isValidOrderCreate() || isAdmin();
+      allow create: if isValidHalfOrderCreate()
+        || isValidSingleParticipantOrderCreate()
+        || isValidOrderCreate()
+        || isAdmin();
       allow update: if isAdmin()
+        || isHalfOrderParticipantIncrementalJoin()
+        || isHalfOrderParticipantBootstrapJoin()
+        || isHalfOrderCancelUpdate()
+        || isHalfOrderMarkActiveUpdate()
+        || isHalfOrderCompleteUpdate()
+        || isOrderPairJoinNotifiedUpdate()
         || isParticipantsJoinUpdate()
         || isParticipantsJoinWithExtrasUpdate()
         || isJoinedAtMapBackfillUpdate()
@@ -1145,13 +1175,7 @@ service cloud.firestore {
         || isOrderTypingUpdate()
         || isCreatorOnlyNonJoinUpdate()
         || isSwipeAcceptUpdate()
-        || isMarkOrderExpiredUpdate()
-        || isHalfOrderParticipantIncrementalJoin()
-        || isHalfOrderParticipantBootstrapJoin()
-        || isHalfOrderCancelUpdate()
-        || isHalfOrderMarkActiveUpdate()
-        || isHalfOrderCompleteUpdate()
-        || isOrderPairJoinNotifiedUpdate();
+        || isMarkOrderExpiredUpdate();
       allow delete: if isAdmin()
         || (
           request.auth != null
