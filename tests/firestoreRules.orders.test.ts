@@ -14,6 +14,7 @@ import {
   setDoc,
   Timestamp,
   updateDoc,
+  writeBatch,
 } from 'firebase/firestore';
 
 let testEnv: RulesTestEnvironment | undefined;
@@ -179,6 +180,122 @@ describe('firestore rules: orders create + participants join', () => {
     );
     const snap = await getDoc(doc(dbU1, 'orders', 'o1'));
     expect(snap.data()?.image).toBe('https://example.com/new.jpg');
+  });
+});
+
+describe('firestore rules: user privilege fields', () => {
+  it('denies self-service admin role escalation', async () => {
+    const dbU1 = te().authenticatedContext('u1').firestore();
+    await assertFails(
+      setDoc(doc(dbU1, 'users', 'u1'), {
+        displayName: 'User One',
+        role: 'admin',
+      }),
+    );
+  });
+
+  it('denies self-service changes to moderation fields', async () => {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'users', 'u1'), {
+        displayName: 'User One',
+        banned: false,
+      });
+    });
+
+    const dbU1 = te().authenticatedContext('u1').firestore();
+    await assertFails(
+      updateDoc(doc(dbU1, 'users', 'u1'), {
+        banned: true,
+      }),
+    );
+  });
+
+  it('does not treat a client-writable role field as admin authority', async () => {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'users', 'u1'), {
+        displayName: 'User One',
+        role: 'admin',
+      });
+      await setDoc(doc(ctx.firestore(), 'reports', 'r1'), {
+        reporterId: 'u2',
+        reportedUserId: 'u3',
+        contentId: 'order:o1',
+        reason: 'spam',
+        createdAt: serverTimestamp(),
+        userId: 'u2',
+      });
+    });
+
+    const dbU1 = te().authenticatedContext('u1').firestore();
+    await assertFails(getDoc(doc(dbU1, 'reports', 'r1')));
+  });
+});
+
+describe('firestore rules: AI chat food card create', () => {
+  function aiHalfOrderDoc(cardId: string, uid: string) {
+    const ts = serverTimestamp();
+    return {
+      cardId,
+      users: [uid],
+      status: 'waiting' as const,
+      matchWaitDeadlineAt: Date.now() + 45 * 60 * 1000,
+      maxUsers: 2,
+      createdBy: uid,
+      hostId: uid,
+      host: {
+        userId: uid,
+        name: 'User One',
+        avatar: null,
+        phone: null,
+        expoPushToken: null,
+      },
+      createdAt: ts,
+      foodName: 'Pizza Place',
+      image: 'https://example.com/pizza.jpg',
+      pricePerPerson: 8,
+      totalPrice: 16,
+      location: '123 Main St',
+      restaurantName: 'Pizza Place',
+      participants: [uid],
+      joinedAtMap: { [uid]: ts },
+    };
+  }
+
+  function aiFoodCardDoc(orderId: string, uid: string) {
+    return {
+      title: 'Pizza Place',
+      restaurantName: 'Pizza Place',
+      image: 'https://example.com/pizza.jpg',
+      price: 16,
+      splitPrice: 8,
+      sharingPrice: 8,
+      location: '123 Main St',
+      status: 'active' as const,
+      expiresAt: Date.now() + 45 * 60 * 1000,
+      ownerId: uid,
+      user1: { uid, name: 'User One', photo: null },
+      maxUsers: 2,
+      createdAt: serverTimestamp(),
+      deckSource: 'ai_chat',
+      orderId,
+      aiDescription: 'Shared order',
+    };
+  }
+
+  it('allows a user to create an AI chat food card linked to its new order in one batch', async () => {
+    const dbU1 = te().authenticatedContext('u1').firestore();
+    const batch = writeBatch(dbU1);
+    batch.set(doc(dbU1, 'orders', 'ai-order-1'), aiHalfOrderDoc('ai-card-1', 'u1'));
+    batch.set(doc(dbU1, 'food_cards', 'ai-card-1'), aiFoodCardDoc('ai-order-1', 'u1'));
+
+    await assertSucceeds(batch.commit());
+  });
+
+  it('denies an AI chat food card create without a newly-created linked order', async () => {
+    const dbU1 = te().authenticatedContext('u1').firestore();
+    await assertFails(
+      setDoc(doc(dbU1, 'food_cards', 'ai-card-2'), aiFoodCardDoc('missing-order', 'u1')),
+    );
   });
 });
 

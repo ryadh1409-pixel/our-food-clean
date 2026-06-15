@@ -543,6 +543,14 @@ function isCardOwnedByUser(card: FoodCard, uid: string): boolean {
   return false;
 }
 
+function directLinkedOrderIdForCardData(data: Record<string, unknown>): string | null {
+  const deckSource =
+    typeof data.deckSource === 'string' ? data.deckSource.trim() : '';
+  const orderId = typeof data.orderId === 'string' ? data.orderId.trim() : '';
+  if (deckSource !== FOOD_CARD_DECK_SOURCE_AI_CHAT || !orderId) return null;
+  return orderId;
+}
+
 /**
  * Disable join for non-`active` cards, capacity (via live `orderUsers` when provided), admin preview, or own card.
  */
@@ -637,7 +645,10 @@ export async function joinOrder(
       FOOD_CARD_ORDER_MAX_USERS,
     );
 
-    const candidateOrderIds = await fetchJoinableOrderIdsForCard(trimmed);
+    const directLinkedOrderId = directLinkedOrderIdForCardData(cardDataPre);
+    const candidateOrderIds = directLinkedOrderId
+      ? [directLinkedOrderId]
+      : await fetchJoinableOrderIdsForCard(trimmed);
 
     for (const orderIdTry of candidateOrderIds) {
       const oSnap = await getDoc(doc(db, 'orders', orderIdTry));
@@ -705,6 +716,10 @@ export async function joinOrder(
         orderId: outcome.orderId,
         justBecamePair,
       };
+    }
+
+    if (directLinkedOrderId) {
+      return { ok: false, message: 'This order is no longer available' };
     }
 
     const outcome = await runTransaction(db, async (tx) => {

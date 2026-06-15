@@ -192,8 +192,6 @@ export async function transactionJoinHalfOrderForCard(args: {
         : FOOD_CARD_ORDER_MAX_USERS,
       FOOD_CARD_ORDER_MAX_USERS,
     );
-    if (users.length >= maxUsers) return { kind: 'skip' as const };
-
     const partIds = normalizeOrderUserIds(od.participants);
     let hostForPlan: PublicUserFields | null =
       partIds.length === 0 && users.length === 1
