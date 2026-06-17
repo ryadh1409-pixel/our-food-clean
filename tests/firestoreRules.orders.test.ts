@@ -8,12 +8,14 @@ import {
 } from '@firebase/rules-unit-testing';
 import {
   arrayUnion,
+  deleteDoc,
   doc,
   getDoc,
   serverTimestamp,
   setDoc,
   Timestamp,
   updateDoc,
+  writeBatch,
 } from 'firebase/firestore';
 
 let testEnv: RulesTestEnvironment | undefined;
@@ -44,6 +46,58 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await te().clearFirestore();
+});
+
+describe('firestore rules: user self-write privilege boundaries', () => {
+  it('allows users to write non-sensitive profile fields', async () => {
+    const db = te().authenticatedContext('u1').firestore();
+    await assertSucceeds(
+      setDoc(doc(db, 'users', 'u1'), {
+        displayName: 'Alice',
+        isLookingToSplit: true,
+        preferredFood: 'pizza',
+      }),
+    );
+    await assertSucceeds(
+      updateDoc(doc(db, 'users', 'u1'), {
+        displayName: 'Alice Updated',
+      }),
+    );
+  });
+
+  it('denies self-promotion and moderation/economy self-writes', async () => {
+    const db = te().authenticatedContext('u1').firestore();
+    await assertFails(
+      setDoc(doc(db, 'users', 'u1'), {
+        displayName: 'Alice',
+        role: 'admin',
+      }),
+    );
+
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'users', 'u1'), {
+        displayName: 'Alice',
+        restricted: true,
+        credits: 0,
+      });
+    });
+
+    await assertFails(updateDoc(doc(db, 'users', 'u1'), { role: 'admin' }));
+    await assertFails(updateDoc(doc(db, 'users', 'u1'), { restricted: false }));
+    await assertFails(updateDoc(doc(db, 'users', 'u1'), { credits: 9999 }));
+  });
+
+  it('denies self-delete of user documents', async () => {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'users', 'u1'), {
+        displayName: 'Alice',
+        restricted: true,
+      });
+    });
+
+    const db = te().authenticatedContext('u1').firestore();
+    await assertFails(deleteDoc(doc(db, 'users', 'u1')));
+  });
 });
 
 function baseOrderFields(createdByUid: string) {
@@ -250,6 +304,74 @@ describe('firestore rules: swipe usersAccepted + food matches', () => {
   });
 });
 
+describe('firestore rules: AI chat food card create', () => {
+  function aiChatCard(ownerId: string, orderId: string) {
+    return {
+      title: 'Pizza Palace',
+      restaurantName: 'Pizza Palace',
+      image: 'https://example.com/pizza.jpg',
+      price: 16,
+      splitPrice: 8,
+      sharingPrice: 8,
+      location: '123 Main St',
+      status: 'active',
+      expiresAt: Date.now() + 45 * 60 * 1000,
+      ownerId,
+      user1: { uid: ownerId, name: 'Alice', photo: null },
+      maxUsers: 2,
+      createdAt: serverTimestamp(),
+      deckSource: 'ai_chat',
+      orderId,
+      aiDescription: 'Shared order',
+    };
+  }
+
+  function aiChatHalfOrder(ownerId: string, cardId: string) {
+    return {
+      cardId,
+      users: [ownerId],
+      status: 'waiting',
+      matchWaitDeadlineAt: Date.now() + 10 * 60 * 1000,
+      maxUsers: 2,
+      createdBy: ownerId,
+      hostId: ownerId,
+      host: { userId: ownerId, name: 'Alice', avatar: null, phone: null, expoPushToken: null },
+      createdAt: serverTimestamp(),
+      foodName: 'Pizza Palace',
+      image: 'https://example.com/pizza.jpg',
+      pricePerPerson: 8,
+      totalPrice: 16,
+      location: '123 Main St',
+      restaurantName: 'Pizza Palace',
+      participants: [ownerId],
+      joinedAtMap: { [ownerId]: serverTimestamp() },
+    };
+  }
+
+  it('allows the signed-in owner to batch-create an AI chat food card linked to its HalfOrder', async () => {
+    const db = te().authenticatedContext('u1').firestore();
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'food_cards', 'fc-ai'), aiChatCard('u1', 'o-ai'));
+    batch.set(doc(db, 'orders', 'o-ai'), aiChatHalfOrder('u1', 'fc-ai'));
+    await assertSucceeds(batch.commit());
+  });
+
+  it('denies AI chat food card create without the matching owner order in the batch', async () => {
+    const db = te().authenticatedContext('u1').firestore();
+    await assertFails(
+      setDoc(doc(db, 'food_cards', 'fc-ai'), aiChatCard('u1', 'missing-order')),
+    );
+  });
+
+  it('denies creating an AI chat food card for another owner', async () => {
+    const db = te().authenticatedContext('u1').firestore();
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'food_cards', 'fc-ai'), aiChatCard('u2', 'o-ai'));
+    batch.set(doc(db, 'orders', 'o-ai'), aiChatHalfOrder('u2', 'fc-ai'));
+    await assertFails(batch.commit());
+  });
+});
+
 describe('firestore rules: HalfOrder pair-join notified ack', () => {
   function halfOrderPairDoc() {
     const ts = serverTimestamp();
@@ -406,5 +528,71 @@ describe('firestore rules: HalfOrder cancel + order_members', () => {
         location: null,
       }),
     );
+  });
+});
+
+describe('firestore rules: split groups', () => {
+  function groupDoc(members: string[], status = 'waiting') {
+    return {
+      members,
+      foodType: 'pizza',
+      maxSize: 4,
+      status,
+      createdAt: serverTimestamp(),
+      anchorLocation: { lat: 43.7, lng: -79.4 },
+      centerLocation: { lat: 43.7, lng: -79.4 },
+    };
+  }
+
+  it('allows a nearby user transaction shape to join a waiting group', async () => {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'groups', 'g1'), groupDoc(['u1']));
+    });
+
+    const dbU2 = te().authenticatedContext('u2').firestore();
+    await assertSucceeds(
+      updateDoc(doc(dbU2, 'groups', 'g1'), {
+        members: ['u1', 'u2'],
+        status: 'waiting',
+      }),
+    );
+  });
+
+  it('denies a member changing arbitrary group metadata', async () => {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'groups', 'g1'), groupDoc(['u1', 'u2']));
+    });
+
+    const dbU1 = te().authenticatedContext('u1').firestore();
+    await assertFails(
+      updateDoc(doc(dbU1, 'groups', 'g1'), {
+        foodType: 'sushi',
+      }),
+    );
+  });
+
+  it('denies removing other members during a leave update', async () => {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'groups', 'g1'), groupDoc(['u1', 'u2', 'u3']));
+    });
+
+    const dbU1 = te().authenticatedContext('u1').firestore();
+    await assertFails(
+      updateDoc(doc(dbU1, 'groups', 'g1'), {
+        members: ['u1'],
+        status: 'waiting',
+      }),
+    );
+  });
+
+  it('only allows client group delete for the last remaining member', async () => {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'groups', 'g1'), groupDoc(['u1', 'u2']));
+      await setDoc(doc(ctx.firestore(), 'groups', 'g2'), groupDoc(['u1']));
+    });
+
+    const dbU1 = te().authenticatedContext('u1').firestore();
+    await assertFails(deleteDoc(doc(dbU1, 'groups', 'g1')));
+    await assertSucceeds(deleteDoc(doc(dbU1, 'groups', 'g2')));
   });
 });
