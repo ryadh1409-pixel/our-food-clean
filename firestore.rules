@@ -25,17 +25,24 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
+    function currentUserExists() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
     function isCurrentUserRestricted() {
       return isSignedIn()
+        && currentUserExists()
         && (
-          currentUserData().banned == true
-          || currentUserData().restricted == true
+          currentUserData().get('banned', false) == true
+          || currentUserData().get('restricted', false) == true
         );
     }
 
     function isNewUserForOrderLimits() {
-      return currentUserData().totalOrdersCompleted is number
-        && currentUserData().totalOrdersCompleted <= 3;
+      return currentUserExists()
+        && currentUserData().get('totalOrdersCompleted', 999) is number
+        && currentUserData().get('totalOrdersCompleted', 999) <= 3;
     }
 
     function canCreateOrderBySafetyLimits() {
@@ -43,8 +50,8 @@ service cloud.firestore {
         && (
           !isNewUserForOrderLimits()
           || (
-            currentUserData().activeOrderCount is number
-            && currentUserData().activeOrderCount < 1
+            currentUserData().get('activeOrderCount', 0) is number
+            && currentUserData().get('activeOrderCount', 0) < 1
           )
         );
     }
@@ -778,8 +785,8 @@ service cloud.firestore {
           !request.resource.data.diff(resource.data).changedKeys().hasAny(['status'])
           || request.resource.data.status != 'cancelled'
           || (
-            currentUserData().cancellationCount24h is number
-            && currentUserData().cancellationCount24h < 3
+            currentUserData().get('cancellationCount24h', 0) is number
+            && currentUserData().get('cancellationCount24h', 0) < 3
           )
         );
     }
@@ -1176,22 +1183,24 @@ service cloud.firestore {
     }
     match /orders/{orderId} {
       allow read: if isSignedIn();
-      allow create: if isValidOrderCreate() || isValidHalfOrderCreate() || isAdmin();
+      allow create: if isAdmin()
+        || isValidHalfOrderCreate()
+        || isValidOrderCreate();
       allow update: if isAdmin()
-        || isParticipantsJoinUpdate()
-        || isParticipantsJoinWithExtrasUpdate()
-        || isJoinedAtMapBackfillUpdate()
-        || isParticipantsLeaveUpdate()
-        || isOrderTypingUpdate()
         || isCreatorOnlyNonJoinUpdate()
         || isSwipeAcceptUpdate()
-        || isMarkOrderExpiredUpdate()
+        || isOrderPairJoinNotifiedUpdate()
         || isHalfOrderParticipantIncrementalJoin()
         || isHalfOrderParticipantBootstrapJoin()
         || isHalfOrderCancelUpdate()
         || isHalfOrderMarkActiveUpdate()
         || isHalfOrderCompleteUpdate()
-        || isOrderPairJoinNotifiedUpdate();
+        || isParticipantsJoinUpdate()
+        || isParticipantsJoinWithExtrasUpdate()
+        || isJoinedAtMapBackfillUpdate()
+        || isParticipantsLeaveUpdate()
+        || isOrderTypingUpdate()
+        || isMarkOrderExpiredUpdate();
       allow delete: if isAdmin()
         || (
           request.auth != null
