@@ -778,7 +778,7 @@ service cloud.firestore {
           'typing'
         ])
         && (
-          resource.data.status != 'completed'
+          resource.data.get('status', '') != 'completed'
           || request.resource.data.status == resource.data.status
         )
         && (
@@ -1184,17 +1184,17 @@ service cloud.firestore {
     match /orders/{orderId} {
       allow read: if isSignedIn();
       allow create: if isAdmin()
-        || isValidHalfOrderCreate()
-        || isValidOrderCreate();
+        || isValidOrderCreate()
+        || isValidHalfOrderCreate();
       allow update: if isAdmin()
         || isCreatorOnlyNonJoinUpdate()
-        || isSwipeAcceptUpdate()
-        || isOrderPairJoinNotifiedUpdate()
+        || isHalfOrderCancelUpdate()
         || isHalfOrderParticipantIncrementalJoin()
         || isHalfOrderParticipantBootstrapJoin()
-        || isHalfOrderCancelUpdate()
         || isHalfOrderMarkActiveUpdate()
         || isHalfOrderCompleteUpdate()
+        || isSwipeAcceptUpdate()
+        || isOrderPairJoinNotifiedUpdate()
         || isParticipantsJoinUpdate()
         || isParticipantsJoinWithExtrasUpdate()
         || isJoinedAtMapBackfillUpdate()
