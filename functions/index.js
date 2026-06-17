@@ -45,6 +45,7 @@ const MAX_CANCELLATIONS_PER_24H = 3;
 const REPORT_RESTRICTION_THRESHOLD = 5;
 /** UGC: surface “flagged” to clients to hide user content (lighter than `restricted`). */
 const REPORT_FLAG_THRESHOLD = 3;
+const TERMINAL_ORDER_STATUSES = new Set(['completed', 'cancelled', 'closed', 'expired']);
 
 function computeTrustScore({
   averageRating = 0,
@@ -492,6 +493,10 @@ exports.onOrderDeleted = functions.firestore
     const ownerId = resolveOrderOwnerId(data);
     if (!ownerId) return null;
     const db = admin.firestore();
+    if (TERMINAL_ORDER_STATUSES.has(typeof data.status === 'string' ? data.status : '')) {
+      await refreshUserDerivedFields(db, ownerId);
+      return null;
+    }
     const userRef = db.doc(`users/${ownerId}`);
     await db.runTransaction(async (tx) => {
       const userSnap = await tx.get(userRef);
@@ -593,8 +598,8 @@ exports.onOrderUpdatedSafety = functions.firestore
 
     // If order moves to terminal status, release one active slot.
     const becameTerminal =
-      !['completed', 'cancelled', 'closed', 'expired'].includes(beforeStatus) &&
-      ['completed', 'cancelled', 'closed', 'expired'].includes(afterStatus);
+      !TERMINAL_ORDER_STATUSES.has(beforeStatus) &&
+      TERMINAL_ORDER_STATUSES.has(afterStatus);
     if (becameTerminal) {
       await db.runTransaction(async (tx) => {
         const userSnap = await tx.get(userRef);
