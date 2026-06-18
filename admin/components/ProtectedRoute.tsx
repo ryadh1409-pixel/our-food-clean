@@ -1,4 +1,4 @@
-import { getIsAdminByRole } from '@/firebase/adminAuth';
+import { isAdminAuthUser } from '@/firebase/adminAuth';
 import { useAuth } from '@/firebase/useAuth';
 import { useRouter } from 'next/router';
 import React, { useEffect, useState } from 'react';
@@ -18,17 +18,10 @@ export default function ProtectedRoute({
       if (!loading && !user) setRoleChecked(true);
       return;
     }
-    let cancelled = false;
-    getIsAdminByRole(user.uid).then((admin) => {
-      if (!cancelled) {
-        setIsAdmin(admin);
-        setRoleChecked(true);
-        if (!admin) router.replace('/?unauthorized=1');
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
+    const admin = isAdminAuthUser(user);
+    setIsAdmin(admin);
+    setRoleChecked(true);
+    if (!admin) router.replace('/?unauthorized=1');
   }, [user, loading, router]);
 
   if (loading || !roleChecked) {

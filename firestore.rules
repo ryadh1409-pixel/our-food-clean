@@ -5,24 +5,59 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    /** Must match constants/adminUid.ts, utils/admin.ts ADMIN_EMAILS, and users.role. */
+    /** Must match constants/adminUid.ts and utils/admin.ts ADMIN_EMAILS. */
     function isAdmin() {
       return isSignedIn()
         && (
           request.auth.uid == 'KT3LfXRsVgaH4LfRTQaexvj3CRn1'
           || (
-            request.auth.token.email is string
+            request.auth.token.keys().hasAny(['email'])
             && (
               request.auth.token.email == 'admin@ourfood.com'
               || request.auth.token.email == 'support@halforder.app'
               || request.auth.token.email == 'ryadh1409@gmail.com'
             )
           )
+        );
+    }
+
+    function isSelfUser(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function selfUserCreateDoesNotGrantPrivilege() {
+      return request.resource.data.get('role', 'user') == 'user'
+        && request.resource.data.get('banned', false) == false
+        && request.resource.data.get('restricted', false) == false;
+    }
+
+    function selfUserUpdateDoesNotChangePrivilegedFields() {
+      return (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role'])
           || (
-            exists(/databases/$(database)/documents/users/$(request.auth.uid))
-            && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', 'user') == 'admin'
+            !resource.data.keys().hasAny(['role'])
+            && request.resource.data.get('role', 'user') == 'user'
+          )
+        )
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['banned'])
+          || (
+            !resource.data.keys().hasAny(['banned'])
+            && request.resource.data.get('banned', false) == false
+          )
+        )
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['restricted'])
+          || (
+            !resource.data.keys().hasAny(['restricted'])
+            && request.resource.data.get('restricted', false) == false
           )
         );
+    }
+
+    function selfUserDeleteDoesNotClearModeration() {
+      return resource.data.get('banned', false) != true
+        && resource.data.get('restricted', false) != true;
     }
 
     function currentUserData() {
@@ -825,8 +860,12 @@ service cloud.firestore {
     /** Client: subscribe only to `users/{request.auth.uid}` for private fields (e.g. blockedUsers). */
     match /users/{userId} {
       allow read: if request.auth != null;
-      allow create, update: if (request.auth != null && request.auth.uid == userId) || isAdmin();
-      allow delete: if (request.auth != null && request.auth.uid == userId) || isAdmin();
+      allow create: if isAdmin()
+        || (isSelfUser(userId) && selfUserCreateDoesNotGrantPrivilege());
+      allow update: if isAdmin()
+        || (isSelfUser(userId) && selfUserUpdateDoesNotChangePrivilegedFields());
+      allow delete: if isAdmin()
+        || (isSelfUser(userId) && selfUserDeleteDoesNotClearModeration());
       /** Split-match partner joined — writer is `fromId`, must be another signed-in user. */
       match /splitPoke/{fromId} {
         allow create: if request.auth != null
