@@ -24,29 +24,34 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    function requestFieldAbsentOrValue(fieldName, value) {
-      return !request.resource.data.keys().hasAny([fieldName])
-        || request.resource.data[fieldName] == value;
-    }
-
     function selfUserCreateDoesNotGrantPrivilege() {
-      return requestFieldAbsentOrValue('role', 'user')
-        && requestFieldAbsentOrValue('banned', false)
-        && requestFieldAbsentOrValue('restricted', false);
-    }
-
-    function updateFieldAbsentOrUnchangedOrSafeDefault(fieldName, value) {
-      return !request.resource.data.diff(resource.data).affectedKeys().hasAny([fieldName])
-        || (
-          !resource.data.keys().hasAny([fieldName])
-          && request.resource.data[fieldName] == value
-        );
+      return request.resource.data.get('role', 'user') == 'user'
+        && request.resource.data.get('banned', false) == false
+        && request.resource.data.get('restricted', false) == false;
     }
 
     function selfUserUpdateDoesNotChangePrivilegedFields() {
-      return updateFieldAbsentOrUnchangedOrSafeDefault('role', 'user')
-        && updateFieldAbsentOrUnchangedOrSafeDefault('banned', false)
-        && updateFieldAbsentOrUnchangedOrSafeDefault('restricted', false);
+      return (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role'])
+          || (
+            !resource.data.keys().hasAny(['role'])
+            && request.resource.data.get('role', 'user') == 'user'
+          )
+        )
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['banned'])
+          || (
+            !resource.data.keys().hasAny(['banned'])
+            && request.resource.data.get('banned', false) == false
+          )
+        )
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['restricted'])
+          || (
+            !resource.data.keys().hasAny(['restricted'])
+            && request.resource.data.get('restricted', false) == false
+          )
+        );
     }
 
     function selfUserDeleteDoesNotClearModeration() {
