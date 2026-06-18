@@ -8,6 +8,7 @@ import {
 } from '@firebase/rules-unit-testing';
 import {
   arrayUnion,
+  deleteDoc,
   doc,
   getDoc,
   serverTimestamp,
@@ -404,6 +405,100 @@ describe('firestore rules: HalfOrder cancel + order_members', () => {
         pushToken: null,
         joinedAt: Timestamp.now(),
         location: null,
+      }),
+    );
+  });
+});
+
+describe('firestore rules: user privilege fields', () => {
+  it('allows regular users to write harmless profile defaults', async () => {
+    const db = te().authenticatedContext('u1').firestore();
+
+    await assertSucceeds(
+      setDoc(doc(db, 'users', 'u1'), {
+        displayName: 'User One',
+        email: 'u1@example.com',
+        role: 'user',
+        banned: false,
+        restricted: false,
+      }),
+    );
+  });
+
+  it('denies self-service admin promotion on user create', async () => {
+    const db = te().authenticatedContext('u1').firestore();
+
+    await assertFails(
+      setDoc(doc(db, 'users', 'u1'), {
+        displayName: 'User One',
+        email: 'u1@example.com',
+        role: 'admin',
+      }),
+    );
+  });
+
+  it('does not treat Firestore user role as admin authority', async () => {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'users', 'u1'), {
+        displayName: 'User One',
+        role: 'admin',
+      });
+      await setDoc(doc(ctx.firestore(), 'feedback', 'f1'), {
+        userId: 'u2',
+        userName: 'User Two',
+        message: 'Needs review',
+        sentiment: 'negative',
+        source: 'assistant_chat',
+        createdAt: Timestamp.now(),
+      });
+    });
+
+    const db = te().authenticatedContext('u1').firestore();
+    await assertFails(getDoc(doc(db, 'feedback', 'f1')));
+  });
+
+  it('denies restricted users clearing or deleting their moderation state', async () => {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'users', 'u1'), {
+        displayName: 'User One',
+        banned: true,
+        restricted: true,
+      });
+    });
+
+    const db = te().authenticatedContext('u1').firestore();
+    await assertFails(
+      updateDoc(doc(db, 'users', 'u1'), {
+        banned: false,
+        restricted: false,
+      }),
+    );
+    await assertFails(deleteDoc(doc(db, 'users', 'u1')));
+  });
+
+  it('allows auth-email admins to read and update protected user fields', async () => {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'users', 'u1'), {
+        displayName: 'User One',
+      });
+      await setDoc(doc(ctx.firestore(), 'feedback', 'f1'), {
+        userId: 'u1',
+        userName: 'User One',
+        message: 'Needs review',
+        sentiment: 'negative',
+        source: 'assistant_chat',
+        createdAt: Timestamp.now(),
+      });
+    });
+
+    const adminDb = te()
+      .authenticatedContext('admin-user', { email: 'support@halforder.app' })
+      .firestore();
+
+    await assertSucceeds(getDoc(doc(adminDb, 'feedback', 'f1')));
+    await assertSucceeds(
+      updateDoc(doc(adminDb, 'users', 'u1'), {
+        banned: true,
       }),
     );
   });
