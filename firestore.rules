@@ -5,19 +5,18 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function authEmail() {
+      return request.auth.token.get('email', '');
+    }
+
     /** Must match constants/adminUid.ts and utils/admin.ts ADMIN_EMAILS. */
     function isAdmin() {
       return isSignedIn()
         && (
           request.auth.uid == 'KT3LfXRsVgaH4LfRTQaexvj3CRn1'
-          || (
-            request.auth.token.email is string
-            && (
-              request.auth.token.email == 'admin@ourfood.com'
-              || request.auth.token.email == 'support@halforder.app'
-              || request.auth.token.email == 'ryadh1409@gmail.com'
-            )
-          )
+          || authEmail() == 'admin@ourfood.com'
+          || authEmail() == 'support@halforder.app'
+          || authEmail() == 'ryadh1409@gmail.com'
         );
     }
 
