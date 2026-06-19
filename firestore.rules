@@ -236,6 +236,7 @@ service cloud.firestore {
     /** HalfOrder: food-card swipe creates `orders` with `cardId` + `users` + `host`, string `participants`, `joinedAtMap`. */
     function isValidHalfOrderCreate() {
       return isSignedIn()
+        && request.resource.data.keys().hasAll(['cardId'])
         && request.resource.data.cardId is string
         && request.resource.data.cardId.size() > 0
         && canCreateOrderBySafetyLimits()
@@ -681,8 +682,8 @@ service cloud.firestore {
           'typing'
         ])
         && (
-          resource.data.status != 'completed'
-          || request.resource.data.status == resource.data.status
+          resource.data.get('status', '') != 'completed'
+          || request.resource.data.get('status', '') == resource.data.get('status', '')
         )
         && (
           !request.resource.data.diff(resource.data).changedKeys().hasAny(['status'])
