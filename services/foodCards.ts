@@ -543,6 +543,14 @@ function isCardOwnedByUser(card: FoodCard, uid: string): boolean {
   return false;
 }
 
+function isSingleUseAiChatCardData(data: Record<string, unknown>): boolean {
+  return (
+    data.deckSource === FOOD_CARD_DECK_SOURCE_AI_CHAT &&
+    typeof data.orderId === 'string' &&
+    data.orderId.trim().length > 0
+  );
+}
+
 /**
  * Disable join for non-`active` cards, capacity (via live `orderUsers` when provided), admin preview, or own card.
  */
@@ -707,10 +715,20 @@ export async function joinOrder(
       };
     }
 
+    if (isSingleUseAiChatCardData(cardDataPre)) {
+      return {
+        ok: false,
+        message: 'This order is not open for joining',
+      };
+    }
+
     const outcome = await runTransaction(db, async (tx) => {
       const cardSnap = await tx.get(cardRef);
       if (!cardSnap.exists()) throw new Error('Card not found');
       const data = cardSnap.data() as Record<string, unknown>;
+      if (isSingleUseAiChatCardData(data)) {
+        throw new Error('This order is not open for joining');
+      }
       if (typeof data.active === 'boolean') {
         if (!data.active) throw new Error('This card is not available');
       } else {

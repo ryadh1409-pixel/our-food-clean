@@ -8,12 +8,14 @@ import {
 } from '@firebase/rules-unit-testing';
 import {
   arrayUnion,
+  deleteDoc,
   doc,
   getDoc,
   serverTimestamp,
   setDoc,
   Timestamp,
   updateDoc,
+  writeBatch,
 } from 'firebase/firestore';
 
 let testEnv: RulesTestEnvironment | undefined;
@@ -406,5 +408,158 @@ describe('firestore rules: HalfOrder cancel + order_members', () => {
         location: null,
       }),
     );
+  });
+});
+
+describe('firestore rules: user privilege fields', () => {
+  it('allows ordinary profile defaults but denies self admin escalation', async () => {
+    const dbU1 = te().authenticatedContext('u1').firestore();
+
+    await assertSucceeds(
+      setDoc(doc(dbU1, 'users', 'u1'), {
+        displayName: 'User One',
+        email: 'u1@example.com',
+        role: 'user',
+        restricted: false,
+      }),
+    );
+
+    await assertFails(
+      setDoc(
+        doc(dbU1, 'users', 'u1'),
+        {
+          role: 'admin',
+        },
+        { merge: true },
+      ),
+    );
+  });
+
+  it('does not grant admin power from an existing users.role field', async () => {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'users', 'u1'), {
+        role: 'admin',
+        displayName: 'Escalated User',
+      });
+      await setDoc(doc(ctx.firestore(), 'orders', 'victim'), {
+        createdBy: 'u2',
+        participants: ['u2'],
+        joinedAtMap: { u2: serverTimestamp() },
+        foodName: 'Victim Order',
+        image: 'https://example.com/p.jpg',
+        totalPrice: 20,
+        maxPeople: 2,
+        createdAt: serverTimestamp(),
+      });
+    });
+
+    const dbU1 = te().authenticatedContext('u1').firestore();
+    await assertFails(deleteDoc(doc(dbU1, 'orders', 'victim')));
+  });
+
+  it('denies clearing moderation fields or deleting a moderated profile', async () => {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'users', 'u1'), {
+        displayName: 'User One',
+        banned: true,
+        restricted: true,
+      });
+    });
+
+    const dbU1 = te().authenticatedContext('u1').firestore();
+    await assertFails(updateDoc(doc(dbU1, 'users', 'u1'), { banned: false }));
+    await assertFails(
+      updateDoc(doc(dbU1, 'users', 'u1'), { restricted: false }),
+    );
+    await assertFails(deleteDoc(doc(dbU1, 'users', 'u1')));
+  });
+});
+
+describe('firestore rules: AI chat food card create', () => {
+  async function seedUser(uid: string) {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'users', uid), {
+        displayName: `User ${uid}`,
+        totalOrdersCompleted: 0,
+        activeOrderCount: 0,
+        banned: false,
+        restricted: false,
+      });
+    });
+  }
+
+  function aiChatCardDoc(orderId: string, uid = 'u1') {
+    return {
+      title: 'Pizza Place',
+      restaurantName: 'Pizza Place',
+      image: 'https://example.com/pizza.jpg',
+      price: 16,
+      splitPrice: 8,
+      sharingPrice: 8,
+      location: '123 Main St',
+      status: 'active',
+      expiresAt: Date.now() + 45 * 60 * 1000,
+      ownerId: uid,
+      user1: { uid, name: 'User One', photo: null },
+      maxUsers: 2,
+      createdAt: serverTimestamp(),
+      deckSource: 'ai_chat',
+      orderId,
+      aiDescription: 'Shared order - 123 Main St',
+    };
+  }
+
+  function aiChatOrderDoc(cardId: string, uid = 'u1') {
+    return {
+      cardId,
+      users: [uid],
+      status: 'waiting',
+      matchWaitDeadlineAt: Date.now() + 10 * 60 * 1000,
+      maxUsers: 2,
+      createdBy: uid,
+      hostId: uid,
+      host: {
+        userId: uid,
+        name: 'User One',
+        avatar: null,
+        phone: null,
+        expoPushToken: null,
+      },
+      createdAt: serverTimestamp(),
+      foodName: 'Pizza Place',
+      image: 'https://example.com/pizza.jpg',
+      pricePerPerson: 8,
+      totalPrice: 16,
+      location: '123 Main St',
+      restaurantName: 'Pizza Place',
+      participants: [uid],
+      joinedAtMap: { [uid]: serverTimestamp() },
+    };
+  }
+
+  it('allows a signed-in user to create the AI card and linked HalfOrder in one batch', async () => {
+    await seedUser('u1');
+
+    const dbU1 = te().authenticatedContext('u1').firestore();
+    const cardRef = doc(dbU1, 'food_cards', 'ai-card-1');
+    const orderRef = doc(dbU1, 'orders', 'ai-order-1');
+    const batch = writeBatch(dbU1);
+    batch.set(cardRef, aiChatCardDoc(orderRef.id));
+    batch.set(orderRef, aiChatOrderDoc(cardRef.id));
+
+    await assertSucceeds(batch.commit());
+  });
+
+  it('denies AI card create when the caller spoofs the owner', async () => {
+    await seedUser('u1');
+
+    const dbU1 = te().authenticatedContext('u1').firestore();
+    const cardRef = doc(dbU1, 'food_cards', 'ai-card-spoof');
+    const orderRef = doc(dbU1, 'orders', 'ai-order-spoof');
+    const batch = writeBatch(dbU1);
+    batch.set(cardRef, aiChatCardDoc(orderRef.id, 'u2'));
+    batch.set(orderRef, aiChatOrderDoc(cardRef.id, 'u1'));
+
+    await assertFails(batch.commit());
   });
 });

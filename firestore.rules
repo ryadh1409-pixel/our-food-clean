@@ -5,41 +5,76 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    /** Must match constants/adminUid.ts, utils/admin.ts ADMIN_EMAILS, and users.role. */
+    /** Must match constants/adminUid.ts and utils/admin.ts ADMIN_EMAILS. */
     function isAdmin() {
       return isSignedIn()
         && (
           request.auth.uid == 'KT3LfXRsVgaH4LfRTQaexvj3CRn1'
-          || (
-            request.auth.token.email is string
-            && (
-              request.auth.token.email == 'admin@ourfood.com'
-              || request.auth.token.email == 'support@halforder.app'
-              || request.auth.token.email == 'ryadh1409@gmail.com'
-            )
-          )
-          || (
-            exists(/databases/$(database)/documents/users/$(request.auth.uid))
-            && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', 'user') == 'admin'
-          )
+          || request.auth.token.get('email', '') == 'admin@ourfood.com'
+          || request.auth.token.get('email', '') == 'support@halforder.app'
+          || request.auth.token.get('email', '') == 'ryadh1409@gmail.com'
         );
     }
 
+    function isSafeSelfUserCreate(userId) {
+      return isSignedIn()
+        && request.auth.uid == userId
+        && (
+          !request.resource.data.keys().hasAny(['role'])
+          || request.resource.data.role == 'user'
+        )
+        && (
+          !request.resource.data.keys().hasAny(['banned'])
+          || request.resource.data.banned == false
+        )
+        && (
+          !request.resource.data.keys().hasAny(['restricted'])
+          || request.resource.data.restricted == false
+        );
+    }
+
+    function isSafeSelfUserUpdate(userId) {
+      return isSignedIn()
+        && request.auth.uid == userId
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role'])
+          || request.resource.data.get('role', 'user') == 'user'
+        )
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['banned'])
+          || request.resource.data.get('banned', false) == resource.data.get('banned', false)
+        )
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['restricted'])
+          || request.resource.data.get('restricted', false) == resource.data.get('restricted', false)
+        );
+    }
+
+    function isSafeSelfUserDelete(userId) {
+      return isSignedIn()
+        && request.auth.uid == userId
+        && resource.data.get('role', 'user') != 'admin'
+        && resource.data.get('banned', false) != true
+        && resource.data.get('restricted', false) != true;
+    }
+
     function currentUserData() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data
+        : {};
     }
 
     function isCurrentUserRestricted() {
       return isSignedIn()
         && (
-          currentUserData().banned == true
-          || currentUserData().restricted == true
+          currentUserData().get('banned', false) == true
+          || currentUserData().get('restricted', false) == true
         );
     }
 
     function isNewUserForOrderLimits() {
-      return currentUserData().totalOrdersCompleted is number
-        && currentUserData().totalOrdersCompleted <= 3;
+      return currentUserData().get('totalOrdersCompleted', 999) is number
+        && currentUserData().get('totalOrdersCompleted', 999) <= 3;
     }
 
     function canCreateOrderBySafetyLimits() {
@@ -201,10 +236,11 @@ service cloud.firestore {
     /** HalfOrder: food-card swipe creates `orders` with `cardId` + `users` + `host`, string `participants`, `joinedAtMap`. */
     function isValidHalfOrderCreate() {
       return isSignedIn()
-        && canCreateOrderBySafetyLimits()
-        && !isCurrentUserRestricted()
+        && request.resource.data.keys().hasAll(['cardId'])
         && request.resource.data.cardId is string
         && request.resource.data.cardId.size() > 0
+        && canCreateOrderBySafetyLimits()
+        && !isCurrentUserRestricted()
         && request.resource.data.users is list
         && request.resource.data.users.size() == 1
         && usersAllStrings(request.resource.data.users)
@@ -602,7 +638,14 @@ service cloud.firestore {
         && request.resource.data.participants == resource.data.participants
         && request.auth.uid in resource.data.get('participants', [])
         && request.resource.data.joinedAtMap is map
-        && request.resource.data.joinedAtMap[request.auth.uid] is timestamp;
+        && request.resource.data.joinedAtMap[request.auth.uid] is timestamp
+        && (
+          !resource.data.keys().hasAny(['joinedAtMap'])
+          || (
+            resource.data.joinedAtMap is map
+            && !resource.data.joinedAtMap.keys().hasAny([request.auth.uid])
+          )
+        );
     }
 
     function isParticipantsLeaveUpdate() {
@@ -639,15 +682,15 @@ service cloud.firestore {
           'typing'
         ])
         && (
-          resource.data.status != 'completed'
-          || request.resource.data.status == resource.data.status
+          resource.data.get('status', '') != 'completed'
+          || request.resource.data.get('status', '') == resource.data.get('status', '')
         )
         && (
           !request.resource.data.diff(resource.data).changedKeys().hasAny(['status'])
           || request.resource.data.status != 'cancelled'
           || (
-            currentUserData().cancellationCount24h is number
-            && currentUserData().cancellationCount24h < 3
+            currentUserData().get('cancellationCount24h', 0) is number
+            && currentUserData().get('cancellationCount24h', 0) < 3
           )
         );
     }
@@ -664,6 +707,93 @@ service cloud.firestore {
     /** Open swipe-deck food card status. */
     function foodCardOpenStatus(s) {
       return s == 'active';
+    }
+
+    function isValidAiChatFoodCardLocation() {
+      return request.resource.data.location is string
+        || (
+          request.resource.data.location is map
+          && request.resource.data.location.latitude is number
+          && request.resource.data.location.longitude is number
+        );
+    }
+
+    function isValidAiChatFoodCardUser() {
+      return request.resource.data.user1 is map
+        && request.resource.data.user1.keys().hasOnly(['uid', 'name', 'photo'])
+        && request.resource.data.user1.uid == request.auth.uid
+        && request.resource.data.user1.name is string
+        && (
+          request.resource.data.user1.photo == null
+          || request.resource.data.user1.photo is string
+        );
+    }
+
+    function isValidAiChatFoodCardCreate(cardId) {
+      return isSignedIn()
+        && !isCurrentUserRestricted()
+        && request.resource.data.keys().hasOnly([
+          'title',
+          'restaurantName',
+          'image',
+          'price',
+          'splitPrice',
+          'sharingPrice',
+          'location',
+          'status',
+          'expiresAt',
+          'ownerId',
+          'user1',
+          'maxUsers',
+          'createdAt',
+          'deckSource',
+          'orderId',
+          'aiDescription',
+        ])
+        && request.resource.data.keys().hasAll([
+          'title',
+          'restaurantName',
+          'image',
+          'price',
+          'splitPrice',
+          'sharingPrice',
+          'location',
+          'status',
+          'expiresAt',
+          'ownerId',
+          'user1',
+          'maxUsers',
+          'createdAt',
+          'deckSource',
+          'orderId',
+          'aiDescription',
+        ])
+        && request.resource.data.deckSource == 'ai_chat'
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.status == 'active'
+        && request.resource.data.maxUsers == 2
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.orderId is string
+        && request.resource.data.orderId.size() > 0
+        && request.resource.data.title is string
+        && request.resource.data.restaurantName is string
+        && request.resource.data.image is string
+        && request.resource.data.aiDescription is string
+        && request.resource.data.expiresAt is int
+        && request.resource.data.expiresAt > 0
+        && request.resource.data.price is number
+        && request.resource.data.price > 0
+        && request.resource.data.price <= 10000
+        && request.resource.data.splitPrice is number
+        && request.resource.data.splitPrice > 0
+        && request.resource.data.splitPrice <= request.resource.data.price
+        && request.resource.data.sharingPrice == request.resource.data.splitPrice
+        && isValidAiChatFoodCardLocation()
+        && isValidAiChatFoodCardUser()
+        && !exists(/databases/$(database)/documents/orders/$(request.resource.data.orderId))
+        && existsAfter(/databases/$(database)/documents/orders/$(request.resource.data.orderId))
+        && getAfter(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.cardId == cardId
+        && request.auth.uid in getAfter(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.get('users', []);
     }
 
     function isValidFoodCardJoinUpdate() {
@@ -825,8 +955,9 @@ service cloud.firestore {
     /** Client: subscribe only to `users/{request.auth.uid}` for private fields (e.g. blockedUsers). */
     match /users/{userId} {
       allow read: if request.auth != null;
-      allow create, update: if (request.auth != null && request.auth.uid == userId) || isAdmin();
-      allow delete: if (request.auth != null && request.auth.uid == userId) || isAdmin();
+      allow create: if isAdmin() || isSafeSelfUserCreate(userId);
+      allow update: if isAdmin() || isSafeSelfUserUpdate(userId);
+      allow delete: if isAdmin() || isSafeSelfUserDelete(userId);
       /** Split-match partner joined — writer is `fromId`, must be another signed-in user. */
       match /splitPoke/{fromId} {
         allow create: if request.auth != null
@@ -1043,22 +1174,22 @@ service cloud.firestore {
     }
     match /orders/{orderId} {
       allow read: if isSignedIn();
-      allow create: if isValidOrderCreate() || isValidHalfOrderCreate() || isAdmin();
-      allow update: if isAdmin()
+      allow create: if isValidHalfOrderCreate() || isValidOrderCreate() || isAdmin();
+      allow update: if isCreatorOnlyNonJoinUpdate()
+        || isSwipeAcceptUpdate()
+        || isOrderPairJoinNotifiedUpdate()
+        || isHalfOrderCancelUpdate()
+        || isHalfOrderMarkActiveUpdate()
+        || isHalfOrderCompleteUpdate()
         || isParticipantsJoinUpdate()
         || isParticipantsJoinWithExtrasUpdate()
         || isJoinedAtMapBackfillUpdate()
         || isParticipantsLeaveUpdate()
         || isOrderTypingUpdate()
-        || isCreatorOnlyNonJoinUpdate()
-        || isSwipeAcceptUpdate()
         || isMarkOrderExpiredUpdate()
         || isHalfOrderParticipantIncrementalJoin()
         || isHalfOrderParticipantBootstrapJoin()
-        || isHalfOrderCancelUpdate()
-        || isHalfOrderMarkActiveUpdate()
-        || isHalfOrderCompleteUpdate()
-        || isOrderPairJoinNotifiedUpdate();
+        || isAdmin();
       allow delete: if isAdmin()
         || (
           request.auth != null
@@ -1097,7 +1228,8 @@ service cloud.firestore {
 
     match /food_cards/{cardId} {
       allow read: if isSignedIn();
-      allow create, delete: if isAdmin();
+      allow create: if isAdmin() || isValidAiChatFoodCardCreate(cardId);
+      allow delete: if isAdmin();
       allow update: if isAdmin()
         || isValidFoodCardOrderIdLink(cardId)
         || isValidFoodCardJoinUpdate();
