@@ -14,17 +14,14 @@ function normalizeEmail(email: string | null | undefined): string {
 }
 
 /**
- * Client-side admin gate. Pass `firestoreRole` from `useAuth().firestoreUserRole`
- * so promoted `role: admin` accounts can open the panel without a whitelist email.
+ * Client-side admin gate. Firestore profile fields are client-writable for normal
+ * profile updates, so admin authority must come from Auth uid/email allowlists.
  */
 export function isAdminUser(
   user: { uid: string; email?: string | null } | null | undefined,
-  firestoreRole?: string | null,
+  _firestoreRole?: string | null,
 ): boolean {
   if (!user) return false;
-  if (typeof firestoreRole === 'string' && firestoreRole.trim() === 'admin') {
-    return true;
-  }
   if (user.uid === ADMIN_UID) return true;
   if (normalizeEmail(user.email) === ADMIN_PANEL_EMAIL) return true;
   if (isAdminEmail(user.email)) return true;
