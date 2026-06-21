@@ -411,6 +411,18 @@ describe('firestore rules: HalfOrder cancel + order_members', () => {
 });
 
 describe('firestore rules: AI chat food card create', () => {
+  async function seedUserProfile(uid: string) {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'users', uid), {
+        name: 'User One',
+        banned: false,
+        restricted: false,
+        totalOrdersCompleted: 10,
+        activeOrderCount: 0,
+      });
+    });
+  }
+
   function aiChatFoodCard(ownerId = 'u1', orderId = 'ai-order-1') {
     return {
       title: 'Pizza Palace',
@@ -461,6 +473,7 @@ describe('firestore rules: AI chat food card create', () => {
   }
 
   it('allows a user to create an AI chat food card linked to a new HalfOrder in one batch', async () => {
+    await seedUserProfile('u1');
     const db = te().authenticatedContext('u1').firestore();
     const batch = writeBatch(db);
     batch.set(doc(db, 'food_cards', 'ai-card-1'), aiChatFoodCard());
@@ -478,6 +491,7 @@ describe('firestore rules: AI chat food card create', () => {
   });
 
   it('denies spoofing another user as the AI chat card owner', async () => {
+    await seedUserProfile('u1');
     const db = te().authenticatedContext('u1').firestore();
     const batch = writeBatch(db);
     batch.set(
