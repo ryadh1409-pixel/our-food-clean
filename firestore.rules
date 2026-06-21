@@ -211,6 +211,7 @@ service cloud.firestore {
     /** AI chat starts a HalfOrder and its deck card in the same client batch. */
     function isValidAiChatLinkedHalfOrderCreate(orderId) {
       return isSignedIn()
+        && request.resource.data.keys().hasAll(['cardId'])
         && canCreateOrderBySafetyLimits()
         && !isCurrentUserRestricted()
         && request.resource.data.cardId is string
@@ -236,6 +237,7 @@ service cloud.firestore {
     /** HalfOrder: food-card swipe creates `orders` with `cardId` + `users` + `host`, string `participants`, `joinedAtMap`. */
     function isValidHalfOrderCreate() {
       return isSignedIn()
+        && request.resource.data.keys().hasAll(['cardId'])
         && canCreateOrderBySafetyLimits()
         && !isCurrentUserRestricted()
         && request.resource.data.cardId is string
