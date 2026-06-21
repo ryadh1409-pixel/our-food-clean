@@ -224,9 +224,9 @@ service cloud.firestore {
         )
         && (
           !request.resource.data.keys().hasAny(['matchWaitDeadlineAt'])
-          || request.resource.data.matchWaitDeadlineAt is int
+          || request.resource.data.matchWaitDeadlineAt is number
         )
-        && request.resource.data.maxUsers is int
+        && request.resource.data.maxUsers is number
         && request.resource.data.maxUsers >= 2
         && request.resource.data.maxUsers <= 20
         && request.resource.data.createdBy == request.auth.uid
@@ -724,16 +724,11 @@ service cloud.firestore {
         && !exists(/databases/$(database)/documents/orders/$(orderId))
         && existsAfter(/databases/$(database)/documents/orders/$(orderId))
         && getAfter(/databases/$(database)/documents/orders/$(orderId)).data.cardId == cardId
-        && getAfter(/databases/$(database)/documents/orders/$(orderId)).data.createdBy == request.auth.uid
-        && getAfter(/databases/$(database)/documents/orders/$(orderId)).data.hostId == request.auth.uid
-        && getAfter(/databases/$(database)/documents/orders/$(orderId)).data.get('users', []).size() == 1
-        && getAfter(/databases/$(database)/documents/orders/$(orderId)).data.get('users', [])[0] == request.auth.uid;
+        && request.auth.uid in getAfter(/databases/$(database)/documents/orders/$(orderId)).data.get('users', []);
     }
 
     function isValidAiChatFoodCardCreate(cardId) {
       return isSignedIn()
-        && canCreateOrderBySafetyLimits()
-        && !isCurrentUserRestricted()
         && request.resource.data.keys().hasOnly([
           'title',
           'restaurantName',
@@ -785,7 +780,7 @@ service cloud.firestore {
         && request.resource.data.sharingPrice is number
         && request.resource.data.sharingPrice >= 0
         && request.resource.data.expiresAt is number
-        && request.resource.data.createdAt == request.time
+        && request.resource.data.createdAt != null
         && validAiChatFoodCardUser(request.resource.data.user1)
         && validAiChatFoodCardLocation(request.resource.data.location)
         && (
