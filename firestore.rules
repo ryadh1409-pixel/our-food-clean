@@ -198,6 +198,41 @@ service cloud.firestore {
         + (parts.size() > 19 && parts[19] is map && parts[19].userId == uid ? 1 : 0);
     }
 
+    function linkedAiChatCardMatchesOrder(cardId, orderId) {
+      return cardId is string
+        && cardId.size() > 0
+        && !exists(/databases/$(database)/documents/food_cards/$(cardId))
+        && existsAfter(/databases/$(database)/documents/food_cards/$(cardId))
+        && getAfter(/databases/$(database)/documents/food_cards/$(cardId)).data.orderId == orderId
+        && getAfter(/databases/$(database)/documents/food_cards/$(cardId)).data.ownerId == request.auth.uid
+        && getAfter(/databases/$(database)/documents/food_cards/$(cardId)).data.deckSource == 'ai_chat';
+    }
+
+    /** AI chat starts a HalfOrder and its deck card in the same client batch. */
+    function isValidAiChatLinkedHalfOrderCreate(orderId) {
+      return isSignedIn()
+        && canCreateOrderBySafetyLimits()
+        && !isCurrentUserRestricted()
+        && request.resource.data.cardId is string
+        && linkedAiChatCardMatchesOrder(request.resource.data.cardId, orderId)
+        && request.resource.data.users is list
+        && request.resource.data.users.size() == 1
+        && request.resource.data.users[0] == request.auth.uid
+        && request.resource.data.participants is list
+        && request.resource.data.participants.size() == 1
+        && request.resource.data.participants[0] == request.auth.uid
+        && request.resource.data.joinedAtMap is map
+        && request.resource.data.joinedAtMap[request.auth.uid] is timestamp
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.hostId == request.auth.uid
+        && request.resource.data.host is map
+        && validOrderHostDoc(request.resource.data.host)
+        && request.resource.data.host.userId == request.auth.uid
+        && request.resource.data.maxUsers == 2
+        && request.resource.data.status == 'waiting'
+        && request.resource.data.createdAt != null;
+    }
+
     /** HalfOrder: food-card swipe creates `orders` with `cardId` + `users` + `host`, string `participants`, `joinedAtMap`. */
     function isValidHalfOrderCreate() {
       return isSignedIn()
@@ -1146,7 +1181,10 @@ service cloud.firestore {
     }
     match /orders/{orderId} {
       allow read: if isSignedIn();
-      allow create: if isValidHalfOrderCreate() || isValidOrderCreate() || isAdmin();
+      allow create: if isValidAiChatLinkedHalfOrderCreate(orderId)
+        || isValidHalfOrderCreate()
+        || isValidOrderCreate()
+        || isAdmin();
       allow update: if isAdmin()
         || isParticipantsJoinUpdate()
         || isParticipantsJoinWithExtrasUpdate()
