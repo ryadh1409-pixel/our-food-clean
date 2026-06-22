@@ -244,7 +244,12 @@ service cloud.firestore {
         && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.hostId == request.auth.uid
         && request.resource.data.host is map
+        && validOrderHostDoc(request.resource.data.host)
         && request.resource.data.host.userId == request.auth.uid
+        && (
+          !request.resource.data.keys().hasAny(['matchWaitDeadlineAt'])
+          || request.resource.data.matchWaitDeadlineAt is int
+        )
         && request.resource.data.createdAt != null;
     }
 
