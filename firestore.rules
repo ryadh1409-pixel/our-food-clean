@@ -10,14 +10,9 @@ service cloud.firestore {
       return isSignedIn()
         && (
           request.auth.uid == 'KT3LfXRsVgaH4LfRTQaexvj3CRn1'
-          || (
-            request.auth.token.email is string
-            && (
-              request.auth.token.email == 'admin@ourfood.com'
-              || request.auth.token.email == 'support@halforder.app'
-              || request.auth.token.email == 'ryadh1409@gmail.com'
-            )
-          )
+          || request.auth.token.get('email', '') == 'admin@ourfood.com'
+          || request.auth.token.get('email', '') == 'support@halforder.app'
+          || request.auth.token.get('email', '') == 'ryadh1409@gmail.com'
           || (
             exists(/databases/$(database)/documents/users/$(request.auth.uid))
             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', 'user') == 'admin'
@@ -231,6 +226,25 @@ service cloud.firestore {
         && request.resource.data.maxUsers <= 20
         && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.hostId == request.auth.uid
+        && request.resource.data.createdAt != null;
+    }
+
+    function isValidAiChatHalfOrderCreate() {
+      return isSignedIn()
+        && canCreateOrderBySafetyLimits()
+        && !isCurrentUserRestricted()
+        && request.resource.data.cardId is string
+        && request.resource.data.cardId.size() > 0
+        && request.resource.data.users == [request.auth.uid]
+        && request.resource.data.participants == [request.auth.uid]
+        && request.resource.data.joinedAtMap is map
+        && request.resource.data.joinedAtMap[request.auth.uid] is timestamp
+        && request.resource.data.status == 'waiting'
+        && request.resource.data.maxUsers == 2
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.hostId == request.auth.uid
+        && request.resource.data.host is map
+        && request.resource.data.host.userId == request.auth.uid
         && request.resource.data.createdAt != null;
     }
 
@@ -1096,7 +1110,10 @@ service cloud.firestore {
     }
     match /orders/{orderId} {
       allow read: if isSignedIn();
-      allow create: if isValidOrderCreate() || isValidHalfOrderCreate() || isAdmin();
+      allow create: if isValidAiChatHalfOrderCreate()
+        || isValidOrderCreate()
+        || isValidHalfOrderCreate()
+        || isAdmin();
       allow update: if isAdmin()
         || isParticipantsJoinUpdate()
         || isParticipantsJoinWithExtrasUpdate()
@@ -1150,7 +1167,7 @@ service cloud.firestore {
 
     match /food_cards/{cardId} {
       allow read: if isSignedIn();
-      allow create: if isAdmin() || isValidAiChatFoodCardCreate(cardId);
+      allow create: if isValidAiChatFoodCardCreate(cardId) || isAdmin();
       allow delete: if isAdmin();
       allow update: if isAdmin()
         || isValidFoodCardOrderIdLink(cardId)
