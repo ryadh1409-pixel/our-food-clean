@@ -118,7 +118,17 @@ export async function createAiPlaceFoodCardAndOrder(
 
   await batch.commit();
 
-  await ensureHalfOrderChat(orderRef.id, [input.uid]);
+  try {
+    await ensureHalfOrderChat(orderRef.id, [input.uid]);
+  } catch (error) {
+    // The order is already committed. Treat chat initialization as retryable
+    // setup so the caller does not retry and create a second live order.
+    console.warn(
+      '[aiChatFoodOrder] order committed but chat setup failed',
+      orderRef.id,
+      error,
+    );
+  }
   await syncOrderMemberProfilesForOrder(orderRef.id, [input.uid]).catch(() => {});
 
   void autoInvite({
