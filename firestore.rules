@@ -11,7 +11,8 @@ service cloud.firestore {
         && (
           request.auth.uid == 'KT3LfXRsVgaH4LfRTQaexvj3CRn1'
           || (
-            request.auth.token.email is string
+            'email' in request.auth.token
+            && request.auth.token.email is string
             && (
               request.auth.token.email == 'admin@ourfood.com'
               || request.auth.token.email == 'support@halforder.app'
@@ -31,9 +32,10 @@ service cloud.firestore {
 
     function isCurrentUserRestricted() {
       return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
         && (
-          currentUserData().banned == true
-          || currentUserData().restricted == true
+          currentUserData().get('banned', false) == true
+          || currentUserData().get('restricted', false) == true
         );
     }
 
@@ -88,6 +90,20 @@ service cloud.firestore {
 
     function usersAllStrings(users) {
       return listAllStrings(users);
+    }
+
+    /**
+     * Join updates must keep every prior string uid. Size-only (+1) checks are not enough:
+     * without this, a joiner can replace existing members while growing the list by one.
+     * Capped at 4 to stay within the Firestore rules expression budget (app half-orders use maxUsers=2).
+     */
+    function stringUidListPreserved(fromList, toList) {
+      return fromList is list
+        && toList is list
+        && (fromList.size() < 1 || fromList[0] in toList)
+        && (fromList.size() < 2 || fromList[1] in toList)
+        && (fromList.size() < 3 || fromList[2] in toList)
+        && (fromList.size() < 4 || fromList[3] in toList);
     }
 
     function participantEntryMatchesUid(parts, uid, i) {
@@ -240,31 +256,6 @@ service cloud.firestore {
         && !isCurrentUserRestricted()
         && resource.data.cardId is string
         && resource.data.get('users', []).size() > 0
-        && request.resource.data.users is list
-        && usersAllStrings(request.resource.data.users)
-        && request.resource.data.participants is list
-        && participantsAllStrings(request.resource.data.participants)
-        && request.resource.data.participants.size()
-          == request.resource.data.users.size()
-        && request.resource.data.users.size() == resource.data.get('users', []).size() + 1
-        && request.resource.data.participants.size()
-          == resource.data.get('participants', []).size() + 1
-        && request.auth.uid in request.resource.data.users
-        && !(request.auth.uid in resource.data.get('users', []))
-        && participantListContainsUid(request.resource.data.participants, request.auth.uid)
-        && !participantListContainsUid(resource.data.get('participants', []), request.auth.uid)
-        && request.resource.data.joinedAtMap is map
-        && request.resource.data.joinedAtMap[request.auth.uid] is timestamp
-        && request.resource.data.users.size() <= resource.data.get('maxUsers', 2)
-        && request.resource.data.cardId == resource.data.cardId
-        && request.resource.data.createdBy == resource.data.createdBy
-        && request.resource.data.get('hostId', '')
-          == resource.data.get('hostId', '')
-        && request.resource.data.maxUsers == resource.data.maxUsers
-        && (
-          !resource.data.keys().hasAny(['host'])
-          || request.resource.data.host == resource.data.host
-        )
         && (
           (
             request.resource.data.diff(resource.data).changedKeys()
@@ -280,6 +271,36 @@ service cloud.firestore {
               || resource.data.status == 'active'
             )
           )
+        )
+        && request.resource.data.users is list
+        && request.resource.data.participants is list
+        && request.resource.data.participants.size()
+          == request.resource.data.users.size()
+        && request.resource.data.users.size() == resource.data.get('users', []).size() + 1
+        && request.resource.data.participants.size()
+          == resource.data.get('participants', []).size() + 1
+        && request.resource.data.users.size() <= resource.data.get('maxUsers', 2)
+        && request.auth.uid in request.resource.data.users
+        && !(request.auth.uid in resource.data.get('users', []))
+        && request.auth.uid in request.resource.data.participants
+        && !(request.auth.uid in resource.data.get('participants', []))
+        && stringUidListPreserved(resource.data.get('users', []), request.resource.data.users)
+        && stringUidListPreserved(
+          resource.data.get('participants', []),
+          request.resource.data.participants
+        )
+        && usersAllStrings(request.resource.data.users)
+        && participantsAllStrings(request.resource.data.participants)
+        && request.resource.data.joinedAtMap is map
+        && request.resource.data.joinedAtMap[request.auth.uid] is timestamp
+        && request.resource.data.cardId == resource.data.cardId
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.get('hostId', '')
+          == resource.data.get('hostId', '')
+        && request.resource.data.maxUsers == resource.data.maxUsers
+        && (
+          !resource.data.keys().hasAny(['host'])
+          || request.resource.data.host == resource.data.host
         );
     }
 
@@ -556,6 +577,10 @@ service cloud.firestore {
           == resource.data.get('participants', []).size() + 1
         && request.auth.uid in request.resource.data.participants
         && !(request.auth.uid in resource.data.get('participants', []))
+        && stringUidListPreserved(
+          resource.data.get('participants', []),
+          request.resource.data.participants
+        )
         && request.resource.data.joinedAtMap is map
         && request.resource.data.joinedAtMap[request.auth.uid] is timestamp
         && request.resource.data.participants.size()
@@ -581,6 +606,10 @@ service cloud.firestore {
           == resource.data.get('participants', []).size() + 1
         && request.auth.uid in request.resource.data.participants
         && !(request.auth.uid in resource.data.get('participants', []))
+        && stringUidListPreserved(
+          resource.data.get('participants', []),
+          request.resource.data.participants
+        )
         && request.resource.data.joinedAtMap is map
         && request.resource.data.joinedAtMap[request.auth.uid] is timestamp
         && request.resource.data.participants.size()
@@ -903,7 +932,8 @@ service cloud.firestore {
         && resource.data.get('users', []).size() > 0
         && request.resource.data.users.size() == resource.data.get('users', []).size() + 1
         && request.auth.uid in request.resource.data.users
-        && !(request.auth.uid in resource.data.get('users', []));
+        && !(request.auth.uid in resource.data.get('users', []))
+        && stringUidListPreserved(resource.data.get('users', []), request.resource.data.users);
     }
 
     function isChatLastMessagePatch(chatId) {
@@ -944,10 +974,10 @@ service cloud.firestore {
           && request.auth.uid in request.resource.data.users
           && request.resource.data.createdAt != null
         );
-      allow update: if isAdmin()
-        || isChatUsersAppendUpdate(chatId)
+      allow update: if isChatUsersAppendUpdate(chatId)
         || isChatLastMessagePatch(chatId)
-        || isChatReadsUpdate(chatId);
+        || isChatReadsUpdate(chatId)
+        || isAdmin();
       allow delete: if isAdmin();
 
       match /messages/{messageId} {
@@ -1044,21 +1074,21 @@ service cloud.firestore {
     match /orders/{orderId} {
       allow read: if isSignedIn();
       allow create: if isValidOrderCreate() || isValidHalfOrderCreate() || isAdmin();
-      allow update: if isAdmin()
+      allow update: if isHalfOrderParticipantIncrementalJoin()
+        || isHalfOrderParticipantBootstrapJoin()
         || isParticipantsJoinUpdate()
         || isParticipantsJoinWithExtrasUpdate()
         || isJoinedAtMapBackfillUpdate()
         || isParticipantsLeaveUpdate()
         || isOrderTypingUpdate()
-        || isCreatorOnlyNonJoinUpdate()
         || isSwipeAcceptUpdate()
         || isMarkOrderExpiredUpdate()
-        || isHalfOrderParticipantIncrementalJoin()
-        || isHalfOrderParticipantBootstrapJoin()
         || isHalfOrderCancelUpdate()
         || isHalfOrderMarkActiveUpdate()
         || isHalfOrderCompleteUpdate()
-        || isOrderPairJoinNotifiedUpdate();
+        || isOrderPairJoinNotifiedUpdate()
+        || isCreatorOnlyNonJoinUpdate()
+        || isAdmin();
       allow delete: if isAdmin()
         || (
           request.auth != null
