@@ -3,6 +3,10 @@ const admin = require('firebase-admin');
 const nodemailer = require('nodemailer');
 
 const { notifyUsersExpo } = require('./lib/expoPush');
+const {
+  countUniqueReporters,
+  shouldAutoRestrictFromReports,
+} = require('./lib/reportModeration');
 
 admin.initializeApp();
 
@@ -165,7 +169,12 @@ async function refreshUserDerivedFields(db, userId) {
     totalOrdersCompleted,
   });
   const suspicious = suspiciousSignals.length > 0;
-  const shouldRestrictForReports = reportCount >= REPORT_RESTRICTION_THRESHOLD;
+  // Never auto-restrict from report volume — a single attacker can spam reports.
+  // Flag for admin review; admins ban via the admin panel (`banned: true`).
+  const shouldRestrictForReports = shouldAutoRestrictFromReports(
+    reportCount,
+    REPORT_RESTRICTION_THRESHOLD,
+  );
   const alreadyRestricted = userData?.restricted === true;
   const shouldFlag = reportCount >= REPORT_FLAG_THRESHOLD;
   const flaggedCurrent =
@@ -372,7 +381,15 @@ exports.onReportCreated = functions.firestore
           : 0;
     const cancellationRate =
       typeof userData?.cancellationRate === 'number' ? userData.cancellationRate : 0;
-    const reportCount = (typeof userData?.reportCount === 'number' ? userData.reportCount : 0) + 1;
+
+    // Count distinct reporters, not raw report docs (one account can spam addDoc).
+    const reportsSnap = await db
+      .collection('reports')
+      .where('reportedUserId', '==', reportedUserId)
+      .get();
+    const reportCount = countUniqueReporters(
+      reportsSnap.docs.map((d) => d.data()),
+    );
 
     const trustScore = computeTrustScore({
       averageRating,
