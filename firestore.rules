@@ -11,7 +11,8 @@ service cloud.firestore {
         && (
           request.auth.uid == 'KT3LfXRsVgaH4LfRTQaexvj3CRn1'
           || (
-            request.auth.token.email is string
+            'email' in request.auth.token
+            && request.auth.token.email is string
             && (
               request.auth.token.email == 'admin@ourfood.com'
               || request.auth.token.email == 'support@halforder.app'
@@ -31,9 +32,10 @@ service cloud.firestore {
 
     function isCurrentUserRestricted() {
       return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
         && (
-          currentUserData().banned == true
-          || currentUserData().restricted == true
+          currentUserData().get('banned', false) == true
+          || currentUserData().get('restricted', false) == true
         );
     }
 
@@ -964,16 +966,15 @@ service cloud.firestore {
           && request.auth.uid in request.resource.data.users
           && request.resource.data.createdAt != null
         );
-      allow update: if isAdmin()
-        || isChatUsersAppendUpdate(chatId)
+      allow update: if isChatUsersAppendUpdate(chatId)
         || isChatLastMessagePatch(chatId)
-        || isChatReadsUpdate(chatId);
+        || isChatReadsUpdate(chatId)
+        || isAdmin();
       allow delete: if isAdmin();
 
       match /messages/{messageId} {
         allow read: if isAdmin() || isChatDocMember(chatId);
-        allow create: if isAdmin()
-          || (
+        allow create: if (
             isSignedIn()
             && request.resource.data.text is string
             && request.resource.data.createdAt != null
@@ -993,7 +994,8 @@ service cloud.firestore {
                 && isChatDocMember(chatId)
               )
             )
-          );
+          )
+          || isAdmin();
         allow update, delete: if isAdmin();
       }
     }
