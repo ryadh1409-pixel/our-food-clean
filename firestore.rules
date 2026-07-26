@@ -892,18 +892,37 @@ service cloud.firestore {
         );
     }
 
+    /**
+     * Chat membership must track order membership. Size+1 self-append alone is unsafe:
+     * orders are signed-in-readable and chatId == orderId, so any user could otherwise
+     * arrayUnion themselves onto chats/{orderId}.users and read private messages.
+     * Also allow users+participants when both grow by the same joiner (ensureHalfOrderChat).
+     */
     function isChatUsersAppendUpdate(chatId) {
       return isSignedIn()
         && !isCurrentUserRestricted()
+        && isOrderMemberByOrderId(chatId)
         && request.resource.data.orderId == chatId
         && request.resource.data.orderId == resource.data.orderId
-        && request.resource.data.diff(resource.data).changedKeys().hasOnly(['users'])
         && request.resource.data.users is list
         && usersAllStrings(request.resource.data.users)
         && resource.data.get('users', []).size() > 0
         && request.resource.data.users.size() == resource.data.get('users', []).size() + 1
         && request.auth.uid in request.resource.data.users
-        && !(request.auth.uid in resource.data.get('users', []));
+        && !(request.auth.uid in resource.data.get('users', []))
+        && (
+          request.resource.data.diff(resource.data).changedKeys().hasOnly(['users'])
+          || (
+            request.resource.data.diff(resource.data).changedKeys()
+              .hasOnly(['users', 'participants'])
+            && request.resource.data.participants is list
+            && usersAllStrings(request.resource.data.participants)
+            && request.resource.data.participants.size()
+              == resource.data.get('participants', []).size() + 1
+            && request.auth.uid in request.resource.data.participants
+            && !(request.auth.uid in resource.data.get('participants', []))
+          )
+        );
     }
 
     function isChatLastMessagePatch(chatId) {
@@ -937,6 +956,7 @@ service cloud.firestore {
         || (
           isSignedIn()
           && !isCurrentUserRestricted()
+          && isOrderMemberByOrderId(chatId)
           && request.resource.data.orderId == chatId
           && request.resource.data.users is list
           && request.resource.data.users.size() >= 1
@@ -958,8 +978,16 @@ service cloud.firestore {
             && request.resource.data.text is string
             && request.resource.data.createdAt != null
             && (
-              request.resource.data.senderId == 'system'
-              || request.resource.data.sender == 'ai'
+              (
+                (
+                  request.resource.data.senderId == 'system'
+                  || request.resource.data.sender == 'ai'
+                )
+                && (
+                  isChatDocMember(chatId)
+                  || isOrderMemberByOrderId(chatId)
+                )
+              )
               || (
                 request.resource.data.senderId == request.auth.uid
                 && isChatDocMember(chatId)
