@@ -91,10 +91,12 @@ describe('creator cannot rewrite HalfOrder membership or prices', () => {
       }),
     );
 
-    const snap = await testEnv!.withSecurityRulesDisabled(async (ctx) =>
-      getDoc(doc(ctx.firestore(), 'orders', 'ho-kick')),
-    );
-    expect(snap.data()?.users).toEqual(['host', 'joiner']);
+    let users: unknown;
+    await testEnv!.withSecurityRulesDisabled(async (ctx) => {
+      const snap = await getDoc(doc(ctx.firestore(), 'orders', 'ho-kick'));
+      users = snap.data()?.users;
+    });
+    expect(users).toEqual(['host', 'joiner']);
   });
 
   it('denies host rewriting prices after match', async () => {
