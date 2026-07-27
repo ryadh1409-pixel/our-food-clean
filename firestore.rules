@@ -11,7 +11,8 @@ service cloud.firestore {
         && (
           request.auth.uid == 'KT3LfXRsVgaH4LfRTQaexvj3CRn1'
           || (
-            request.auth.token.email is string
+            'email' in request.auth.token
+            && request.auth.token.email is string
             && (
               request.auth.token.email == 'admin@ourfood.com'
               || request.auth.token.email == 'support@halforder.app'
@@ -31,9 +32,10 @@ service cloud.firestore {
 
     function isCurrentUserRestricted() {
       return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
         && (
-          currentUserData().banned == true
-          || currentUserData().restricted == true
+          currentUserData().get('banned', false) == true
+          || currentUserData().get('restricted', false) == true
         );
     }
 
@@ -237,8 +239,10 @@ service cloud.firestore {
     /** +1 `users`, string `participants` mirrors `users`, `joinedAtMap` gains joiner entry. Optional status -> matched. */
     function isHalfOrderParticipantIncrementalJoin() {
       return isSignedIn()
-        && !isCurrentUserRestricted()
+        && resource.data.keys().hasAny(['cardId'])
         && resource.data.cardId is string
+        && resource.data.cardId.size() > 0
+        && !isCurrentUserRestricted()
         && resource.data.get('users', []).size() > 0
         && request.resource.data.users is list
         && usersAllStrings(request.resource.data.users)
@@ -286,8 +290,10 @@ service cloud.firestore {
     /** Empty participants, one user -> two users, two string participant ids, `host`, joiner in `joinedAtMap`. */
     function isHalfOrderParticipantBootstrapJoin() {
       return isSignedIn()
-        && !isCurrentUserRestricted()
+        && resource.data.keys().hasAny(['cardId'])
         && resource.data.cardId is string
+        && resource.data.cardId.size() > 0
+        && !isCurrentUserRestricted()
         && resource.data.get('participants', []).size() == 0
         && resource.data.get('users', []).size() == 1
         && request.resource.data.users is list
@@ -330,9 +336,10 @@ service cloud.firestore {
     /** HalfOrder member cancels the match (notify others via Cloud Function). */
     function isHalfOrderCancelUpdate() {
       return isSignedIn()
-        && !isCurrentUserRestricted()
+        && resource.data.keys().hasAny(['cardId'])
         && resource.data.cardId is string
         && resource.data.cardId.size() > 0
+        && !isCurrentUserRestricted()
         && (
           resource.data.status == 'waiting'
           || resource.data.status == 'matched'
@@ -368,9 +375,10 @@ service cloud.firestore {
     /** matched -> active when opening chat. */
     function isHalfOrderMarkActiveUpdate() {
       return isSignedIn()
-        && !isCurrentUserRestricted()
+        && resource.data.keys().hasAny(['cardId'])
         && resource.data.cardId is string
         && resource.data.cardId.size() > 0
+        && !isCurrentUserRestricted()
         && resource.data.status == 'matched'
         && request.resource.data.status == 'active'
         && request.auth.uid in resource.data.get('users', [])
@@ -391,9 +399,10 @@ service cloud.firestore {
     /** Mark half order done. */
     function isHalfOrderCompleteUpdate() {
       return isSignedIn()
-        && !isCurrentUserRestricted()
+        && resource.data.keys().hasAny(['cardId'])
         && resource.data.cardId is string
         && resource.data.cardId.size() > 0
+        && !isCurrentUserRestricted()
         && (
           resource.data.status == 'matched'
           || resource.data.status == 'active'
@@ -425,9 +434,10 @@ service cloud.firestore {
     /** Exactly-once: pair-join push ack via `notified` (client sends Expo push). */
     function isOrderPairJoinNotifiedUpdate() {
       return isSignedIn()
-        && !isCurrentUserRestricted()
+        && resource.data.keys().hasAny(['cardId'])
         && resource.data.cardId is string
         && resource.data.cardId.size() > 0
+        && !isCurrentUserRestricted()
         && resource.data.get('users', []).size() == 2
         && request.auth.uid in resource.data.get('users', [])
         && resource.data.get('notified', false) != true
@@ -628,15 +638,33 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).changedKeys().hasOnly(['typing']);
     }
 
+    /**
+     * Legacy (non-HalfOrder) creator edits: cancel/status/metadata only.
+     * HalfOrders (`cardId`) must use dedicated join/cancel/complete predicates —
+     * otherwise a host could rewrite `users`/prices after a match.
+     */
     function isCreatorOnlyNonJoinUpdate() {
       return isSignedIn()
         && !isCurrentUserRestricted()
         && resource.data.createdBy == request.auth.uid
+        && !(
+          resource.data.keys().hasAny(['cardId'])
+          && resource.data.cardId is string
+          && resource.data.cardId.size() > 0
+        )
+        && request.resource.data.createdBy == resource.data.createdBy
         && !request.resource.data.diff(resource.data).changedKeys().hasAny([
           'participants',
           'joinedAtMap',
           'usersAccepted',
-          'typing'
+          'typing',
+          'users',
+          'createdBy',
+          'hostId',
+          'host',
+          'maxPeople',
+          'maxUsers',
+          'cardId'
         ])
         && (
           resource.data.status != 'completed'
@@ -1044,21 +1072,23 @@ service cloud.firestore {
     match /orders/{orderId} {
       allow read: if isSignedIn();
       allow create: if isValidOrderCreate() || isValidHalfOrderCreate() || isAdmin();
-      allow update: if isAdmin()
-        || isParticipantsJoinUpdate()
-        || isParticipantsJoinWithExtrasUpdate()
-        || isJoinedAtMapBackfillUpdate()
-        || isParticipantsLeaveUpdate()
-        || isOrderTypingUpdate()
-        || isCreatorOnlyNonJoinUpdate()
-        || isSwipeAcceptUpdate()
-        || isMarkOrderExpiredUpdate()
-        || isHalfOrderParticipantIncrementalJoin()
-        || isHalfOrderParticipantBootstrapJoin()
-        || isHalfOrderCancelUpdate()
+      // Cheap HalfOrder lifecycle + creator checks before expensive join scans,
+      // and isAdmin last — otherwise updates hit Firestore's 1000-expression budget.
+      allow update: if isHalfOrderCancelUpdate()
         || isHalfOrderMarkActiveUpdate()
         || isHalfOrderCompleteUpdate()
-        || isOrderPairJoinNotifiedUpdate();
+        || isOrderPairJoinNotifiedUpdate()
+        || isCreatorOnlyNonJoinUpdate()
+        || isOrderTypingUpdate()
+        || isSwipeAcceptUpdate()
+        || isMarkOrderExpiredUpdate()
+        || isJoinedAtMapBackfillUpdate()
+        || isParticipantsLeaveUpdate()
+        || isParticipantsJoinUpdate()
+        || isParticipantsJoinWithExtrasUpdate()
+        || isHalfOrderParticipantBootstrapJoin()
+        || isHalfOrderParticipantIncrementalJoin()
+        || isAdmin();
       allow delete: if isAdmin()
         || (
           request.auth != null
