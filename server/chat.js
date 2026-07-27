@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const admin = require('firebase-admin');
+const { requireInternalApiKey } = require('./internalApiAuth');
 
 if (!process.env.OPENAI_API_KEY) {
   throw new Error('Missing OPENAI_API_KEY in .env');
@@ -285,8 +286,13 @@ async function runFoodCardsMaintenanceOnce() {
   }
 }
 
+/**
+ * Admin SDK food-card mutate routes must not be publicly callable.
+ * Require CHAT_INTERNAL_API_KEY via `x-internal-api-key` or `Authorization: Bearer …`.
+ */
 router.post('/match-event', async (req, res) => {
   try {
+    if (!requireInternalApiKey(req, res)) return;
     const cardId = typeof req.body?.cardId === 'string' ? req.body.cardId : '';
     if (!cardId) return res.status(400).json({ ok: false, error: 'cardId required' });
     const db = getFirestoreDb();
@@ -308,8 +314,9 @@ router.post('/match-event', async (req, res) => {
   }
 });
 
-router.post('/refresh-food-cards', async (_req, res) => {
+router.post('/refresh-food-cards', async (req, res) => {
   try {
+    if (!requireInternalApiKey(req, res)) return;
     await runFoodCardsMaintenanceOnce();
     return res.json({ ok: true });
   } catch (error) {
@@ -329,7 +336,7 @@ if (!global.__foodCardsMaintenanceIntervalStarted) {
 
 router.post('/', async (req, res) => {
   try {
-    const { message, user } = req.body;
+    const { message } = req.body;
     const prompt =
       typeof message === 'string' && message.trim()
         ? message.trim()
@@ -344,26 +351,36 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // FINAL FIX TEST MODE: force pizza to join_order and skip OpenAI.
-    if (prompt.toLowerCase().includes('pizza')) {
-      return res.json({
-        reply: 'There\u2019s a pizza order nearby \ud83c\udf55\u2014opening it now.',
-        action: 'join_order',
-        data: { orderId: 'test123' },
-      });
-    }
-    const uid = user && typeof user === 'object' && typeof user.uid === 'string'
-      ? user.uid
+    // Never trust client-supplied identity for Admin SDK reads.
+    // Personalization requires a verified Firebase ID token.
+    let uid = '';
+    let name = 'User';
+    let email = 'noemail@example.com';
+    const authHeader =
+      typeof req.headers.authorization === 'string' ? req.headers.authorization.trim() : '';
+    const idToken = authHeader.toLowerCase().startsWith('bearer ')
+      ? authHeader.slice(7).trim()
       : '';
-    const name = user && typeof user === 'object' && typeof user.name === 'string'
-      ? user.name
-      : 'User';
-    const email = user && typeof user === 'object' && typeof user.email === 'string'
-      ? user.email
-      : 'noemail@example.com';
+    if (idToken) {
+      try {
+        getFirestoreDb();
+        const decoded = await admin.auth().verifyIdToken(idToken);
+        uid = typeof decoded.uid === 'string' ? decoded.uid : '';
+        email =
+          typeof decoded.email === 'string' && decoded.email.trim()
+            ? decoded.email.trim()
+            : email;
+        name =
+          typeof decoded.name === 'string' && decoded.name.trim()
+            ? decoded.name.trim()
+            : name;
+      } catch (verifyErr) {
+        console.warn('[chat] invalid ID token; continuing without user context', verifyErr);
+      }
+    }
 
-    const recentOrders = await getRecentOrdersForUser(uid);
-    const nearbyActiveOrders = await getNearbyOrders(uid);
+    const recentOrders = uid ? await getRecentOrdersForUser(uid) : [];
+    const nearbyActiveOrders = uid ? await getNearbyOrders(uid) : [];
     const ordersText =
       recentOrders.length > 0
         ? recentOrders
