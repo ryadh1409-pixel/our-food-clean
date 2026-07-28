@@ -615,40 +615,22 @@ service cloud.firestore {
         && (subset.size() < 1 || subset[0] in ofList)
         && (subset.size() < 2 || subset[1] in ofList)
         && (subset.size() < 3 || subset[2] in ofList)
-        && (subset.size() < 4 || subset[3] in ofList)
-        && (subset.size() < 5 || subset[4] in ofList)
-        && (subset.size() < 6 || subset[5] in ofList)
-        && (subset.size() < 7 || subset[6] in ofList)
-        && (subset.size() < 8 || subset[7] in ofList)
-        && (subset.size() < 9 || subset[8] in ofList)
-        && (subset.size() < 10 || subset[9] in ofList)
-        && (subset.size() < 11 || subset[10] in ofList)
-        && (subset.size() < 12 || subset[11] in ofList)
-        && (subset.size() < 13 || subset[12] in ofList)
-        && (subset.size() < 14 || subset[13] in ofList)
-        && (subset.size() < 15 || subset[14] in ofList)
-        && (subset.size() < 16 || subset[15] in ofList)
-        && (subset.size() < 17 || subset[16] in ofList)
-        && (subset.size() < 18 || subset[17] in ofList)
-        && (subset.size() < 19 || subset[18] in ofList)
-        && (subset.size() < 20 || subset[19] in ofList);
+        && (subset.size() < 4 || subset[3] in ofList);
     }
 
     function isParticipantsLeaveUpdate() {
       return isSignedIn()
-        && !isCurrentUserRestricted()
-        && orderCreatorUidFromDoc(resource.data) != request.auth.uid
         && (
           request.resource.data.diff(resource.data).changedKeys().hasOnly(['participants', 'joinedAtMap'])
           || request.resource.data.diff(resource.data).changedKeys()
             .hasOnly(['participants', 'joinedAtMap', 'status'])
         )
         && request.resource.data.participants is list
-        && participantsAllStrings(request.resource.data.participants)
         && request.resource.data.participants.size()
           == resource.data.get('participants', []).size() - 1
-        && !(request.auth.uid in request.resource.data.participants)
         && request.auth.uid in resource.data.get('participants', [])
+        && !(request.auth.uid in request.resource.data.participants)
+        && orderCreatorUidFromDoc(resource.data) != request.auth.uid
         && stringUidListSubsetOf(
           request.resource.data.participants,
           resource.data.get('participants', [])
@@ -661,7 +643,8 @@ service cloud.firestore {
             && request.resource.data.participants.size()
               < resource.data.get('maxPeople', resource.data.get('maxUsers', 2))
           )
-        );
+        )
+        && !isCurrentUserRestricted();
     }
 
     function isOrderTypingUpdate() {
@@ -1086,11 +1069,10 @@ service cloud.firestore {
     match /orders/{orderId} {
       allow read: if isSignedIn();
       allow create: if isValidOrderCreate() || isValidHalfOrderCreate() || isAdmin();
-      allow update: if isAdmin()
+      allow update: if isParticipantsLeaveUpdate()
         || isParticipantsJoinUpdate()
         || isParticipantsJoinWithExtrasUpdate()
         || isJoinedAtMapBackfillUpdate()
-        || isParticipantsLeaveUpdate()
         || isOrderTypingUpdate()
         || isCreatorOnlyNonJoinUpdate()
         || isSwipeAcceptUpdate()
@@ -1100,7 +1082,8 @@ service cloud.firestore {
         || isHalfOrderCancelUpdate()
         || isHalfOrderMarkActiveUpdate()
         || isHalfOrderCompleteUpdate()
-        || isOrderPairJoinNotifiedUpdate();
+        || isOrderPairJoinNotifiedUpdate()
+        || isAdmin();
       allow delete: if isAdmin()
         || (
           request.auth != null
