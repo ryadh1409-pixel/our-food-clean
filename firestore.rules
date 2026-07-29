@@ -545,6 +545,25 @@ service cloud.firestore {
       );
     }
 
+    /**
+     * Creator may hard-delete only when no other members remain.
+     * Prevents wiping live shared orders / chat history for peers.
+     */
+    function isCreatorSoleMemberOrderDelete() {
+      return isSignedIn()
+        && resource.data.createdBy == request.auth.uid
+        && resource.data.get('users', []).size() <= 1
+        && resource.data.get('participants', []).size() <= 1
+        && (
+          resource.data.get('users', []).size() == 0
+          || request.auth.uid in resource.data.get('users', [])
+        )
+        && (
+          resource.data.get('participants', []).size() == 0
+          || request.auth.uid in resource.data.get('participants', [])
+        );
+    }
+
     function isParticipantsJoinUpdate() {
       return isSignedIn()
         && !isCurrentUserRestricted()
@@ -1059,11 +1078,12 @@ service cloud.firestore {
         || isHalfOrderMarkActiveUpdate()
         || isHalfOrderCompleteUpdate()
         || isOrderPairJoinNotifiedUpdate();
+      /**
+       * Hard-delete is only for empty/sole-member hosted orders (account cleanup).
+       * Multi-member orders must be cancelled via update — never wiped by the creator.
+       */
       allow delete: if isAdmin()
-        || (
-          request.auth != null
-          && resource.data.createdBy == request.auth.uid
-        );
+        || isCreatorSoleMemberOrderDelete();
 
       match /order_members/{memberId} {
         allow read: if isAdmin() || isOrderMemberByOrderId(orderId);
