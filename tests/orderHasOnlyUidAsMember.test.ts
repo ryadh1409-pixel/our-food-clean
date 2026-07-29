@@ -1,4 +1,4 @@
-import { orderHasOnlyUidAsMember } from '@/services/deleteUserAccount';
+import { orderHasOnlyUidAsMember } from '../utils/orderMembership';
 
 describe('orderHasOnlyUidAsMember', () => {
   it('returns true for sole host on participants', () => {
