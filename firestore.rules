@@ -652,13 +652,57 @@ service cloud.firestore {
         );
     }
 
+    /**
+     * Legacy swipe/join orders may expire only after a real deadline.
+     * `expiresAt` may be a Timestamp or epoch millis (int).
+     * Fallback: 45m after the caller's `joinedAtMap` entry (ORDER_JOIN_WINDOW_MS).
+     */
+    function isLegacyOrderExpireDeadlinePassed() {
+      return (
+        (
+          resource.data.keys().hasAny(['expiresAt'])
+          && (
+            (
+              resource.data.expiresAt is timestamp
+              && request.time >= resource.data.expiresAt
+            )
+            || (
+              resource.data.expiresAt is int
+              && request.time.toMillis() >= resource.data.expiresAt
+            )
+            || (
+              resource.data.expiresAt is float
+              && request.time.toMillis() >= resource.data.expiresAt
+            )
+          )
+        )
+        || (
+          resource.data.joinedAtMap is map
+          && resource.data.joinedAtMap.keys().hasAny([request.auth.uid])
+          && resource.data.joinedAtMap[request.auth.uid] is timestamp
+          && request.time
+            >= resource.data.joinedAtMap[request.auth.uid] + duration.value(45, 'm')
+        )
+      );
+    }
+
+    /**
+     * Mark legacy order expired. HalfOrders (`cardId`) must use cancel for timeouts —
+     * otherwise any participant can instantly grief a live matched pair to `expired`.
+     */
     function isMarkOrderExpiredUpdate() {
       return isSignedIn()
         && !isCurrentUserRestricted()
+        && !(
+          resource.data.keys().hasAny(['cardId'])
+          && resource.data.cardId is string
+          && resource.data.cardId.size() > 0
+        )
         && request.resource.data.diff(resource.data).changedKeys().hasOnly(['status'])
         && resource.data.status in ['open', 'matched', 'full']
         && request.resource.data.status == 'expired'
-        && request.auth.uid in resource.data.get('participants', []);
+        && request.auth.uid in resource.data.get('participants', [])
+        && isLegacyOrderExpireDeadlinePassed();
     }
 
     /** Open swipe-deck food card status. */
