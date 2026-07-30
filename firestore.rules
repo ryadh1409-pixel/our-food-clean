@@ -670,10 +670,6 @@ service cloud.firestore {
               resource.data.expiresAt is int
               && request.time.toMillis() >= resource.data.expiresAt
             )
-            || (
-              resource.data.expiresAt is float
-              && request.time.toMillis() >= resource.data.expiresAt
-            )
           )
         )
         || (
@@ -689,10 +685,10 @@ service cloud.firestore {
     /**
      * Mark legacy order expired. HalfOrders (`cardId`) must use cancel for timeouts —
      * otherwise any participant can instantly grief a live matched pair to `expired`.
+     * cardId / status shape checks come first so deny is cheap on the HalfOrder path.
      */
     function isMarkOrderExpiredUpdate() {
       return isSignedIn()
-        && !isCurrentUserRestricted()
         && !(
           resource.data.keys().hasAny(['cardId'])
           && resource.data.cardId is string
@@ -702,6 +698,7 @@ service cloud.firestore {
         && resource.data.status in ['open', 'matched', 'full']
         && request.resource.data.status == 'expired'
         && request.auth.uid in resource.data.get('participants', [])
+        && !isCurrentUserRestricted()
         && isLegacyOrderExpireDeadlinePassed();
     }
 
@@ -1088,21 +1085,23 @@ service cloud.firestore {
     match /orders/{orderId} {
       allow read: if isSignedIn();
       allow create: if isValidOrderCreate() || isValidHalfOrderCreate() || isAdmin();
-      allow update: if isAdmin()
-        || isParticipantsJoinUpdate()
-        || isParticipantsJoinWithExtrasUpdate()
-        || isJoinedAtMapBackfillUpdate()
-        || isParticipantsLeaveUpdate()
-        || isOrderTypingUpdate()
-        || isCreatorOnlyNonJoinUpdate()
-        || isSwipeAcceptUpdate()
-        || isMarkOrderExpiredUpdate()
-        || isHalfOrderParticipantIncrementalJoin()
-        || isHalfOrderParticipantBootstrapJoin()
-        || isHalfOrderCancelUpdate()
+      // Cheap HalfOrder lifecycle + expire before expensive join scans;
+      // isAdmin last — otherwise updates hit Firestore's 1000-expression budget.
+      allow update: if isHalfOrderCancelUpdate()
         || isHalfOrderMarkActiveUpdate()
         || isHalfOrderCompleteUpdate()
-        || isOrderPairJoinNotifiedUpdate();
+        || isOrderPairJoinNotifiedUpdate()
+        || isMarkOrderExpiredUpdate()
+        || isOrderTypingUpdate()
+        || isSwipeAcceptUpdate()
+        || isJoinedAtMapBackfillUpdate()
+        || isCreatorOnlyNonJoinUpdate()
+        || isParticipantsLeaveUpdate()
+        || isParticipantsJoinUpdate()
+        || isParticipantsJoinWithExtrasUpdate()
+        || isHalfOrderParticipantBootstrapJoin()
+        || isHalfOrderParticipantIncrementalJoin()
+        || isAdmin();
       allow delete: if isAdmin()
         || (
           request.auth != null
