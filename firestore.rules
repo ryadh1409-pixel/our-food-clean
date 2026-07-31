@@ -134,6 +134,46 @@ service cloud.firestore {
         );
     }
 
+    /** Order-room chat create: self-authored user msgs or member system notices. */
+    function isValidOrderRoomMessageCreate(orderId) {
+      return isSignedIn()
+        && !isCurrentUserRestricted()
+        && exists(/databases/$(database)/documents/orders/$(orderId))
+        && isOrderMember(
+          get(/databases/$(database)/documents/orders/$(orderId)).data
+        )
+        && request.resource.data.text is string
+        && request.resource.data.createdAt == request.time
+        && (
+          (
+            request.resource.data.senderId == request.auth.uid
+            && (
+              !request.resource.data.keys().hasAny(['type'])
+              || request.resource.data.type == 'user'
+              || request.resource.data.type == 'system'
+            )
+          )
+          || (
+            request.resource.data.type == 'system'
+            && (
+              request.resource.data.senderId == 'system'
+              || request.resource.data.senderId == ''
+            )
+          )
+        );
+    }
+
+    /** Message wipe only after the order is terminal (completion cleanup). */
+    function isTerminalOrderMessageDelete(orderId) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/orders/$(orderId))
+        && isOrderMember(
+          get(/databases/$(database)/documents/orders/$(orderId)).data
+        )
+        && get(/databases/$(database)/documents/orders/$(orderId)).data.status
+          in ['completed', 'cancelled', 'expired', 'closed'];
+    }
+
     function validOrderHostDoc(h) {
       return h is map
         && h.keys().hasAll(['userId', 'name'])
@@ -1077,10 +1117,16 @@ service cloud.firestore {
       }
 
       match /messages/{messageId} {
-        allow read, write: if isAdmin()
-          || isOrderMember(
-            get(/databases/$(database)/documents/orders/$(orderId)).data
+        allow read: if isAdmin()
+          || (
+            exists(/databases/$(database)/documents/orders/$(orderId))
+            && isOrderMember(
+              get(/databases/$(database)/documents/orders/$(orderId)).data
+            )
           );
+        allow create: if isAdmin() || isValidOrderRoomMessageCreate(orderId);
+        allow update: if isAdmin();
+        allow delete: if isAdmin() || isTerminalOrderMessageDelete(orderId);
       }
 
       match /ratings/{ratingId} {
