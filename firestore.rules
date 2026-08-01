@@ -134,14 +134,17 @@ service cloud.firestore {
         );
     }
 
-    /** Membership check for an arbitrary uid (string `users` / `participants`, or map participants). */
+    /**
+     * Cheap membership for ratings: string uid lists only (`users` / `participants`).
+     * Avoids participantListContainsUid (map scan) so deny paths stay under the
+     * 1000-expression budget alongside the catch-all isAdmin() rule.
+     */
     function orderDataContainsUid(orderData, uid) {
       return uid is string
         && uid.size() > 0
         && (
           uid in orderData.get('users', [])
           || uid in orderData.get('participants', [])
-          || participantListContainsUid(orderData.get('participants', []), uid)
         );
     }
 
@@ -151,7 +154,6 @@ service cloud.firestore {
      */
     function isValidRatingCreate() {
       return isSignedIn()
-        && !isCurrentUserRestricted()
         && request.resource.data.fromUserId == request.auth.uid
         && request.resource.data.toUserId is string
         && request.resource.data.toUserId != request.auth.uid
@@ -162,6 +164,7 @@ service cloud.firestore {
         && request.resource.data.rating is number
         && request.resource.data.rating >= 1
         && request.resource.data.rating <= 5
+        && !isCurrentUserRestricted()
         && exists(/databases/$(database)/documents/orders/$(request.resource.data.orderId))
         && get(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.status
           == 'completed'
