@@ -134,6 +134,50 @@ service cloud.firestore {
         );
     }
 
+    /**
+     * Cheap membership for ratings: string uid lists only (`users` / `participants`).
+     * Avoids participantListContainsUid (map scan) so deny paths stay under the
+     * 1000-expression budget alongside the catch-all isAdmin() rule.
+     */
+    function orderDataContainsUid(orderData, uid) {
+      return uid is string
+        && uid.size() > 0
+        && (
+          uid in orderData.get('users', [])
+          || uid in orderData.get('participants', [])
+        );
+    }
+
+    /**
+     * Top-level ratings feed Cloud Function trust-score updates.
+     * Require a real completed shared order so strangers cannot forge scores.
+     */
+    function isValidRatingCreate() {
+      return isSignedIn()
+        && request.resource.data.fromUserId == request.auth.uid
+        && request.resource.data.toUserId is string
+        && request.resource.data.toUserId != request.auth.uid
+        && request.resource.data.orderId is string
+        && request.resource.data.orderId.size() > 0
+        && request.resource.data.comment is string
+        && request.resource.data.createdAt != null
+        && request.resource.data.rating is number
+        && request.resource.data.rating >= 1
+        && request.resource.data.rating <= 5
+        && !isCurrentUserRestricted()
+        && exists(/databases/$(database)/documents/orders/$(request.resource.data.orderId))
+        && get(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.status
+          == 'completed'
+        && orderDataContainsUid(
+          get(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data,
+          request.auth.uid
+        )
+        && orderDataContainsUid(
+          get(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data,
+          request.resource.data.toUserId
+        );
+    }
+
     function validOrderHostDoc(h) {
       return h is map
         && h.keys().hasAll(['userId', 'name'])
@@ -725,15 +769,7 @@ service cloud.firestore {
       allow read, write: if isSignedIn() && (userId == request.auth.uid || isAdmin());
     }
     match /ratings/{ratingId} {
-      allow create: if request.auth != null
-        && request.resource.data.fromUserId == request.auth.uid
-        && request.resource.data.orderId is string
-        && request.resource.data.toUserId is string
-        && request.resource.data.comment is string
-        && request.resource.data.createdAt != null
-        && request.resource.data.rating is number
-        && request.resource.data.rating >= 1
-        && request.resource.data.rating <= 5;
+      allow create: if isValidRatingCreate();
       allow read: if request.auth != null;
       allow update, delete: if false;
     }
