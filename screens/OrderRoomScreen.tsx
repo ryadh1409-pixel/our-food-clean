@@ -3,10 +3,8 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   addDoc,
   collection,
-  deleteDoc,
   doc,
   getDoc,
-  getDocs,
   onSnapshot,
   orderBy,
   query,
@@ -70,6 +68,8 @@ import { checkTaxGift } from '@/services/taxGift';
 import { auth, db } from '@/services/firebase';
 import { trackOrderJoined } from '@/services/analytics';
 import { ensureOrderChatInitialized } from '@/services/chat';
+import { cancelHalfOrder } from '@/services/halfOrderCancel';
+import { completeHalfOrder } from '@/services/halfOrderLifecycle';
 import {
   ORDER_JOIN_WINDOW_MS,
   ensureParticipantRecordForUid,
@@ -1019,94 +1019,66 @@ export default function OrderRoomScreen() {
     if (!order) return;
     setCompleting(true);
     try {
-      const orderRef = doc(db, 'orders', orderId);
-      const ids = order.participants ?? [];
+      const currentUserId = auth.currentUser?.uid ?? '';
+      if (!currentUserId) {
+        throw new Error('You must be signed in.');
+      }
+
+      const ids = (order.participants ?? []).filter(
+        (id): id is string => typeof id === 'string' && id.length > 0,
+      );
       const [user1Id, user2Id] = ids;
       let user1Name = hostName || order.userName || 'User 1';
       let user2Name = 'User 2';
-      let user1Snap: Awaited<ReturnType<typeof getDoc>> | null = null;
-      let user2Snap: Awaited<ReturnType<typeof getDoc>> | null = null;
       try {
-        user1Snap = await getDoc(doc(db, 'users', user1Id));
-        if (user1Snap.exists()) {
-          const d = user1Snap.data();
-          const name =
-            typeof d?.displayName === 'string' ? d.displayName : null;
-          if (name) user1Name = name;
+        if (user1Id) {
+          const user1Snap = await getDoc(doc(db, 'users', user1Id));
+          if (user1Snap.exists()) {
+            const name = user1Snap.data()?.displayName;
+            if (typeof name === 'string' && name) user1Name = name;
+          }
         }
-        user2Snap = await getDoc(doc(db, 'users', user2Id));
-        if (user2Snap.exists()) {
-          const d = user2Snap.data();
-          const name =
-            typeof d?.displayName === 'string' ? d.displayName : null;
-          if (name) user2Name = name;
+        if (user2Id) {
+          const user2Snap = await getDoc(doc(db, 'users', user2Id));
+          if (user2Snap.exists()) {
+            const name = user2Snap.data()?.displayName;
+            if (typeof name === 'string' && name) user2Name = name;
+          }
         }
       } catch {
         // use defaults
       }
-      // Tax Gift Every 3rd Order: increment both users' ordersCount and determine if this order gets tax gift
-      const [taxGiftResult1, taxGiftResult2] = await Promise.all([
-        checkTaxGift(user1Id),
-        checkTaxGift(user2Id),
-      ]);
-      const currentUserId = auth.currentUser?.uid ?? '';
-      const taxGiftAppliedForCurrentUser =
-        currentUserId === user1Id
-          ? taxGiftResult1.taxGiftEligible
-          : taxGiftResult2.taxGiftEligible;
 
-      await updateDoc(orderRef, { status: 'completed' });
-      // Store per-user tax gift flags and a single taxGiftApplied for the order (true if either user got the gift)
-      const completedData = {
-        orderId,
-        restaurantName: order.restaurantName ?? 'Not specified',
-        mealType: order.mealType ?? 'N/A',
-        totalPrice: order.totalPrice ?? 0,
-        sharePrice: order.sharePrice ?? 0,
-        user1Name,
-        user2Name,
-        taxGiftAppliedUser1: taxGiftResult1.taxGiftEligible,
-        taxGiftAppliedUser2: taxGiftResult2.taxGiftEligible,
-        taxGiftApplied:
-          taxGiftResult1.taxGiftEligible || taxGiftResult2.taxGiftEligible,
-        createdAt: serverTimestamp(),
-        timezone: 'America/Toronto',
-      };
-      await addDoc(collection(db, 'completedOrders'), completedData);
+      // Only the caller's user doc is writable; peer tax-gift must run when they complete.
+      const taxGiftResult = await checkTaxGift(currentUserId);
+      const taxGiftAppliedForCurrentUser = taxGiftResult.taxGiftEligible;
+
+      // Rules require completedAt for HalfOrder complete (and keep the order for the peer).
+      await completeHalfOrder(orderId);
+
+      const selfSnap = await getDoc(doc(db, 'users', currentUserId));
+      const selfData = selfSnap.exists() ? selfSnap.data() : {};
+      const grantCredits = selfData?.firstOrderCompleted !== true;
       const expiry = Timestamp.fromMillis(Date.now() + 24 * 60 * 60 * 1000);
-      const user1Data = user1Snap?.exists() ? user1Snap.data() : {};
-      const user2Data = user2Snap?.exists() ? user2Snap.data() : {};
-      const grantCredits1 = user1Data?.firstOrderCompleted !== true;
-      const grantCredits2 = user2Data?.firstOrderCompleted !== true;
       await setDoc(
-        doc(db, 'users', user1Id),
-        grantCredits1
+        doc(db, 'users', currentUserId),
+        grantCredits
           ? { firstOrderCompleted: true, credits: 3, creditExpiresAt: expiry }
           : { firstOrderCompleted: true },
         { merge: true },
       );
-      await setDoc(
-        doc(db, 'users', user2Id),
-        grantCredits2
-          ? { firstOrderCompleted: true, credits: 3, creditExpiresAt: expiry }
-          : { firstOrderCompleted: true },
-        { merge: true },
-      );
-      const messagesSnap = await getDocs(
-        collection(db, 'orders', orderId, 'messages'),
-      );
-      const deletePromises = messagesSnap.docs.map((m) =>
-        deleteDoc(doc(db, 'orders', orderId, 'messages', m.id)),
-      );
-      await Promise.all(deletePromises);
-      await deleteDoc(orderRef);
+
+      const restaurantName = order.restaurantName ?? 'Not specified';
+      const mealType = order.mealType ?? 'N/A';
+      const totalPrice = order.totalPrice ?? 0;
+      const sharePrice = order.sharePrice ?? 0;
       const dateStr =
         order.createdAtMs != null ? formatTorontoDate(order.createdAtMs) : '—';
       const timeStr =
         order.createdAtMs != null
           ? formatTorontoTimeHHMM(order.createdAtMs)
           : '—';
-      const body = `Order ID: ${orderId}\nRestaurant: ${completedData.restaurantName}\nMeal Type: ${completedData.mealType}\nTotal Price: $${completedData.totalPrice}\nShare Price: $${completedData.sharePrice}\nUser 1: ${user1Name}\nUser 2: ${user2Name}\nDate: ${dateStr}\nTime: ${timeStr}\nTimezone: America/Toronto`;
+      const body = `Order ID: ${orderId}\nRestaurant: ${restaurantName}\nMeal Type: ${mealType}\nTotal Price: $${totalPrice}\nShare Price: $${sharePrice}\nUser 1: ${user1Name}\nUser 2: ${user2Name}\nDate: ${dateStr}\nTime: ${timeStr}\nTimezone: America/Toronto`;
       const mailtoUrl = `mailto:support@halforder.app?subject=${encodeURIComponent('HalfOrder Completed Order')}&body=${encodeURIComponent(body)}`;
       try {
         const canOpen = await Linking.canOpenURL(mailtoUrl);
@@ -1116,8 +1088,8 @@ export default function OrderRoomScreen() {
       } catch {
         // ignore
       }
-      const numUsers = Math.max(1, order.participants?.length ?? 0);
-      const totalForSplit = order.totalPrice ?? 0;
+      const numUsers = Math.max(1, ids.length);
+      const totalForSplit = totalPrice;
       const subtotalForSplit = order.subtotal ?? order.totalPrice ?? 0;
       const serviceFeeAmt =
         typeof order.serviceFee === 'number' ? order.serviceFee : 0;
@@ -1148,14 +1120,7 @@ export default function OrderRoomScreen() {
 
   const confirmOrderShared = async () => {
     if (!order || order.status !== 'matched' || completing) return;
-    setCompleting(true);
-    try {
-      await doCompleteOrder();
-    } catch (e) {
-      showError(getUserFriendlyError(e));
-    } finally {
-      setCompleting(false);
-    }
+    await doCompleteOrder();
   };
 
   const handleRatingSuccess = async () => {
@@ -1173,10 +1138,7 @@ export default function OrderRoomScreen() {
     if (!order || order.status !== 'matched' || completing) return;
     setCompleting(true);
     try {
-      await updateDoc(doc(db, 'orders', orderId), {
-        status: 'cancelled',
-        reason: 'Users reported order not shared',
-      });
+      await cancelHalfOrder(orderId);
       showSuccess('Order marked as not shared.');
     } catch (e) {
       showError(getUserFriendlyError(e));
