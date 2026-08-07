@@ -666,26 +666,30 @@ service cloud.firestore {
       return s == 'active';
     }
 
+    /**
+     * Honest joins (`joinFoodCard`): claim empty `user1` alone, or claim `user2` + `matched`
+     * without rewriting the existing host (`user1`) or `createdAt`.
+     */
     function isValidFoodCardJoinUpdate() {
       return isSignedIn()
+        && !isCurrentUserRestricted()
+        && foodCardOpenStatus(resource.data.status)
         && (
           (
-            request.resource.data.diff(resource.data).changedKeys().hasOnly(['user1', 'user2', 'status', 'createdAt'])
-            && foodCardOpenStatus(resource.data.status)
-            && (
-              (
-                resource.data.user1 == null
-                && request.resource.data.user1.uid == request.auth.uid
-                && foodCardOpenStatus(request.resource.data.status)
-              )
-              || (
-                resource.data.user1.uid is string
-                && resource.data.user1.uid != request.auth.uid
-                && resource.data.user2 == null
-                && request.resource.data.user2.uid == request.auth.uid
-                && request.resource.data.status == 'matched'
-              )
-            )
+            request.resource.data.diff(resource.data).changedKeys().hasOnly(['user1'])
+            && resource.data.user1 == null
+            && request.resource.data.user1.uid == request.auth.uid
+            && foodCardOpenStatus(request.resource.data.status)
+          )
+          || (
+            request.resource.data.diff(resource.data).changedKeys().hasOnly(['user2', 'status'])
+            && resource.data.user1 != null
+            && resource.data.user1.uid is string
+            && resource.data.user1.uid != request.auth.uid
+            && resource.data.user2 == null
+            && request.resource.data.user2.uid == request.auth.uid
+            && request.resource.data.user1 == resource.data.user1
+            && request.resource.data.status == 'matched'
           )
         );
     }
