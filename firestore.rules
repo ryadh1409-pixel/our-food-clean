@@ -234,37 +234,15 @@ service cloud.firestore {
         && request.resource.data.createdAt != null;
     }
 
-    /** +1 `users`, string `participants` mirrors `users`, `joinedAtMap` gains joiner entry. Optional status -> matched. */
+    /**
+     * +1 `users`, string `participants` mirrors `users`, `joinedAtMap` gains joiner entry.
+     * Optional status -> matched. Prior membership must be preserved (size-only is unsafe).
+     */
     function isHalfOrderParticipantIncrementalJoin() {
       return isSignedIn()
-        && !isCurrentUserRestricted()
+        && resource.data.keys().hasAny(['cardId'])
         && resource.data.cardId is string
         && resource.data.get('users', []).size() > 0
-        && request.resource.data.users is list
-        && usersAllStrings(request.resource.data.users)
-        && request.resource.data.participants is list
-        && participantsAllStrings(request.resource.data.participants)
-        && request.resource.data.participants.size()
-          == request.resource.data.users.size()
-        && request.resource.data.users.size() == resource.data.get('users', []).size() + 1
-        && request.resource.data.participants.size()
-          == resource.data.get('participants', []).size() + 1
-        && request.auth.uid in request.resource.data.users
-        && !(request.auth.uid in resource.data.get('users', []))
-        && participantListContainsUid(request.resource.data.participants, request.auth.uid)
-        && !participantListContainsUid(resource.data.get('participants', []), request.auth.uid)
-        && request.resource.data.joinedAtMap is map
-        && request.resource.data.joinedAtMap[request.auth.uid] is timestamp
-        && request.resource.data.users.size() <= resource.data.get('maxUsers', 2)
-        && request.resource.data.cardId == resource.data.cardId
-        && request.resource.data.createdBy == resource.data.createdBy
-        && request.resource.data.get('hostId', '')
-          == resource.data.get('hostId', '')
-        && request.resource.data.maxUsers == resource.data.maxUsers
-        && (
-          !resource.data.keys().hasAny(['host'])
-          || request.resource.data.host == resource.data.host
-        )
         && (
           (
             request.resource.data.diff(resource.data).changedKeys()
@@ -280,32 +258,24 @@ service cloud.firestore {
               || resource.data.status == 'active'
             )
           )
-        );
-    }
-
-    /**
-     * Empty participants, one user -> two users, two string participant ids, `host`, joiner in `joinedAtMap`.
-     * Must preserve the sole prior `users` uid (same size-only takeover class as incremental join).
-     */
-    function isHalfOrderParticipantBootstrapJoin() {
-      return isSignedIn()
-        && !isCurrentUserRestricted()
-        && resource.data.cardId is string
-        && resource.data.get('participants', []).size() == 0
-        && resource.data.get('users', []).size() == 1
+        )
         && request.resource.data.users is list
-        && request.resource.data.users.size() == 2
-        && usersAllStrings(request.resource.data.users)
-        && request.resource.data.users.hasAll(resource.data.get('users', []))
         && request.resource.data.participants is list
-        && request.resource.data.participants.size() == 2
-        && participantsAllStrings(request.resource.data.participants)
+        && request.resource.data.participants.size()
+          == request.resource.data.users.size()
+        && request.resource.data.users.size() == resource.data.get('users', []).size() + 1
+        && request.resource.data.participants.size()
+          == resource.data.get('participants', []).size() + 1
+        && request.resource.data.users.size() <= resource.data.get('maxUsers', 2)
         && request.auth.uid in request.resource.data.users
         && !(request.auth.uid in resource.data.get('users', []))
-        && request.resource.data.participants[0] == resource.data.users[0]
-        && request.resource.data.participants[1] == request.auth.uid
-        && validOrderHostDoc(request.resource.data.host)
-        && request.resource.data.host.userId == resource.data.users[0]
+        && request.auth.uid in request.resource.data.participants
+        && !(request.auth.uid in resource.data.get('participants', []))
+        && request.resource.data.users.hasAll(resource.data.get('users', []))
+        && request.resource.data.participants.hasAll(resource.data.get('participants', []))
+        && !isCurrentUserRestricted()
+        && usersAllStrings(request.resource.data.users)
+        && participantsAllStrings(request.resource.data.participants)
         && request.resource.data.joinedAtMap is map
         && request.resource.data.joinedAtMap[request.auth.uid] is timestamp
         && request.resource.data.cardId == resource.data.cardId
@@ -313,6 +283,32 @@ service cloud.firestore {
         && request.resource.data.get('hostId', '')
           == resource.data.get('hostId', '')
         && request.resource.data.maxUsers == resource.data.maxUsers
+        && (
+          !resource.data.keys().hasAny(['host'])
+          || request.resource.data.host == resource.data.host
+        );
+    }
+
+    /**
+     * Empty participants, one user -> two users, two string participant ids, `host`, joiner in `joinedAtMap`.
+     * Must preserve the sole prior `users` uid (same size-only takeover class as incremental join).
+     * Cheap shape / preserve checks run before restricted + listAllStrings (expression budget).
+     */
+    function isHalfOrderParticipantBootstrapJoin() {
+      return isSignedIn()
+        && resource.data.keys().hasAny(['cardId'])
+        && resource.data.cardId is string
+        && resource.data.get('participants', []).size() == 0
+        && resource.data.get('users', []).size() == 1
+        && request.resource.data.users is list
+        && request.resource.data.users.size() == 2
+        && request.resource.data.participants is list
+        && request.resource.data.participants.size() == 2
+        && request.auth.uid in request.resource.data.users
+        && !(request.auth.uid in resource.data.get('users', []))
+        && request.resource.data.users.hasAll(resource.data.get('users', []))
+        && request.resource.data.participants[0] == resource.data.users[0]
+        && request.resource.data.participants[1] == request.auth.uid
         && (
           (
             request.resource.data.diff(resource.data).changedKeys()
@@ -328,7 +324,19 @@ service cloud.firestore {
               || resource.data.status == 'active'
             )
           )
-        );
+        )
+        && !isCurrentUserRestricted()
+        && usersAllStrings(request.resource.data.users)
+        && participantsAllStrings(request.resource.data.participants)
+        && validOrderHostDoc(request.resource.data.host)
+        && request.resource.data.host.userId == resource.data.users[0]
+        && request.resource.data.joinedAtMap is map
+        && request.resource.data.joinedAtMap[request.auth.uid] is timestamp
+        && request.resource.data.cardId == resource.data.cardId
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.get('hostId', '')
+          == resource.data.get('hostId', '')
+        && request.resource.data.maxUsers == resource.data.maxUsers;
     }
 
     /** HalfOrder member cancels the match (notify others via Cloud Function). */
@@ -1048,21 +1056,23 @@ service cloud.firestore {
     match /orders/{orderId} {
       allow read: if isSignedIn();
       allow create: if isValidOrderCreate() || isValidHalfOrderCreate() || isAdmin();
-      allow update: if isAdmin()
-        || isParticipantsJoinUpdate()
-        || isParticipantsJoinWithExtrasUpdate()
-        || isJoinedAtMapBackfillUpdate()
-        || isParticipantsLeaveUpdate()
-        || isOrderTypingUpdate()
-        || isCreatorOnlyNonJoinUpdate()
-        || isSwipeAcceptUpdate()
-        || isMarkOrderExpiredUpdate()
+      // Bootstrap/incremental HalfOrder joins before expensive legacy scans;
+      // isAdmin last — otherwise updates hit Firestore's 1000-expression budget.
+      allow update: if isHalfOrderParticipantBootstrapJoin()
         || isHalfOrderParticipantIncrementalJoin()
-        || isHalfOrderParticipantBootstrapJoin()
         || isHalfOrderCancelUpdate()
         || isHalfOrderMarkActiveUpdate()
         || isHalfOrderCompleteUpdate()
-        || isOrderPairJoinNotifiedUpdate();
+        || isOrderPairJoinNotifiedUpdate()
+        || isOrderTypingUpdate()
+        || isSwipeAcceptUpdate()
+        || isJoinedAtMapBackfillUpdate()
+        || isMarkOrderExpiredUpdate()
+        || isParticipantsLeaveUpdate()
+        || isParticipantsJoinUpdate()
+        || isParticipantsJoinWithExtrasUpdate()
+        || isCreatorOnlyNonJoinUpdate()
+        || isAdmin();
       allow delete: if isAdmin()
         || (
           request.auth != null
