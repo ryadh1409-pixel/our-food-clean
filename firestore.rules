@@ -283,7 +283,10 @@ service cloud.firestore {
         );
     }
 
-    /** Empty participants, one user -> two users, two string participant ids, `host`, joiner in `joinedAtMap`. */
+    /**
+     * Empty participants, one user -> two users, two string participant ids, `host`, joiner in `joinedAtMap`.
+     * Must preserve the sole prior `users` uid (same size-only takeover class as incremental join).
+     */
     function isHalfOrderParticipantBootstrapJoin() {
       return isSignedIn()
         && !isCurrentUserRestricted()
@@ -293,6 +296,7 @@ service cloud.firestore {
         && request.resource.data.users is list
         && request.resource.data.users.size() == 2
         && usersAllStrings(request.resource.data.users)
+        && request.resource.data.users.hasAll(resource.data.get('users', []))
         && request.resource.data.participants is list
         && request.resource.data.participants.size() == 2
         && participantsAllStrings(request.resource.data.participants)
