@@ -570,6 +570,12 @@ service cloud.firestore {
         );
     }
 
+    /**
+     * Legacy join that may also set status / user2* (nearby + OrderRoom matched path,
+     * Join tab open/full). Status must stay joinable→matched|full|open — never
+     * terminal grief (cancelled/completed/expired) at join time. user2Id, when set,
+     * must be the joining caller (honest clients write their own uid).
+     */
     function isParticipantsJoinWithExtrasUpdate() {
       return isSignedIn()
         && !isCurrentUserRestricted()
@@ -585,6 +591,44 @@ service cloud.firestore {
         && request.resource.data.joinedAtMap[request.auth.uid] is timestamp
         && request.resource.data.participants.size()
           <= resource.data.get('maxPeople', 2)
+        && (
+          request.resource.data.get('status', 'open')
+            == resource.data.get('status', 'open')
+          || (
+            (
+              resource.data.get('status', 'open') == 'open'
+              || resource.data.get('status', '') == 'waiting'
+              || resource.data.get('status', '') == 'active'
+            )
+            && (
+              request.resource.data.status == 'matched'
+              || (
+                request.resource.data.status == 'full'
+                && request.resource.data.participants.size()
+                  == resource.data.get('maxPeople', 2)
+              )
+              || (
+                request.resource.data.status == 'open'
+                && request.resource.data.participants.size()
+                  < resource.data.get('maxPeople', 2)
+              )
+            )
+          )
+        )
+        && (
+          request.resource.data.get('user2Id', request.auth.uid)
+            == request.auth.uid
+          || request.resource.data.get('user2Id', '')
+            == resource.data.get('user2Id', '')
+        )
+        && (
+          !request.resource.data.keys().hasAny(['user2Name'])
+          || (
+            request.resource.data.user2Name is string
+            && request.resource.data.user2Name.size() > 0
+            && request.resource.data.user2Name.size() <= 80
+          )
+        )
         && (
           !request.resource.data.diff(resource.data).changedKeys()
             .hasAny(['startedAt', 'expiresAt'])
