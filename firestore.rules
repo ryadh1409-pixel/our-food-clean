@@ -761,35 +761,13 @@ service cloud.firestore {
     }
 
     /**
-     * Email invite row → Cloud Function `sendOrderInvite` (nodemailer).
-     * Inviter must be a member of the order (`users` or string `participants`).
+     * Email invite rows previously triggered Cloud Function `sendOrderInvite`.
+     * Client create was an open mail relay (arbitrary `email` + spoofable
+     * `inviterName`); the in-app email invite UI was removed in favor of
+     * WhatsApp. Keep docs readable for the inviter/admin; no client writes.
      */
     match /invites/{inviteId} {
-      allow create: if isSignedIn()
-        && !isCurrentUserRestricted()
-        && request.resource.data.keys().hasAll([
-          'email',
-          'orderId',
-          'inviterName',
-          'inviterId',
-          'createdAt',
-        ])
-        && request.resource.data.email is string
-        && request.resource.data.email.size() > 3
-        && request.resource.data.orderId is string
-        && request.resource.data.orderId.size() > 0
-        && request.resource.data.inviterName is string
-        && request.resource.data.inviterId == request.auth.uid
-        && request.resource.data.createdAt == request.time
-        && exists(/databases/$(database)/documents/orders/$(request.resource.data.orderId))
-        && (
-          request.auth.uid in get(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.get('users', [])
-          || request.auth.uid in get(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.get('participants', [])
-          || participantListContainsUid(
-            get(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.get('participants', []),
-            request.auth.uid
-          )
-        );
+      allow create: if false;
       allow read: if isAdmin()
         || (
           isSignedIn()
