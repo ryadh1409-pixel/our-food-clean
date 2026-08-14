@@ -198,24 +198,45 @@ service cloud.firestore {
         + (parts.size() > 19 && parts[19] is map && parts[19].userId == uid ? 1 : 0);
     }
 
+    /** Catalog slots `1`–`10` (`constants/adminFoodCards.ts`). Anyone may open a waiting HalfOrder. */
+    function isAdminCatalogSlotCardId(cardId) {
+      return cardId == '1' || cardId == '2' || cardId == '3'
+        || cardId == '4' || cardId == '5' || cardId == '6'
+        || cardId == '7' || cardId == '8' || cardId == '9'
+        || cardId == '10';
+    }
+
+    /**
+     * HalfOrder create must target an existing food card.
+     * Catalog slots: any signed-in user. AI / owner cards: only the card owner.
+     */
+    function halfOrderCreateTargetsExistingCard() {
+      return request.resource.data.cardId is string
+        && request.resource.data.cardId.size() > 0
+        && exists(/databases/$(database)/documents/food_cards/$(request.resource.data.cardId))
+        && (
+          isAdminCatalogSlotCardId(request.resource.data.cardId)
+          || get(/databases/$(database)/documents/food_cards/$(request.resource.data.cardId)).data.get('ownerId', '')
+            == request.auth.uid
+        );
+    }
+
     /** HalfOrder: food-card swipe creates `orders` with `cardId` + `users` + `host`, string `participants`, `joinedAtMap`. */
     function isValidHalfOrderCreate() {
       return isSignedIn()
-        && canCreateOrderBySafetyLimits()
-        && !isCurrentUserRestricted()
-        && request.resource.data.cardId is string
-        && request.resource.data.cardId.size() > 0
+        && halfOrderCreateTargetsExistingCard()
+        && request.resource.data.maxUsers is int
+        && request.resource.data.maxUsers == 2
+        && request.resource.data.createdAt == request.time
         && request.resource.data.users is list
         && request.resource.data.users.size() == 1
-        && usersAllStrings(request.resource.data.users)
         && request.auth.uid == request.resource.data.users[0]
+        && request.resource.data.participants is list
+        && request.resource.data.participants.size() == 1
+        && request.resource.data.participants[0] == request.auth.uid
         && request.resource.data.host is map
         && validOrderHostDoc(request.resource.data.host)
         && request.resource.data.host.userId == request.auth.uid
-        && request.resource.data.participants is list
-        && request.resource.data.participants.size() == 1
-        && participantsAllStrings(request.resource.data.participants)
-        && request.resource.data.participants[0] == request.auth.uid
         && request.resource.data.joinedAtMap is map
         && request.resource.data.joinedAtMap[request.auth.uid] is timestamp
         && (
@@ -226,12 +247,10 @@ service cloud.firestore {
           !request.resource.data.keys().hasAny(['matchWaitDeadlineAt'])
           || request.resource.data.matchWaitDeadlineAt is int
         )
-        && request.resource.data.maxUsers is int
-        && request.resource.data.maxUsers >= 2
-        && request.resource.data.maxUsers <= 20
         && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.hostId == request.auth.uid
-        && request.resource.data.createdAt != null;
+        && canCreateOrderBySafetyLimits()
+        && !isCurrentUserRestricted();
     }
 
     /** +1 `users`, string `participants` mirrors `users`, `joinedAtMap` gains joiner entry. Optional status -> matched. */
@@ -519,6 +538,7 @@ service cloud.firestore {
 
     function isValidOrderCreate() {
       return isSignedIn()
+        && !request.resource.data.keys().hasAny(['cardId'])
         && canCreateOrderBySafetyLimits()
         && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.maxPeople is number
@@ -1043,7 +1063,7 @@ service cloud.firestore {
     }
     match /orders/{orderId} {
       allow read: if isSignedIn();
-      allow create: if isValidOrderCreate() || isValidHalfOrderCreate() || isAdmin();
+      allow create: if isValidHalfOrderCreate() || isValidOrderCreate() || isAdmin();
       allow update: if isAdmin()
         || isParticipantsJoinUpdate()
         || isParticipantsJoinWithExtrasUpdate()
