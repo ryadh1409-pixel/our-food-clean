@@ -545,9 +545,11 @@ service cloud.firestore {
       );
     }
 
+    /** Legacy `participants` join. HalfOrders (`cardId`) must use users+participants join helpers. */
     function isParticipantsJoinUpdate() {
       return isSignedIn()
         && !isCurrentUserRestricted()
+        && !resource.data.keys().hasAny(['cardId'])
         && request.resource.data.diff(resource.data).changedKeys()
           .hasOnly(['participants', 'joinedAtMap', 'startedAt', 'expiresAt'])
         && request.resource.data.participants is list
@@ -570,9 +572,11 @@ service cloud.firestore {
         );
     }
 
+    /** Legacy join + status/user2*. Must not apply to HalfOrders (status grief / fake match). */
     function isParticipantsJoinWithExtrasUpdate() {
       return isSignedIn()
         && !isCurrentUserRestricted()
+        && !resource.data.keys().hasAny(['cardId'])
         && request.resource.data.diff(resource.data).changedKeys()
           .hasOnly(['participants', 'joinedAtMap', 'status', 'user2Id', 'user2Name', 'startedAt', 'expiresAt'])
         && request.resource.data.participants is list
