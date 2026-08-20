@@ -234,37 +234,16 @@ service cloud.firestore {
         && request.resource.data.createdAt != null;
     }
 
-    /** +1 `users`, string `participants` mirrors `users`, `joinedAtMap` gains joiner entry. Optional status -> matched. */
+    /**
+     * +1 `users`, string `participants` mirrors `users`, `joinedAtMap` gains joiner entry.
+     * Optional status -> matched. Cheap shape checks first (1000-expression budget).
+     * Participants are uid strings, so `in` is equivalent to participantListContainsUid.
+     */
     function isHalfOrderParticipantIncrementalJoin() {
       return isSignedIn()
-        && !isCurrentUserRestricted()
+        && resource.data.keys().hasAny(['cardId'])
         && resource.data.cardId is string
         && resource.data.get('users', []).size() > 0
-        && request.resource.data.users is list
-        && usersAllStrings(request.resource.data.users)
-        && request.resource.data.participants is list
-        && participantsAllStrings(request.resource.data.participants)
-        && request.resource.data.participants.size()
-          == request.resource.data.users.size()
-        && request.resource.data.users.size() == resource.data.get('users', []).size() + 1
-        && request.resource.data.participants.size()
-          == resource.data.get('participants', []).size() + 1
-        && request.auth.uid in request.resource.data.users
-        && !(request.auth.uid in resource.data.get('users', []))
-        && participantListContainsUid(request.resource.data.participants, request.auth.uid)
-        && !participantListContainsUid(resource.data.get('participants', []), request.auth.uid)
-        && request.resource.data.joinedAtMap is map
-        && request.resource.data.joinedAtMap[request.auth.uid] is timestamp
-        && request.resource.data.users.size() <= resource.data.get('maxUsers', 2)
-        && request.resource.data.cardId == resource.data.cardId
-        && request.resource.data.createdBy == resource.data.createdBy
-        && request.resource.data.get('hostId', '')
-          == resource.data.get('hostId', '')
-        && request.resource.data.maxUsers == resource.data.maxUsers
-        && (
-          !resource.data.keys().hasAny(['host'])
-          || request.resource.data.host == resource.data.host
-        )
         && (
           (
             request.resource.data.diff(resource.data).changedKeys()
@@ -280,13 +259,39 @@ service cloud.firestore {
               || resource.data.status == 'active'
             )
           )
-        );
+        )
+        && request.resource.data.users is list
+        && request.resource.data.participants is list
+        && request.resource.data.participants.size()
+          == request.resource.data.users.size()
+        && request.resource.data.users.size() == resource.data.get('users', []).size() + 1
+        && request.resource.data.participants.size()
+          == resource.data.get('participants', []).size() + 1
+        && request.resource.data.users.size() <= resource.data.get('maxUsers', 2)
+        && request.auth.uid in request.resource.data.users
+        && !(request.auth.uid in resource.data.get('users', []))
+        && request.auth.uid in request.resource.data.participants
+        && !(request.auth.uid in resource.data.get('participants', []))
+        && request.resource.data.joinedAtMap is map
+        && request.resource.data.joinedAtMap[request.auth.uid] is timestamp
+        && request.resource.data.cardId == resource.data.cardId
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.get('hostId', '')
+          == resource.data.get('hostId', '')
+        && request.resource.data.maxUsers == resource.data.maxUsers
+        && (
+          !resource.data.keys().hasAny(['host'])
+          || request.resource.data.host == resource.data.host
+        )
+        && !isCurrentUserRestricted()
+        && usersAllStrings(request.resource.data.users)
+        && participantsAllStrings(request.resource.data.participants);
     }
 
     /** Empty participants, one user -> two users, two string participant ids, `host`, joiner in `joinedAtMap`. */
     function isHalfOrderParticipantBootstrapJoin() {
       return isSignedIn()
-        && !isCurrentUserRestricted()
+        && resource.data.keys().hasAny(['cardId'])
         && resource.data.cardId is string
         && resource.data.get('participants', []).size() == 0
         && resource.data.get('users', []).size() == 1
@@ -309,6 +314,7 @@ service cloud.firestore {
         && request.resource.data.get('hostId', '')
           == resource.data.get('hostId', '')
         && request.resource.data.maxUsers == resource.data.maxUsers
+        && !isCurrentUserRestricted()
         && (
           (
             request.resource.data.diff(resource.data).changedKeys()
@@ -330,7 +336,7 @@ service cloud.firestore {
     /** HalfOrder member cancels the match (notify others via Cloud Function). */
     function isHalfOrderCancelUpdate() {
       return isSignedIn()
-        && !isCurrentUserRestricted()
+        && resource.data.keys().hasAny(['cardId'])
         && resource.data.cardId is string
         && resource.data.cardId.size() > 0
         && (
@@ -353,6 +359,7 @@ service cloud.firestore {
           || request.resource.data.host == resource.data.host
         )
         && request.resource.data.cancelledAt != null
+        && !isCurrentUserRestricted()
         && (
           request.resource.data.diff(resource.data).changedKeys()
             .hasOnly(['status', 'cancelledBy', 'cancelledAt'])
@@ -368,7 +375,7 @@ service cloud.firestore {
     /** matched -> active when opening chat. */
     function isHalfOrderMarkActiveUpdate() {
       return isSignedIn()
-        && !isCurrentUserRestricted()
+        && resource.data.keys().hasAny(['cardId'])
         && resource.data.cardId is string
         && resource.data.cardId.size() > 0
         && resource.data.status == 'matched'
@@ -385,13 +392,14 @@ service cloud.firestore {
           !resource.data.keys().hasAny(['host'])
           || request.resource.data.host == resource.data.host
         )
-        && request.resource.data.diff(resource.data).changedKeys().hasOnly(['status']);
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly(['status'])
+        && !isCurrentUserRestricted();
     }
 
     /** Mark half order done. */
     function isHalfOrderCompleteUpdate() {
       return isSignedIn()
-        && !isCurrentUserRestricted()
+        && resource.data.keys().hasAny(['cardId'])
         && resource.data.cardId is string
         && resource.data.cardId.size() > 0
         && (
@@ -413,7 +421,8 @@ service cloud.firestore {
         )
         && request.resource.data.completedAt != null
         && request.resource.data.diff(resource.data).changedKeys()
-          .hasOnly(['status', 'completedAt']);
+          .hasOnly(['status', 'completedAt'])
+        && !isCurrentUserRestricted();
     }
 
     function isOrderMemberByOrderId(orderId) {
@@ -425,7 +434,7 @@ service cloud.firestore {
     /** Exactly-once: pair-join push ack via `notified` (client sends Expo push). */
     function isOrderPairJoinNotifiedUpdate() {
       return isSignedIn()
-        && !isCurrentUserRestricted()
+        && resource.data.keys().hasAny(['cardId'])
         && resource.data.cardId is string
         && resource.data.cardId.size() > 0
         && resource.data.get('users', []).size() == 2
@@ -452,7 +461,8 @@ service cloud.firestore {
         && (
           !resource.data.keys().hasAny(['host'])
           || request.resource.data.host == resource.data.host
-        );
+        )
+        && !isCurrentUserRestricted();
     }
 
     function orderLinkTargetsCard(orderId, cardId) {
@@ -545,8 +555,10 @@ service cloud.firestore {
       );
     }
 
+    /** Legacy `participants` join. HalfOrders (`cardId`) must use users+participants join helpers. */
     function isParticipantsJoinUpdate() {
       return isSignedIn()
+        && !resource.data.keys().hasAny(['cardId'])
         && !isCurrentUserRestricted()
         && request.resource.data.diff(resource.data).changedKeys()
           .hasOnly(['participants', 'joinedAtMap', 'startedAt', 'expiresAt'])
@@ -570,8 +582,10 @@ service cloud.firestore {
         );
     }
 
+    /** Legacy join + status/user2*. Must not apply to HalfOrders (status grief / fake match). */
     function isParticipantsJoinWithExtrasUpdate() {
       return isSignedIn()
+        && !resource.data.keys().hasAny(['cardId'])
         && !isCurrentUserRestricted()
         && request.resource.data.diff(resource.data).changedKeys()
           .hasOnly(['participants', 'joinedAtMap', 'status', 'user2Id', 'user2Name', 'startedAt', 'expiresAt'])
@@ -1044,21 +1058,22 @@ service cloud.firestore {
     match /orders/{orderId} {
       allow read: if isSignedIn();
       allow create: if isValidOrderCreate() || isValidHalfOrderCreate() || isAdmin();
-      allow update: if isAdmin()
-        || isParticipantsJoinUpdate()
-        || isParticipantsJoinWithExtrasUpdate()
-        || isJoinedAtMapBackfillUpdate()
-        || isParticipantsLeaveUpdate()
-        || isOrderTypingUpdate()
-        || isCreatorOnlyNonJoinUpdate()
-        || isSwipeAcceptUpdate()
-        || isMarkOrderExpiredUpdate()
+      // HalfOrder joins/lifecycle first; isAdmin last so updates stay under the 1000-expression budget.
+      allow update: if isHalfOrderParticipantBootstrapJoin()
         || isHalfOrderParticipantIncrementalJoin()
-        || isHalfOrderParticipantBootstrapJoin()
         || isHalfOrderCancelUpdate()
         || isHalfOrderMarkActiveUpdate()
         || isHalfOrderCompleteUpdate()
-        || isOrderPairJoinNotifiedUpdate();
+        || isOrderPairJoinNotifiedUpdate()
+        || isParticipantsJoinUpdate()
+        || isParticipantsJoinWithExtrasUpdate()
+        || isOrderTypingUpdate()
+        || isSwipeAcceptUpdate()
+        || isJoinedAtMapBackfillUpdate()
+        || isMarkOrderExpiredUpdate()
+        || isParticipantsLeaveUpdate()
+        || isCreatorOnlyNonJoinUpdate()
+        || isAdmin();
       allow delete: if isAdmin()
         || (
           request.auth != null
