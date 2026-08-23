@@ -256,6 +256,59 @@ export async function joinOrderWithParticipantRecord(
   });
 }
 
+export type LeaveOrderPlan =
+  | { kind: 'already_left' }
+  | { kind: 'cancel_half'; fields: Record<string, unknown> }
+  | { kind: 'leave_participants'; fields: Record<string, unknown> };
+
+/**
+ * HalfOrder membership is `users` (capacity / match). A participants-only leave
+ * leaves a ghost uid in `users`, so the pair stays full and nobody else can join.
+ * Joiner leave must cancel the pair (same as `cancelHalfOrder`).
+ */
+export function planLeaveOrder(
+  data: Record<string, unknown>,
+  uid: string,
+  options?: { cancelReason?: string },
+): LeaveOrderPlan {
+  const cardId = typeof data.cardId === 'string' ? data.cardId.trim() : '';
+  const users = normalizeParticipantsStrings(data.users);
+  const parts = normalizeParticipantsStrings(data.participants);
+  const status = typeof data.status === 'string' ? data.status : '';
+
+  if (cardId) {
+    if (status === 'cancelled' || status === 'completed' || status === 'expired') {
+      return { kind: 'already_left' };
+    }
+    if (!users.includes(uid) && !parts.includes(uid)) {
+      throw new Error('Not in order');
+    }
+    return {
+      kind: 'cancel_half',
+      fields: {
+        status: 'cancelled',
+        cancelledBy: uid,
+        cancelReason: options?.cancelReason ?? 'user',
+        cancelledAt: serverTimestamp(),
+      },
+    };
+  }
+
+  if (!parts.includes(uid)) {
+    throw new Error('Not in order');
+  }
+
+  const fields: Record<string, unknown> = {
+    participants: arrayRemove(uid),
+    [`joinedAtMap.${uid}`]: deleteField(),
+  };
+  const maxPeople = Number(data.maxPeople ?? data.maxParticipants ?? 2);
+  if (status === 'closed' && parts.length - 1 < maxPeople) {
+    fields.status = 'open';
+  }
+  return { kind: 'leave_participants', fields };
+}
+
 export async function leaveOrderParticipant(
   firestore: Firestore,
   orderId: string,
@@ -269,23 +322,9 @@ export async function leaveOrderParticipant(
     const snap = await tx.get(orderRef);
     if (!snap.exists()) throw new Error('Order no longer exists.');
     const d = snap.data() as Record<string, unknown>;
-    const parts = normalizeParticipantsStrings(d.participants);
-    if (!parts.includes(uid)) {
-      throw new Error('Not in order');
-    }
-
-    const patch: Record<string, unknown> = {
-      participants: arrayRemove(uid),
-      [`joinedAtMap.${uid}`]: deleteField(),
-    };
-
-    const currentStatus = typeof d.status === 'string' ? d.status : 'open';
-    const maxPeople = Number(d.maxPeople ?? d.maxParticipants ?? 2);
-    if (currentStatus === 'closed' && parts.length - 1 < maxPeople) {
-      patch.status = 'open';
-    }
-
-    tx.update(orderRef, patch);
+    const plan = planLeaveOrder(d, uid);
+    if (plan.kind === 'already_left') return;
+    tx.update(orderRef, plan.fields);
   });
 }
 

@@ -272,16 +272,22 @@ export default function OrdersScreen() {
 
     void (async () => {
       const ok = await systemConfirm({
-        title: 'Leave order',
-        message: 'Remove yourself from this order?',
-        confirmLabel: 'Leave',
+        title: item.usesHalf ? 'Leave match' : 'Leave order',
+        message: item.usesHalf
+          ? 'Leaving will cancel this match for both of you.'
+          : 'Remove yourself from this order?',
+        confirmLabel: item.usesHalf ? 'Cancel match' : 'Leave',
         cancelLabel: 'No',
         destructive: true,
       });
       if (!ok) return;
       setCancellingId(item.id);
       try {
-        await leaveOrderParticipant(db, item.id, uid);
+        if (item.usesHalf) {
+          await cancelHalfOrder(item.id);
+        } else {
+          await leaveOrderParticipant(db, item.id, uid);
+        }
       } catch (e) {
         showError(getUserFriendlyError(e));
       } finally {

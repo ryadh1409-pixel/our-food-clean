@@ -608,6 +608,7 @@ service cloud.firestore {
     function isParticipantsLeaveUpdate() {
       return isSignedIn()
         && !isCurrentUserRestricted()
+        && !resource.data.keys().hasAny(['cardId'])
         && orderCreatorUidFromDoc(resource.data) != request.auth.uid
         && (
           request.resource.data.diff(resource.data).changedKeys().hasOnly(['participants', 'joinedAtMap'])
@@ -1044,7 +1045,7 @@ service cloud.firestore {
     match /orders/{orderId} {
       allow read: if isSignedIn();
       allow create: if isValidOrderCreate() || isValidHalfOrderCreate() || isAdmin();
-      allow update: if isAdmin()
+      allow update: if isHalfOrderCancelUpdate()
         || isParticipantsJoinUpdate()
         || isParticipantsJoinWithExtrasUpdate()
         || isJoinedAtMapBackfillUpdate()
@@ -1055,10 +1056,10 @@ service cloud.firestore {
         || isMarkOrderExpiredUpdate()
         || isHalfOrderParticipantIncrementalJoin()
         || isHalfOrderParticipantBootstrapJoin()
-        || isHalfOrderCancelUpdate()
         || isHalfOrderMarkActiveUpdate()
         || isHalfOrderCompleteUpdate()
-        || isOrderPairJoinNotifiedUpdate();
+        || isOrderPairJoinNotifiedUpdate()
+        || isAdmin();
       allow delete: if isAdmin()
         || (
           request.auth != null
