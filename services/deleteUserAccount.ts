@@ -12,7 +12,6 @@ import {
   arrayRemove,
   collection,
   deleteDoc,
-  deleteField,
   doc,
   getDocs,
   limit,
@@ -22,6 +21,7 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { db } from '@/services/firebase';
+import { planLeaveOrder } from '@/services/orderLifecycle';
 
 const CHUNK = 400;
 
@@ -76,16 +76,24 @@ export async function deleteUserAccount(user: User): Promise<DeleteUserAccountRe
     await deleteOrderSubcollectionsAndDoc(orderId);
   }
 
-  // 3) Orders where user is a participant (not host) — remove uid from participants + joinedAtMap
+  // 3) Orders where user is a member (not already wiped as host).
+  // HalfOrders: cancel the pair — participants-only leave leaves a ghost uid in `users`.
   const participantSnap = await getDocs(
     query(collection(db, 'orders'), where('participants', 'array-contains', uid)),
   );
-  for (const orderDoc of participantSnap.docs) {
+  const usersSnap = await getDocs(
+    query(collection(db, 'orders'), where('users', 'array-contains', uid)),
+  );
+  const seenOrderIds = new Set<string>();
+  for (const orderDoc of [...participantSnap.docs, ...usersSnap.docs]) {
+    if (hostedIds.has(orderDoc.id) || seenOrderIds.has(orderDoc.id)) continue;
+    seenOrderIds.add(orderDoc.id);
     try {
-      await updateDoc(orderDoc.ref, {
-        participants: arrayRemove(uid),
-        [`joinedAtMap.${uid}`]: deleteField(),
+      const plan = planLeaveOrder(orderDoc.data() as Record<string, unknown>, uid, {
+        cancelReason: 'account_deleted',
       });
+      if (plan.kind === 'already_left') continue;
+      await updateDoc(orderDoc.ref, plan.fields);
     } catch {
       // Order may have been deleted or permission edge case — continue
     }
