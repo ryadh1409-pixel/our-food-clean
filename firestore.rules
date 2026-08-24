@@ -1009,7 +1009,8 @@ service cloud.firestore {
     match /user_activity/{activityId} {
       allow create: if request.auth != null
         && request.resource.data.userId == request.auth.uid;
-      allow read: if request.auth != null;
+      /** Admin activity map only. Signed-in list would leak GPS + email trails. */
+      allow read: if isAdmin();
       allow update, delete: if false;
     }
     match /broadcasts/{broadcastId} {
