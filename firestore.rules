@@ -991,8 +991,27 @@ service cloud.firestore {
     }
     match /complaints/{complaintId} {
       allow create: if request.auth != null
-        && request.resource.data.userId == request.auth.uid;
-      allow read: if request.auth != null;
+        && !isCurrentUserRestricted()
+        && request.resource.data.keys().hasOnly([
+          'userId',
+          'userEmail',
+          'message',
+          'createdAt',
+          'status',
+        ])
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.userEmail is string
+        && (
+          request.resource.data.userEmail == ''
+          || request.resource.data.userEmail == request.auth.token.email
+        )
+        && request.resource.data.message is string
+        && request.resource.data.message.size() > 0
+        && request.resource.data.message.size() <= 2000
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.status == 'new';
+      /** Admin inbox only. Signed-in list would leak emails + private support messages. */
+      allow read: if isAdmin();
       allow update, delete: if false;
     }
     match /admins/{adminId} {
