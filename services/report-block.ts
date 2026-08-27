@@ -1,26 +1,23 @@
-import {
-  addDoc,
-  collection,
-  serverTimestamp,
-} from 'firebase/firestore';
-import { db } from './firebase';
-import {
-  blockUser as blockUserService,
-  isUserBlocked as isUserBlockedService,
-} from './block';
+import { isUserBlocked as isUserBlockedService } from './block';
+import { blockUser, submitUserReport } from './userSafety';
 
+/**
+ * Order-room combined action. Must use the same `reports` shape as
+ * `submitUserReport` (`userId`, `contentId`, `reason`, no extra keys) or
+ * Firestore denies the write and the block never runs.
+ */
 export async function reportAndBlock(
   reporterUid: string,
   reportedUid: string,
   orderId: string,
 ): Promise<void> {
-  await addDoc(collection(db, 'reports'), {
+  await submitUserReport({
     reporterId: reporterUid,
     reportedUserId: reportedUid,
     orderId,
-    createdAt: serverTimestamp(),
+    reason: 'abuse',
   });
-  await blockUserService(reportedUid, reporterUid);
+  await blockUser(reporterUid, reportedUid);
 }
 
 export async function isBlockedByAny(
