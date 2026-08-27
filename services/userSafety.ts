@@ -59,11 +59,15 @@ export async function submitUserReport(payload: ReportPayload): Promise<void> {
   });
 }
 
+/**
+ * `blockerId` blocks `blockedId`.
+ * `blockService.blockUser` is `(currentUserId, targetUserId)` — do not swap.
+ */
 export async function blockUser(
   blockerId: string,
   blockedId: string,
 ): Promise<void> {
-  await persistBlock(blockedId, blockerId);
+  await persistBlock(blockerId, blockedId);
 }
 
 export function handleSafetyError(error: unknown, fallback: string): string {
