@@ -4,6 +4,7 @@ import {
   PAYMENT_MATCH_ALERT_MESSAGE,
   PAYMENT_MATCH_ALERT_TITLE,
 } from '@/constants/paymentDisclaimer';
+import { foodCardInviteTargetId } from '@/lib/orderDetailSource';
 import { safeAlertBody, USER_ERROR_JOIN } from '@/lib/userFacingErrors';
 import { theme } from '@/constants/theme';
 import { useAuth } from '@/services/AuthContext';
@@ -164,7 +165,7 @@ export default function SwipeScreen() {
     const inviteText = `Join my order on HalfOrder 🍕
 ${topCard.title}
 Location: ${loc}
-Join here: https://halforder.app/order/${topCard.orderId ?? topCard.id}`;
+Join here: https://halforder.app/order/${foodCardInviteTargetId(topCard)}`;
     void Linking.openURL(
       `https://wa.me/?text=${encodeURIComponent(inviteText)}`,
     );
@@ -494,7 +495,7 @@ Join here: https://halforder.app/order/${topCard.orderId ?? topCard.id}`;
                 activeOpacity={0.88}
                 onPress={() =>
                   router.push(
-                    `/order/${topCard.orderId ?? topCard.id}` as never,
+                    `/order/${foodCardInviteTargetId(topCard)}` as never,
                   )
                 }
                 style={styles.detailsBtn}
