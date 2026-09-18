@@ -35,6 +35,7 @@ import {
 } from '@/constants/paymentDisclaimer';
 import { theme } from '@/constants/theme';
 import { buildOrderWhatsAppInviteLink } from '@/lib/invite-link';
+import { resolveOrderDetailSource } from '@/lib/orderDetailSource';
 import { safeAlertBody, USER_ERROR_JOIN } from '@/lib/userFacingErrors';
 import {
   openWhatsAppWithMessage,
@@ -275,15 +276,16 @@ export default function OrderDetailsScreen() {
 
     const settle = () => {
       if (!primaryHeard || !cardHeard || !linkedHeard) return;
-      const orderRow = primaryOrderRow ?? linkedOrderRow ?? null;
-      if (orderRow) {
-        setDetailSource('order');
-        setOrder(orderRow);
-        setCountdownSec(Math.max(orderRow.timeRemaining, 0) * 60);
-      } else if (cardRow) {
-        setDetailSource('food_card');
-        setOrder(cardRow);
-        setCountdownSec(Math.max(cardRow.timeRemaining, 0) * 60);
+      const resolved = resolveOrderDetailSource({
+        urlId: orderId,
+        primaryOrder: primaryOrderRow,
+        linkedOrder: linkedOrderRow,
+        foodCard: cardRow,
+      });
+      if (resolved.source && resolved.row) {
+        setDetailSource(resolved.source);
+        setOrder(resolved.row);
+        setCountdownSec(Math.max(resolved.row.timeRemaining, 0) * 60);
       } else {
         setDetailSource(null);
         setOrder(null);
