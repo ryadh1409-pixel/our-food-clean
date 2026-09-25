@@ -9,7 +9,8 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 
-import { db } from '@/services/firebase';
+import { orderMemberIdsCallerCanSync } from '@/lib/halfOrderPostJoin';
+import { auth, db } from '@/services/firebase';
 
 export type OrderMemberLocation = { lat: number; lng: number };
 
@@ -152,8 +153,13 @@ export async function syncOrderMemberProfilesForOrder(
   orderId: string,
   userIds: string[],
 ): Promise<void> {
-  const unique = [...new Set(userIds.map((x) => x.trim()).filter(Boolean))];
-  await Promise.all(unique.map((uid) => syncOrderMemberProfile(orderId, uid)));
+  const ids = orderMemberIdsCallerCanSync(userIds, auth.currentUser?.uid);
+  if (ids.length === 0) return;
+  try {
+    await syncOrderMemberProfile(orderId, ids[0]);
+  } catch (e) {
+    console.warn('[syncOrderMemberProfilesForOrder]', e);
+  }
 }
 
 export function mapOrderMemberSnap(
