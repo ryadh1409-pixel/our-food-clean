@@ -98,8 +98,12 @@ export async function unblockBlockedUser(
 }
 
 /**
- * True when either user blocked the other (array + `blocks` collection +
- * subcollection on either side).
+ * True when either user blocked the other.
+ *
+ * Reverse blocks are read from `users/{other}.blockedUsers` (any signed-in
+ * user can read the parent profile). Do not `get` `users/{other}/blockedUsers/*`:
+ * that subcollection is owner-only, so the read permission-denies and rejects
+ * this whole check. Join then fails for every existing order.
  */
 export async function isUserBlocked(
   currentUserId: string,
@@ -108,14 +112,11 @@ export async function isUserBlocked(
   if (!currentUserId || !otherUserId) return false;
   if (currentUserId === otherUserId) return false;
 
-  const [meSnap, otherSnap, subMe, subOther] = await Promise.all([
+  const [meSnap, otherSnap, subMe] = await Promise.all([
     getDoc(doc(db, 'users', currentUserId)),
     getDoc(doc(db, 'users', otherUserId)),
     getDoc(
       doc(db, 'users', currentUserId, 'blockedUsers', otherUserId),
-    ),
-    getDoc(
-      doc(db, 'users', otherUserId, 'blockedUsers', currentUserId),
     ),
   ]);
 
@@ -127,7 +128,7 @@ export async function isUserBlocked(
   if (myBlockedList.includes(otherUserId) || otherBlockedList.includes(currentUserId)) {
     return true;
   }
-  if (subMe.exists() || subOther.exists()) {
+  if (subMe.exists()) {
     return true;
   }
 

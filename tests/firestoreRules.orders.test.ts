@@ -408,3 +408,24 @@ describe('firestore rules: HalfOrder cancel + order_members', () => {
     );
   });
 });
+
+describe('firestore rules: block list visibility', () => {
+  it('lets a joiner read the blocker profile array but not their block subcollection', async () => {
+    await te().withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'users', 'u1'), {
+        blockedUsers: ['u2'],
+      });
+      await setDoc(doc(ctx.firestore(), 'users', 'u1', 'blockedUsers', 'u2'), {
+        blockedUserId: 'u2',
+        createdAt: Timestamp.now(),
+      });
+    });
+
+    const dbU2 = te().authenticatedContext('u2').firestore();
+    const profile = await assertSucceeds(getDoc(doc(dbU2, 'users', 'u1')));
+    expect(profile.data()?.blockedUsers).toEqual(['u2']);
+    await assertFails(
+      getDoc(doc(dbU2, 'users', 'u1', 'blockedUsers', 'u2')),
+    );
+  });
+});
